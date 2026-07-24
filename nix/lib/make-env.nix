@@ -1,12 +1,18 @@
 # env 組み立ての中核: plugins.json + flake.lock (lockDir) から
 # farm / bootstrap / wrapped neovim を完全 pure に構築する。
-{ pkgs }:
+# lock 不在時は degrade ビルド (farm = lazy.nvim シードのみ)。
+# eval を失敗させると lock コマンド自体が手に入らず鶏卵になるため。
+{ pkgs, lazyNvimSeed }:
 {
   package,
   lockDir,
+  appName ? "nvim",
+  extraPackages ? [ ],
 }:
 let
   inherit (pkgs) lib;
+  hasLock =
+    builtins.pathExists (lockDir + "/plugins.json") && builtins.pathExists (lockDir + "/flake.lock");
   pluginsDb = builtins.fromJSON (builtins.readFile (lockDir + "/plugins.json"));
   getSource = import ./sources.nix { inherit lockDir; };
   mkPluginDrv = import ./plugin-drv.nix { inherit pkgs; };
@@ -16,16 +22,20 @@ let
 
   lazyNvimDrv = mkPluginDrv {
     name = "lazy.nvim";
-    src = getSource pluginsDb.lazyNvim.inputName;
+    src = if hasLock then getSource pluginsDb.lazyNvim.inputName else lazyNvimSeed;
   };
 
-  pluginDrvs = lib.mapAttrs (
-    name: p:
-    mkPluginDrv {
-      inherit name;
-      src = getSource p.inputName;
-    }
-  ) pluginsDb.plugins;
+  pluginDrvs =
+    if hasLock then
+      lib.mapAttrs (
+        name: p:
+        mkPluginDrv {
+          inherit name;
+          src = getSource p.inputName;
+        }
+      ) pluginsDb.plugins
+    else
+      { };
 
   farm = mkFarm {
     entries = [
@@ -41,7 +51,14 @@ let
   };
 
   bootstrap = mkBootstrap { inherit farm; };
-  wrapped = mkWrapper { inherit package bootstrap; };
+  wrapped = mkWrapper {
+    inherit
+      package
+      bootstrap
+      appName
+      extraPackages
+      ;
+  };
 in
 {
   inherit
@@ -49,5 +66,6 @@ in
     bootstrap
     wrapped
     pluginDrvs
+    hasLock
     ;
 }

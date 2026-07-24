@@ -7,6 +7,9 @@
     anthropic-skills.flake = false;
     lazy-nvim.url = "github:folke/lazy.nvim";
     lazy-nvim.flake = false;
+    # hm module の checks 用。module 自体は home-manager に依存しない
+    home-manager.url = "github:nix-community/home-manager";
+    home-manager.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs =
@@ -17,6 +20,7 @@
       agent-skills,
       anthropic-skills,
       lazy-nvim,
+      home-manager,
     }:
     let
       system = "x86_64-linux";
@@ -56,6 +60,16 @@
         lazyNvimSeed = lazy-nvim;
       };
 
+      homeModules = rec {
+        nvimx = import ./nix/home-manager { lazyNvimSeed = lazy-nvim; };
+        default = nvimx;
+      };
+
+      templates.default = {
+        path = ./templates/default;
+        description = "nvimx を組み込んだ home-manager dotfiles の雛形";
+      };
+
       packages.${system}.demo =
         let
           env = nvimxLib.makeEnv {
@@ -85,37 +99,70 @@
           nixfmt.enable = true;
         };
       };
-      checks.${system} = {
-        # fixture config に対する抽出結果のスナップショット比較。
-        # 全て store 内 (fixture + seed + neovim) で完結するためネットワーク不要。
-        extractor-snapshot =
-          pkgs.runCommand "extractor-snapshot"
-            {
-              nativeBuildInputs = [
-                pkgs.neovim-unwrapped
-                pkgs.jq
+      checks.${system} =
+        let
+          # fixture config で hm module を実際に評価・ビルドする
+          mkHmCheck =
+            nvimxConfig:
+            (home-manager.lib.homeManagerConfiguration {
+              inherit pkgs;
+              modules = [
+                self.homeModules.nvimx
+                {
+                  home.username = "nvimx-test";
+                  home.homeDirectory = "/home/nvimx-test";
+                  home.stateVersion = "25.05";
+                  programs.nvimx = {
+                    enable = true;
+                  }
+                  // nvimxConfig;
+                }
               ];
-            }
-            ''
-              export HOME=$TMPDIR
-              sb=$TMPDIR/sandbox
-              mkdir -p $sb/config $sb/data/nvim/lazy $sb/state $sb/cache
-              ln -s ${./tests/fixtures/basic-config} $sb/config/nvim
-              ln -s ${lazy-nvim} $sb/data/nvim/lazy/lazy.nvim
-              env \
-                XDG_CONFIG_HOME=$sb/config \
-                XDG_DATA_HOME=$sb/data \
-                XDG_STATE_HOME=$sb/state \
-                XDG_CACHE_HOME=$sb/cache \
-                NVIMX_LAZY_SEED=${lazy-nvim} \
-                NVIMX_OUT=$sb/raw-spec.json \
-                nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
-              # lazyNvim.source は store path を含み seed 更新で変わるため除外して比較
-              jq -S 'del(.lazyNvim)' $sb/raw-spec.json > got.json
-              diff -u ${./tests/fixtures/golden/basic-config.raw-spec.json} got.json
-              touch $out
-            '';
-      };
+            }).activationPackage;
+        in
+        {
+          # lock あり: farm / wrapper / dataFile 配備まで一式ビルドできること
+          hm-module = mkHmCheck {
+            configDir = ./tests/fixtures/basic-config;
+            lockDir = ./tests/fixtures/basic-config/nvimx-lock;
+            appName = "nvimx";
+            lock.projectDir = "~/dotfiles";
+          };
+          # lock 不在: degrade ビルドで eval が通り切ること (鶏卵問題の検証)
+          hm-module-degrade = mkHmCheck {
+            configDir = ./tests/fixtures/basic-config;
+            lockDir = ./tests/fixtures/basic-config/no-such-lock;
+          };
+          # fixture config に対する抽出結果のスナップショット比較。
+          # 全て store 内 (fixture + seed + neovim) で完結するためネットワーク不要。
+          extractor-snapshot =
+            pkgs.runCommand "extractor-snapshot"
+              {
+                nativeBuildInputs = [
+                  pkgs.neovim-unwrapped
+                  pkgs.jq
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                sb=$TMPDIR/sandbox
+                mkdir -p $sb/config $sb/data/nvim/lazy $sb/state $sb/cache
+                ln -s ${./tests/fixtures/basic-config} $sb/config/nvim
+                ln -s ${lazy-nvim} $sb/data/nvim/lazy/lazy.nvim
+                env \
+                  XDG_CONFIG_HOME=$sb/config \
+                  XDG_DATA_HOME=$sb/data \
+                  XDG_STATE_HOME=$sb/state \
+                  XDG_CACHE_HOME=$sb/cache \
+                  NVIMX_LAZY_SEED=${lazy-nvim} \
+                  NVIMX_OUT=$sb/raw-spec.json \
+                  nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
+                # lazyNvim.source は store path を含み seed 更新で変わるため除外して比較
+                jq -S 'del(.lazyNvim)' $sb/raw-spec.json > got.json
+                diff -u ${./tests/fixtures/golden/basic-config.raw-spec.json} got.json
+                touch $out
+              '';
+        };
 
       apps.${system} = {
         lock = {
