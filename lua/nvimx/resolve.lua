@@ -8,6 +8,8 @@
 local raw_path, out_path = arg[1], arg[2]
 assert(raw_path and out_path, "usage: nvim -l resolve.lua <raw-spec.json> <plugins.json>")
 
+local json = dofile(arg[0]:gsub("resolve%.lua$", "json.lua"))
+
 local function read_json(path)
   local f = assert(io.open(path, "r"))
   local text = f:read("*a")
@@ -89,12 +91,11 @@ local result = {
     synthetic = true,
     source = { type = "github", owner = "folke", repo = "lazy.nvim" },
   },
-  plugins = plugins,
-  localPlugins = local_plugins,
-  warnings = warnings,
+  plugins = json.object(plugins),
+  localPlugins = json.object(local_plugins),
+  warnings = json.array(warnings),
 }
 
 local f = assert(io.open(out_path, "w"))
-f:write(vim.json.encode(result))
-f:write("\n")
+f:write(json.encode(result))
 f:close()

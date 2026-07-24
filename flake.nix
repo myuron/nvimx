@@ -46,7 +46,10 @@
           enable = true;
         };
       };
-      nvimxLib = import ./nix/lib { inherit pkgs; };
+      nvimxLib = import ./nix/lib {
+        inherit pkgs;
+        lazyNvimSeed = lazy-nvim;
+      };
     in
     {
       lib = nvimxLib // {
@@ -82,7 +85,43 @@
           nixfmt.enable = true;
         };
       };
+      checks.${system} = {
+        # fixture config に対する抽出結果のスナップショット比較。
+        # 全て store 内 (fixture + seed + neovim) で完結するためネットワーク不要。
+        extractor-snapshot =
+          pkgs.runCommand "extractor-snapshot"
+            {
+              nativeBuildInputs = [
+                pkgs.neovim-unwrapped
+                pkgs.jq
+              ];
+            }
+            ''
+              export HOME=$TMPDIR
+              sb=$TMPDIR/sandbox
+              mkdir -p $sb/config $sb/data/nvim/lazy $sb/state $sb/cache
+              ln -s ${./tests/fixtures/basic-config} $sb/config/nvim
+              ln -s ${lazy-nvim} $sb/data/nvim/lazy/lazy.nvim
+              env \
+                XDG_CONFIG_HOME=$sb/config \
+                XDG_DATA_HOME=$sb/data \
+                XDG_STATE_HOME=$sb/state \
+                XDG_CACHE_HOME=$sb/cache \
+                NVIMX_LAZY_SEED=${lazy-nvim} \
+                NVIMX_OUT=$sb/raw-spec.json \
+                nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
+              # lazyNvim.source は store path を含み seed 更新で変わるため除外して比較
+              jq -S 'del(.lazyNvim)' $sb/raw-spec.json > got.json
+              diff -u ${./tests/fixtures/golden/basic-config.raw-spec.json} got.json
+              touch $out
+            '';
+      };
+
       apps.${system} = {
+        lock = {
+          type = "app";
+          program = "${nvimxLib.lockApp}/bin/nvimx-lock";
+        };
         skills-install = {
           type = "app";
           program = "${
