@@ -1,0 +1,6 @@
+{
+  "autoMemoryEnabled": false,
+  "permissions": {
+    "defaultMode": "plan"
+  }
+}
