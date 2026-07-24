@@ -1,0 +1,11 @@
+{
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "tokyonight.nvim": {
+      "name": "tokyonight.nvim",
+      "short": "folke/tokyonight.nvim",
+      "url": "https://github.com/folke/tokyonight.nvim.git"
+    }
+  }
+}

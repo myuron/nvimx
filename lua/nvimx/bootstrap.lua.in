@@ -1,0 +1,42 @@
+-- nvimx runtime bootstrap (wrapper の --cmd luafile で注入される)
+-- ユーザーの lua は無修正。require("lazy") を preload で横取りし、
+-- 強制 opts をマージした setup に差し替える。
+local farm = "@farm@"
+
+vim.opt.rtp:prepend(farm .. "/lazy.nvim")
+
+package.preload["lazy"] = function()
+  -- 自己解除してから本物の lazy を require する
+  package.preload["lazy"] = nil
+  package.loaded["lazy"] = nil
+  local lazy = require("lazy")
+
+  local forced = {
+    install = { missing = false },
+    checker = { enabled = false },
+    change_detection = { enabled = false },
+    pkg = { enabled = false },
+    rocks = { enabled = false, hererocks = false },
+    readme = { enabled = false },
+    -- 全 plugin を farm 配下の is_local 扱いにし、lazy の git/install パイプラインを
+    -- 完全にスキップさせる (store から読むだけ)
+    dev = {
+      -- TODO (Phase 7): devPlugins / devPath を考慮した関数にする
+      path = farm,
+      patterns = { "" },
+      fallback = false,
+    },
+  }
+
+  local setup = lazy.setup
+  ---@diagnostic disable-next-line: duplicate-set-field
+  lazy.setup = function(spec, opts)
+    -- setup(opts) 形式 (spec が opts.spec に入る) にも対応
+    if type(spec) == "table" and spec.spec ~= nil and not vim.islist(spec) then
+      return setup(vim.tbl_deep_extend("force", spec, forced))
+    end
+    return setup(spec, vim.tbl_deep_extend("force", opts or {}, forced))
+  end
+
+  return lazy
+end
