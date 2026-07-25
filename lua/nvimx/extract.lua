@@ -60,7 +60,10 @@ local function dump_plugin(p)
   }
 end
 
+local captured = false
+
 local function capture(spec, opts)
+  captured = true
   -- setup(opts) 形式 (spec が opts.spec に入る) にも対応
   if type(spec) == "table" and spec.spec ~= nil and not vim.islist(spec) then
     opts = spec
@@ -108,3 +111,17 @@ package.preload["lazy"] = function()
     end,
   }
 end
+
+-- setup が呼ばれれば capture 内の os.exit(0) で終了するため、ここに到達するのは
+-- init.lua が lazy.setup を呼ばなかった場合のみ。放置すると headless nvim が
+-- stdin 待ちで永久にハングするため、明確なエラーで終了させる (#3)。
+-- vim.schedule で 1 tick 遅らせ、init.lua 内で schedule された setup にも猶予を与える。
+vim.api.nvim_create_autocmd("VimEnter", {
+  callback = function()
+    vim.schedule(function()
+      if not captured then
+        fail('config did not call require("lazy").setup(...); nvimx requires a lazy.nvim spec')
+      end
+    end)
+  end,
+})

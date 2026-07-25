@@ -51,6 +51,8 @@ pkgs.writeShellApplication {
     ln -sfT "$seed" "$sandbox/data/nvim/lazy/lazy.nvim"
 
     echo "nvimx-lock: extracting spec from $config" >&2
+    # extract.lua は setup 捕捉時 exit 0 / 未捕捉時 VimEnter で exit 1 する。
+    # timeout + stdin クローズは、それでも event loop に留まる想定外ケースの保険 (#3)。
     env \
       XDG_CONFIG_HOME="$sandbox/config" \
       XDG_DATA_HOME="$sandbox/data" \
@@ -58,7 +60,7 @@ pkgs.writeShellApplication {
       XDG_CACHE_HOME="$sandbox/cache" \
       NVIMX_LAZY_SEED="$seed" \
       NVIMX_OUT="$sandbox/raw-spec.json" \
-      nvim --headless --cmd "luafile ${luaDir}/extract.lua"
+      timeout 120 nvim --headless --cmd "luafile ${luaDir}/extract.lua" < /dev/null
 
     echo "nvimx-lock: resolving plugins" >&2
     nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$out/plugins.json"
