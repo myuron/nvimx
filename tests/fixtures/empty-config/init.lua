@@ -1,0 +1,1 @@
+-- lazy.setup を呼ばない config (issue #3 のハング回帰テスト用)
