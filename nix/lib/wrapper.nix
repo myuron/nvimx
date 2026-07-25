@@ -5,6 +5,8 @@
   bootstrap,
   appName ? "nvim",
   extraPackages ? [ ],
+  vimAlias ? false,
+  viAlias ? false,
 }:
 let
   inherit (pkgs) lib;
@@ -18,5 +20,7 @@ pkgs.symlinkJoin {
       --add-flags "--cmd 'luafile ${bootstrap}'" \
       ${lib.optionalString (appName != "nvim") "--set NVIM_APPNAME ${lib.escapeShellArg appName}"} \
       ${lib.optionalString (extraPackages != [ ]) "--prefix PATH : ${lib.makeBinPath extraPackages}"}
+    ${lib.optionalString vimAlias "ln -s $out/bin/nvim $out/bin/vim"}
+    ${lib.optionalString viAlias "ln -s $out/bin/nvim $out/bin/vi"}
   '';
 }

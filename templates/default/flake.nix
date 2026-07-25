@@ -40,6 +40,8 @@
               # package = inputs.neovim-nightly-overlay.packages.x86_64-linux.default;
 
               # extraPackages = [ pkgs.ripgrep ];
+
+              # vimAlias = true;  # `vim` でも起動したい場合
             };
           }
         ];

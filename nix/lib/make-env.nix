@@ -8,6 +8,8 @@
   lockDir,
   appName ? "nvim",
   extraPackages ? [ ],
+  vimAlias ? false,
+  viAlias ? false,
 }:
 let
   inherit (pkgs) lib;
@@ -57,6 +59,8 @@ let
       bootstrap
       appName
       extraPackages
+      vimAlias
+      viAlias
       ;
   };
 in

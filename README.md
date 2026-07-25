@@ -98,6 +98,9 @@ programs.nvimx = {
                          # false: ~/.config/<appName> はユーザー管理
   appName = "nvim";      # NVIM_APPNAME。"nvimx" にすると既存環境と併存お試し可
 
+  vimAlias = false;      # true: `vim` コマンドで wrapped nvim を起動
+  viAlias = false;       # true: `vi` コマンドで wrapped nvim を起動
+
   extraPackages = [ pkgs.ripgrep ];  # wrapper の PATH に前置 (lsp 等)
 
   lock = {

@@ -78,6 +78,18 @@ in
       '';
     };
 
+    vimAlias = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "`vim` コマンドで wrapped neovim を起動する symlink を追加する";
+    };
+
+    viAlias = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "`vi` コマンドで wrapped neovim を起動する symlink を追加する";
+    };
+
     extraPackages = lib.mkOption {
       type = lib.types.listOf lib.types.package;
       default = [ ];
@@ -146,6 +158,8 @@ in
           lockDir
           appName
           extraPackages
+          vimAlias
+          viAlias
           ;
       }
     );
