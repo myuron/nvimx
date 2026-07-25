@@ -126,6 +126,8 @@
             configDir = ./tests/fixtures/basic-config;
             lockDir = ./tests/fixtures/basic-config/nvimx-lock;
             appName = "nvimx";
+            vimAlias = true;
+            viAlias = true;
             lock.projectDir = "~/dotfiles";
           };
           # lock 不在: degrade ビルドで eval が通り切ること (鶏卵問題の検証)
@@ -133,6 +135,21 @@
             configDir = ./tests/fixtures/basic-config;
             lockDir = ./tests/fixtures/basic-config/no-such-lock;
           };
+          # vimAlias / viAlias: wrapper に vim / vi の symlink が生えること
+          wrapper-aliases =
+            let
+              env = nvimxLib.makeEnv {
+                package = pkgs.neovim-unwrapped;
+                lockDir = ./tests/fixtures/basic-config/nvimx-lock;
+                vimAlias = true;
+                viAlias = true;
+              };
+            in
+            pkgs.runCommand "wrapper-aliases" { } ''
+              test -L ${env.wrapped}/bin/vim
+              test -L ${env.wrapped}/bin/vi
+              touch $out
+            '';
           # fixture config に対する抽出結果のスナップショット比較。
           # 全て store 内 (fixture + seed + neovim) で完結するためネットワーク不要。
           extractor-snapshot =
