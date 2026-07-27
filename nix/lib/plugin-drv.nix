@@ -1,6 +1,6 @@
-# 1 plugin = 1 derivation。
-# デフォルト: cp + doc/ があれば helptags 生成。
-# TODO (Phase 5): build (shell) 実行、build-registry、overrides、nixpkgsFallback
+# 1 plugin = 1 derivation.
+# Default: cp, plus helptags generation if doc/ exists.
+# TODO (Phase 5): running build (shell), build-registry, overrides, nixpkgsFallback
 { pkgs }:
 { name, src }:
 pkgs.runCommand "nvimx-plugin-${name}"

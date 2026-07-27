@@ -1,7 +1,7 @@
-# env 組み立ての中核: plugins.json + flake.lock (lockDir) から
-# farm / bootstrap / wrapped neovim を完全 pure に構築する。
-# lock 不在時は degrade ビルド (farm = lazy.nvim シードのみ)。
-# eval を失敗させると lock コマンド自体が手に入らず鶏卵になるため。
+# The core of env assembly: builds the farm / bootstrap / wrapped neovim fully purely
+# from plugins.json + flake.lock (lockDir).
+# When the lock is absent it degrades (farm = the lazy.nvim seed only),
+# because failing evaluation would leave you without the lock command itself — a chicken-and-egg problem.
 { pkgs, lazyNvimSeed }:
 {
   package,

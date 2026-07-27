@@ -1,13 +1,13 @@
--- nvimx 抽出器 (Phase 1)
+-- nvimx extractor (Phase 1)
 --
--- 使い方:
---   NVIMX_LAZY_SEED=<lazy.nvim の store path> NVIMX_OUT=<raw-spec.json 出力先> \
+-- Usage:
+--   NVIMX_LAZY_SEED=<store path of lazy.nvim> NVIMX_OUT=<where to write raw-spec.json> \
 --     nvim --headless --cmd "luafile lua/nvimx/extract.lua"
 --
--- ユーザーの init.lua が実行される前に package.preload["lazy"] を仕込み、
--- require("lazy").setup(spec, opts) を横取り捕捉する。本物の setup は呼ばず、
--- lazy 自身の Config.setup + Spec.new で spec を正規化 (import 再帰解決・
--- fragment マージ・dependencies 展開) して raw-spec.json に dump する。
+-- Installs package.preload["lazy"] before the user's init.lua runs so that
+-- require("lazy").setup(spec, opts) is intercepted. The real setup is never called;
+-- instead lazy's own Config.setup + Spec.new normalize the spec (recursive import
+-- resolution, fragment merging, dependency expansion) and it is dumped to raw-spec.json.
 
 local seed = vim.env.NVIMX_LAZY_SEED
 local out = vim.env.NVIMX_OUT
@@ -21,12 +21,12 @@ if not out or out == "" then
   fail("NVIMX_OUT is not set")
 end
 
--- ユーザー config が bootstrap snippet を持たない場合に備え、シードを rtp に前置
+-- Prepend the seed to the rtp in case the user's config has no bootstrap snippet
 if seed and seed ~= "" then
   vim.opt.rtp:prepend(seed)
 end
 
--- setup に渡す opts のうち、抽出時に副作用を起こしうるものを無効化する
+-- Disable the opts passed to setup that could cause side effects during extraction
 local safe_opts = {
   install = { missing = false },
   checker = { enabled = false },
@@ -36,7 +36,7 @@ local safe_opts = {
   readme = { enabled = false },
 }
 
----@param p table lazy が正規化した plugin オブジェクト
+---@param p table the plugin object normalized by lazy
 local function dump_plugin(p)
   local build = nil
   if p.build ~= nil then
@@ -64,7 +64,7 @@ local captured = false
 
 local function capture(spec, opts)
   captured = true
-  -- setup(opts) 形式 (spec が opts.spec に入る) にも対応
+  -- Also handle the setup(opts) form, where the spec lives in opts.spec
   if type(spec) == "table" and spec.spec ~= nil and not vim.islist(spec) then
     opts = spec
     spec = opts.spec
@@ -97,7 +97,8 @@ local function capture(spec, opts)
   local f = assert(io.open(out, "w"))
   f:write(vim.json.encode(result))
   f:close()
-  -- init.lua の残り (colorscheme 適用等) は plugin 不在で失敗するため即終了する
+  -- Exit immediately: the rest of init.lua (applying a colorscheme, etc.) would fail
+  -- because the plugins are not present
   os.exit(0)
 end
 
@@ -112,10 +113,10 @@ package.preload["lazy"] = function()
   }
 end
 
--- setup が呼ばれれば capture 内の os.exit(0) で終了するため、ここに到達するのは
--- init.lua が lazy.setup を呼ばなかった場合のみ。放置すると headless nvim が
--- stdin 待ちで永久にハングするため、明確なエラーで終了させる (#3)。
--- vim.schedule で 1 tick 遅らせ、init.lua 内で schedule された setup にも猶予を与える。
+-- If setup is called, the os.exit(0) inside capture ends the process, so we only get
+-- here when init.lua never called lazy.setup. Left alone, the headless nvim would hang
+-- forever waiting on stdin, so exit with a clear error instead (#3).
+-- vim.schedule delays this by one tick, giving a setup scheduled inside init.lua a chance to run.
 vim.api.nvim_create_autocmd("VimEnter", {
   callback = function()
     vim.schedule(function()

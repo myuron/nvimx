@@ -1,5 +1,5 @@
-# nvimx-lock: 抽出 → 解決 → flake 生成 → nix flake lock を一発実行するスクリプト。
-# lock はオンライン操作 (build は完全 pure・オフライン)。
+# nvimx-lock: a script that runs extract → resolve → flake generation → nix flake lock in one go.
+# Locking is an online operation (the build is fully pure and offline).
 # TODO (Phase 6): --update [name...], --import-lazy-lock
 { pkgs, lazyNvimSeed }:
 let
@@ -40,8 +40,8 @@ pkgs.writeShellApplication {
     mkdir -p "$out"
     out=$(realpath "$out")
 
-    # TODO: 既存 lock に lazy.nvim の pin があればそれをシードに使う (skew 対策)。
-    # 現状は nvimx 自身の flake input を常にシードにする。
+    # TODO: if the existing lock pins lazy.nvim, use that as the seed (to avoid skew).
+    # For now nvimx's own flake input is always used as the seed.
     seed="${lazyNvimSeed}"
 
     sandbox=$(mktemp -d)
@@ -51,8 +51,9 @@ pkgs.writeShellApplication {
     ln -sfT "$seed" "$sandbox/data/nvim/lazy/lazy.nvim"
 
     echo "nvimx-lock: extracting spec from $config" >&2
-    # extract.lua は setup 捕捉時 exit 0 / 未捕捉時 VimEnter で exit 1 する。
-    # timeout + stdin クローズは、それでも event loop に留まる想定外ケースの保険 (#3)。
+    # extract.lua exits 0 when it captures setup, and exits 1 from VimEnter when it does not.
+    # The timeout plus closing stdin is a safety net for unexpected cases where it still
+    # stays in the event loop (#3).
     env \
       XDG_CONFIG_HOME="$sandbox/config" \
       XDG_DATA_HOME="$sandbox/data" \

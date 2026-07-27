@@ -1,4 +1,4 @@
-# bootstrap.lua.in の @farm@ を実 farm パスに置換して生成
+# Generates bootstrap.lua by replacing @farm@ in bootstrap.lua.in with the real farm path
 { pkgs }:
 { farm }:
 pkgs.writeText "nvimx-bootstrap.lua" (

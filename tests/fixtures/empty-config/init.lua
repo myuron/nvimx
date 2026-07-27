@@ -1,1 +1,1 @@
--- lazy.setup を呼ばない config (issue #3 のハング回帰テスト用)
+-- A config that never calls lazy.setup (regression test for the hang in issue #3)

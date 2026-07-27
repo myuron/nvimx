@@ -1,10 +1,10 @@
--- nvimx lock flake 生成器 (Phase 2 最小版)
+-- nvimx lock flake generator (minimal Phase 2 version)
 --
--- 使い方: nvim -l genflake.lua <plugins.json> <flake.nix 出力先>
+-- Usage: nvim -l genflake.lua <plugins.json> <where to write flake.nix>
 --
--- plugins.json から lockDir 用の flake.nix を生成する。
--- この flake は flake として評価されることはなく、flake.lock を pin DB として
--- 生成するためだけに存在する (outputs は空)。
+-- Generates the flake.nix for lockDir from plugins.json.
+-- This flake is never evaluated as a flake; it exists only to produce a flake.lock
+-- that serves as a pin DB (its outputs are empty).
 
 local plugins_path, out_path = arg[1], arg[2]
 assert(plugins_path and out_path, "usage: nvim -l genflake.lua <plugins.json> <flake.nix>")
@@ -22,7 +22,7 @@ local function is_null(v)
   return v == nil or v == vim.NIL
 end
 
--- lazy spec → flake input URL マッピング (docs/architecture.md 参照)
+-- lazy spec → flake input URL mapping (see docs/architecture.md)
 local function input_url(p)
   local src = p.source
   if src.type == "github" then
@@ -38,7 +38,7 @@ local function input_url(p)
     end
     return base
   end
-  -- git URL 直指定
+  -- explicit git URL
   local url = "git+" .. src.url
   local ref = (not is_null(p.branch) and p.branch) or (not is_null(p.tag) and p.tag) or nil
   if ref then

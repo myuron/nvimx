@@ -1,6 +1,6 @@
-# lockDir/flake.lock を単なる pin DB として読み、
-# inputName → builtins.fetchTree による store path の関数を返す。
-# flake として評価しないため、eval は完全 pure (narHash 固定済み)。
+# Reads lockDir/flake.lock as nothing more than a pin DB and returns a function
+# from inputName to a store path via builtins.fetchTree.
+# It is never evaluated as a flake, so evaluation is fully pure (narHash is already fixed).
 { lockDir }:
 let
   lock = builtins.fromJSON (builtins.readFile (lockDir + "/flake.lock"));
