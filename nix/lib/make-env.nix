@@ -6,7 +6,6 @@
 {
   package,
   lockDir,
-  appName ? "nvim",
   extraPackages ? [ ],
   vimAlias ? false,
   viAlias ? false,
@@ -57,7 +56,6 @@ let
     inherit
       package
       bootstrap
-      appName
       extraPackages
       vimAlias
       viAlias

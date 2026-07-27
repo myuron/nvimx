@@ -125,7 +125,6 @@
           hm-module = mkHmCheck {
             configDir = ./tests/fixtures/basic-config;
             lockDir = ./tests/fixtures/basic-config/nvimx-lock;
-            appName = "nvimx";
             vimAlias = true;
             viAlias = true;
             lock.projectDir = "~/dotfiles";
