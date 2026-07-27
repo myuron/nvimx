@@ -6,6 +6,12 @@ neovim の Lua の柔軟性と nix の再現性を両立する nix x neovim mana
 - build は完全 pure(ネットワーク不要、`--impure` 不要)。lock が同じなら何度 switch しても同一結果
 - neovim 本体は nixpkgs / neovim-nightly-overlay などから自由に選択できる
 
+## 対応プラットフォーム
+
+`x86_64-linux` / `aarch64-darwin` (Apple Silicon)。
+
+Intel Mac (`x86_64-darwin`) は非対応。nixpkgs 26.11 が同 platform のサポートを打ち切ったため。
+
 ## home-manager での導入
 
 ### 1. flake input に nvimx を追加
@@ -27,6 +33,7 @@ dotfiles の `flake.nix`:
     { nixpkgs, home-manager, nvimx, ... }:
     {
       homeConfigurations."myuser" = home-manager.lib.homeManagerConfiguration {
+        # macOS (Apple Silicon) は "aarch64-darwin"
         pkgs = import nixpkgs { system = "x86_64-linux"; };
         modules = [
           nvimx.homeModules.nvimx
