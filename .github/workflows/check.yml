@@ -1,19 +1,15 @@
-name: CI
+name: check
 
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      runs-on:
+        required: true
+        type: string
 
 jobs:
   check:
-    strategy:
-      fail-fast: false
-      matrix:
-        os:
-          - ubuntu-latest # x86_64-linux
-          - macos-latest # aarch64-darwin
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ inputs.runs-on }}
     steps:
       - uses: actions/checkout@v5
 
