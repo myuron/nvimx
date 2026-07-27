@@ -95,8 +95,7 @@ programs.nvimx = {
   lockDir = ./nvim/nvimx-lock;
 
   manageConfig = true;   # true: config を store から配備(再現性重視、既定)
-                         # false: ~/.config/<appName> はユーザー管理
-  appName = "nvim";      # NVIM_APPNAME。"nvimx" にすると既存環境と併存お試し可
+                         # false: ~/.config/nvim はユーザー管理
 
   vimAlias = false;      # true: `vim` コマンドで wrapped nvim を起動
   viAlias = false;       # true: `vi` コマンドで wrapped nvim を起動
@@ -111,11 +110,6 @@ programs.nvimx = {
   };
 };
 ```
-
-## 既存環境と併存してお試し
-
-`appName = "nvimx";` にすると `NVIM_APPNAME=nvimx` で動くため、
-既存の `~/.config/nvim` / `~/.local/share/nvim` に一切触れずに試せる。
 
 ## 仕組み
 

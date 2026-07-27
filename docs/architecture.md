@@ -158,8 +158,8 @@ flowchart LR
       → neovim (ユーザー選択 package) を wrapProgram --cmd 'luafile <bootstrap.lua>'
 [6] hm 配備:
       home.packages = [ wrapped-nvim, nvimx-lock ]
-      xdg.configFile."<appName>" = configDir       (manageConfig = true 時)
-      xdg.dataFile."<appName>/lazy/lazy.nvim" → farm/lazy.nvim
+      xdg.configFile."nvim" = configDir            (manageConfig = true 時)
+      xdg.dataFile."nvim/lazy/lazy.nvim" → farm/lazy.nvim
         (既存 bootstrap snippet の git clone を無害化)
 ```
 
@@ -255,7 +255,6 @@ programs.nvimx = {
 
   manageConfig = true;             # true: xdg.configFile で store 配備(再現性重視、既定)
                                    # false: ~/.config/nvim はユーザー管理(高速イテレーション派)
-  appName = "nvim";                # NVIM_APPNAME。"nvimx" で既存環境と併存お試し可
 
   plugins = {
     overrides = { };               # per-plugin derivation 上書き
@@ -378,7 +377,7 @@ flake outputs:
 4. **hm module + template**: `programs.nvimx.*`、degrade モード、`nvimx-lock`、実 dotfiles E2E
 5. **build plugin フル対応**: build-registry、shell build、treesitter マージ drv、nixpkgsFallback、lock 時警告
 6. **version/更新系**: `resolve.lua`(semver)、`--update [name]`、pin 維持マージ、`--import-lazy-lock`
-7. **仕上げ**: devPlugins、extraLuaPackages、appName、非 GitHub 検証、`checks.e2e-offline`、README
+7. **仕上げ**: devPlugins、extraLuaPackages、非 GitHub 検証、`checks.e2e-offline`、README
 
 ## 検証方法
 

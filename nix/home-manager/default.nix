@@ -66,15 +66,7 @@ in
       default = true;
       description = ''
         true: configDir を xdg.configFile で store から配備する (再現性重視、既定)。
-        false: ~/.config/<appName> はユーザー管理 (高速イテレーション派)。
-      '';
-    };
-
-    appName = lib.mkOption {
-      type = lib.types.str;
-      default = "nvim";
-      description = ''
-        NVIM_APPNAME。"nvimx" 等にすると既存の nvim 環境と併存してお試しできる。
+        false: ~/.config/nvim はユーザー管理 (高速イテレーション派)。
       '';
     };
 
@@ -156,7 +148,6 @@ in
         inherit (cfg)
           package
           lockDir
-          appName
           extraPackages
           vimAlias
           viAlias
@@ -167,10 +158,10 @@ in
     home.packages = [ cfg.env.wrapped ] ++ lib.optional cfg.lock.installCommand lockCommand;
 
     xdg.configFile = lib.mkIf cfg.manageConfig {
-      ${cfg.appName}.source = cfg.configDir;
+      nvim.source = cfg.configDir;
     };
 
     # 標準 bootstrap snippet の fs_stat を成功させ、git clone を無害化する
-    xdg.dataFile."${cfg.appName}/lazy/lazy.nvim".source = "${cfg.env.farm}/lazy.nvim";
+    xdg.dataFile."nvim/lazy/lazy.nvim".source = "${cfg.env.farm}/lazy.nvim";
   };
 }
