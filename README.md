@@ -1,22 +1,30 @@
 # nvimx
 
-neovim の Lua の柔軟性と nix の再現性を両立する nix x neovim manager。
+<p align="center">
+  <img src="assets/nvimx.png" alt="nvimx logo" width="240">
+</p>
 
-- lazy.nvim 形式の lua config を**無修正のまま**解析し、必要な plugin を flake.lock に pin する
-- build は完全 pure(ネットワーク不要、`--impure` 不要)。lock が同じなら何度 switch しても同一結果
-- neovim 本体は nixpkgs / neovim-nightly-overlay などから自由に選択できる
+<p align="center">
+  <a href="https://nixos.org"><img src="https://img.shields.io/badge/built%20with-Nix-5277C3?logo=nixos&logoColor=white" alt="Built with Nix"></a>
+  <a href="https://neovim.io"><img src="https://img.shields.io/badge/for-Neovim-57A143?logo=neovim&logoColor=white" alt="For Neovim"></a>
+  <a href="https://github.com/myuron/nvimx/actions/workflows/ci-linux.yml"><img src="https://github.com/myuron/nvimx/actions/workflows/ci-linux.yml/badge.svg?branch=main" alt="x86_64-linux"></a>
+  <a href="https://github.com/myuron/nvimx/actions/workflows/ci-darwin.yml"><img src="https://github.com/myuron/nvimx/actions/workflows/ci-darwin.yml/badge.svg?branch=main" alt="aarch64-darwin"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/myuron/nvimx?color=blue" alt="License: MIT"></a>
+</p>
 
-## 対応プラットフォーム
+## What is nvimx?
 
-`x86_64-linux` / `aarch64-darwin` (Apple Silicon)。
+nvimx manages your Neovim plugins with Nix, driven by the same lazy.nvim-style Lua config you already write.
 
-Intel Mac (`x86_64-darwin`) は非対応。nixpkgs 26.11 が同 platform のサポートを打ち切ったため。
+## Why nvimx?
 
-## home-manager での導入
+- lazy.nvim is a great plugin manager, but the fact that it updates its lock file on startup causes compatibility issues with Nix.
+- Nixvim is also an excellent home-manager module, but since it primarily uses plugins available in nixpkgs, if the plugin you want isn't available, you'll need to manage the hash yourself.
+- nvimx parses Lua and fetches plugins from GitHub rather than from nixpkgs. The hashes of the retrieved plugins are managed in `flake.lock`. This means you can manage a large number of plugins with Nix without sacrificing the flexibility of Lua.
 
-### 1. flake input に nvimx を追加
+## Installation
 
-dotfiles の `flake.nix`:
+nvimx is a home-manager module. You integrate it into your dotfiles to use it.
 
 ```nix
 {
@@ -30,19 +38,29 @@ dotfiles の `flake.nix`:
   };
 
   outputs =
-    { nixpkgs, home-manager, nvimx, ... }:
+    {
+      self,
+      nixpkgs,
+      home-manager,
+      nvimx,
+    }:
     {
       homeConfigurations."myuser" = home-manager.lib.homeManagerConfiguration {
-        # macOS (Apple Silicon) は "aarch64-darwin"
         pkgs = import nixpkgs { system = "x86_64-linux"; };
         modules = [
           nvimx.homeModules.nvimx
           {
             programs.nvimx = {
               enable = true;
-              configDir = ./nvim;            # lazy.nvim 形式の lua config
-              lockDir = ./nvim/nvimx-lock;   # nvimx-lock の生成物置き場
-              lock.projectDir = "~/dotfiles"; # 引数なし `nvimx-lock` の対象
+              configDir = ./nvim;
+              lockDir = ./nvim/nvimx-lock;
+
+              lock = {
+                installCommand = true;
+                projectDir = "~/dotfiles";
+                configDirRelative = "nvim";
+                lockDirRelative = "nvim/nvimx-lock";
+              };
             };
           }
         ];
@@ -51,112 +69,73 @@ dotfiles の `flake.nix`:
 }
 ```
 
-ゼロから始める場合は template も使える:
+## Usage
 
-```sh
-nix flake new --template github:myuron/nvimx ~/dotfiles
-```
+1. Write your Lua config using the same definition method as lazy.nvim, then `git add` it.
+   Nix only sees git-tracked files, so an untracked Lua file is silently skipped during extraction.
 
-### 2. plugin を lock
+2. Lock the plugins.
 
-```sh
-cd ~/dotfiles
-nix run github:myuron/nvimx#lock -- --config ./nvim --out ./nvim/nvimx-lock
-git add nvim/nvimx-lock
-```
+   ```bash
+   nvimx-lock
+   ```
 
-headless nvim が lazy.nvim の spec を実評価して plugin 一覧を抽出し、
-`plugins.json` / `flake.nix` / `flake.lock` を生成する。
+   `nvimx-lock` lands on your PATH via home-manager, so before your very first switch, run it
+   straight from the flake instead:
 
-### 3. switch
+   ```bash
+   nix run github:myuron/nvimx#lock -- --config ./nvim --out ./nvim/nvimx-lock
+   ```
 
-```sh
-home-manager switch --flake .
-```
+3. Commit the generated lock directory and switch home-manager.
 
-これで `nvim` が PATH に入り、全 plugin が /nix/store から読み込まれる
-(lazy.nvim の git/install パイプラインは完全にスキップされる)。
+   ```bash
+   git add nvim/nvimx-lock
+   home-manager switch --flake .
+   ```
 
-lock を忘れて switch しても失敗はせず、**degrade ビルド**(lazy.nvim のみ)で起動する。
-`nvimx-lock` コマンドは degrade 時も PATH に入るので、
-`nvimx-lock` → commit → 再 switch で完全状態に到達できる。手順の順序はどちらが先でもよい。
+The order is not actually rigid. Switching without a lock does not fail: the build *degrades* to a
+lazy.nvim-only Neovim and warns you, while still installing the `nvimx-lock` command. Running
+`nvimx-lock` → commit → switching again gets you to the full state either way.
 
-### plugin の追加
+Adding a plugin later is the same loop: write the spec → `git add` → `nvimx-lock` → commit → switch.
+Existing pins stay untouched; only the new plugin is fetched.
 
-1. lua に spec を書く
-2. `git add` (git 未追跡ファイルは抽出対象にならないため)
-3. `nvimx-lock`(新規 plugin のみ fetch。既存 pin は不変)
-4. commit → `home-manager switch`
+## Options
 
-## 主なオプション
+All options live under `programs.nvimx`.
 
-```nix
-programs.nvimx = {
-  enable = true;
-
-  # neovim 本体 (-unwrapped 系 derivation)
-  package = pkgs.neovim-unwrapped;
-  # package = inputs.neovim-nightly-overlay.packages.x86_64-linux.default;
-
-  configDir = ./nvim;
-  lockDir = ./nvim/nvimx-lock;
-
-  manageConfig = true;   # true: config を store から配備(再現性重視、既定)
-                         # false: ~/.config/nvim はユーザー管理
-
-  vimAlias = false;      # true: `vim` コマンドで wrapped nvim を起動
-  viAlias = false;       # true: `vi` コマンドで wrapped nvim を起動
-
-  extraPackages = [ pkgs.ripgrep ];  # wrapper の PATH に前置 (lsp 等)
-
-  lock = {
-    installCommand = true;         # nvimx-lock を home.packages に追加
-    projectDir = "~/dotfiles";     # 引数なし実行時の対象作業ツリー
-    configDirRelative = "nvim";
-    lockDirRelative = "nvim/nvimx-lock";
-  };
-};
-```
-
-### オプション一覧
-
-`programs.nvimx.*`:
-
-| オプション | 型 | 既定値 | 説明 |
+| option | type | default | description |
 | --- | --- | --- | --- |
-| `enable` | `bool` | `false` | nvimx (nix x neovim manager) を有効化する。 |
-| `package` | `package` | `pkgs.neovim-unwrapped` | neovim 本体 (-unwrapped 系 derivation)。neovim-nightly-overlay のものなども指定可。 |
-| `configDir` | `nullOr path` | `null` | `init.lua` を含む lua config ディレクトリ。`manageConfig = true` のとき `xdg.configFile` で store から配備される。 |
-| `lockDir` | `path` | (必須) | `nvimx-lock` が生成した `plugins.json` / `flake.nix` / `flake.lock` の置き場所。未生成 (lock 不在) の場合は degrade ビルドになる。 |
-| `manageConfig` | `bool` | `true` | `true`: `configDir` を `xdg.configFile` で store から配備する (再現性重視、既定)。`false`: `~/.config/nvim` はユーザー管理 (高速イテレーション派)。 |
-| `vimAlias` | `bool` | `false` | `vim` コマンドで wrapped neovim を起動する symlink を追加する。 |
-| `viAlias` | `bool` | `false` | `vi` コマンドで wrapped neovim を起動する symlink を追加する。 |
-| `extraPackages` | `listOf package` | `[ ]` | wrapper の PATH に前置するパッケージ (ripgrep, lsp 等)。 |
-| `env` | `attrs` | (自動構築) | `makeEnv` の結果 (`farm` / `bootstrap` / `wrapped` / `hasLock`)。既定では上記オプションから自動構築される。上級者向けの直接指定口。 |
+| `enable` | `bool` | `false` | Whether to enable nvimx (nix x neovim manager). |
+| `package` | `package` | `pkgs.neovim-unwrapped` | The Neovim itself (an `-unwrapped` style derivation). You can also point this at neovim-nightly-overlay. |
+| `configDir` | `nullOr path` | `null` | The Lua config directory containing `init.lua`. When `manageConfig = true` it is deployed from the Nix store via `xdg.configFile`. |
+| `lockDir` | `path` | _(required)_ | Where `nvimx-lock` writes `plugins.json` / `flake.nix` / `flake.lock`. If they are absent, the build degrades. |
+| `manageConfig` | `bool` | `true` | `true`: deploy `configDir` from the Nix store via `xdg.configFile` (reproducibility first, the default). `false`: `~/.config/nvim` is managed by you (fast iteration). |
+| `vimAlias` | `bool` | `false` | Add a symlink so that the `vim` command launches the wrapped Neovim. |
+| `viAlias` | `bool` | `false` | Add a symlink so that the `vi` command launches the wrapped Neovim. |
+| `extraPackages` | `listOf package` | `[ ]` | Packages prepended to the wrapper's `PATH` (ripgrep, language servers, etc.). |
+| `lock.installCommand` | `bool` | `true` | Add the `nvimx-lock` command to `home.packages`. |
+| `lock.projectDir` | `nullOr str` | `null` | The working tree of your dotfiles repository. When set, running `nvimx-lock` with no arguments targets `configDirRelative` / `lockDirRelative`. |
+| `lock.configDirRelative` | `str` | `"nvim"` | Path to `configDir`, relative to `projectDir`. |
+| `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | Path to `lockDir`, relative to `projectDir`. |
+| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
 
-`programs.nvimx.lock.*`:
+`lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module.
 
-| オプション | 型 | 既定値 | 説明 |
-| --- | --- | --- | --- |
-| `lock.installCommand` | `bool` | `true` | `nvimx-lock` コマンドを `home.packages` に追加する。 |
-| `lock.projectDir` | `nullOr str` | `null` | dotfiles リポジトリの作業ツリー。指定すると引数なしの `nvimx-lock` が `configDirRelative` / `lockDirRelative` を対象に実行される。 |
-| `lock.configDirRelative` | `str` | `"nvim"` | `projectDir` から見た `configDir` の相対パス。 |
-| `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | `projectDir` から見た `lockDir` の相対パス。 |
+## How it works
 
-## 仕組み
+Network access happens only while locking. `nvimx-lock` runs a headless Neovim that really evaluates
+your lazy spec, then persists the plugin list to `plugins.json` and the pins to `flake.lock`.
 
-lock 時 (`nvimx-lock`) にのみネットワークを使い、headless nvim がユーザーの
-lazy spec を実評価 → plugin 一覧を `plugins.json` に、pin を `flake.lock` に永続化する。
-build 時はそれらを読むだけの完全 pure 評価で、
-plugin ごとの derivation → linkFarm → bootstrap.lua 注入済み wrapped neovim を構築する。
+Builds merely read those files, so evaluation is fully pure — no network, no `--impure`. From them
+nvimx builds one derivation per plugin, collects them into a linkFarm, and wraps Neovim with a
+generated `bootstrap.lua` so lazy.nvim loads everything from the Nix store instead of running its
+own git/install pipeline. The same lock always yields the same result, no matter how often you
+switch.
 
-詳細は [docs/architecture.md](docs/architecture.md) を参照。
+See [docs/architecture.md](docs/architecture.md) for the full design.
 
-## 開発状況
+## Example
 
-実装フェーズ([docs/architecture.md](docs/architecture.md) 参照)のうち
-Phase 4(home-manager module + template)まで完了。以下は今後対応予定:
-
-- build 付き plugin(telescope-fzf-native 等)のフル対応、treesitter grammar 統合
-- `nvimx-lock --update [name...]` / semver 解決 / `--import-lazy-lock`
-- devPlugins(ローカル開発 plugin)、extraLuaPackages
+Author's dotfiles: [myuron/dotfiles](https://github.com/myuron/dotfiles/tree/main/home-manager/nvimx)
