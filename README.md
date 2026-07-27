@@ -111,6 +111,31 @@ programs.nvimx = {
 };
 ```
 
+### オプション一覧
+
+`programs.nvimx.*`:
+
+| オプション | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `enable` | `bool` | `false` | nvimx (nix x neovim manager) を有効化する。 |
+| `package` | `package` | `pkgs.neovim-unwrapped` | neovim 本体 (-unwrapped 系 derivation)。neovim-nightly-overlay のものなども指定可。 |
+| `configDir` | `nullOr path` | `null` | `init.lua` を含む lua config ディレクトリ。`manageConfig = true` のとき `xdg.configFile` で store から配備される。 |
+| `lockDir` | `path` | (必須) | `nvimx-lock` が生成した `plugins.json` / `flake.nix` / `flake.lock` の置き場所。未生成 (lock 不在) の場合は degrade ビルドになる。 |
+| `manageConfig` | `bool` | `true` | `true`: `configDir` を `xdg.configFile` で store から配備する (再現性重視、既定)。`false`: `~/.config/nvim` はユーザー管理 (高速イテレーション派)。 |
+| `vimAlias` | `bool` | `false` | `vim` コマンドで wrapped neovim を起動する symlink を追加する。 |
+| `viAlias` | `bool` | `false` | `vi` コマンドで wrapped neovim を起動する symlink を追加する。 |
+| `extraPackages` | `listOf package` | `[ ]` | wrapper の PATH に前置するパッケージ (ripgrep, lsp 等)。 |
+| `env` | `attrs` | (自動構築) | `makeEnv` の結果 (`farm` / `bootstrap` / `wrapped` / `hasLock`)。既定では上記オプションから自動構築される。上級者向けの直接指定口。 |
+
+`programs.nvimx.lock.*`:
+
+| オプション | 型 | 既定値 | 説明 |
+| --- | --- | --- | --- |
+| `lock.installCommand` | `bool` | `true` | `nvimx-lock` コマンドを `home.packages` に追加する。 |
+| `lock.projectDir` | `nullOr str` | `null` | dotfiles リポジトリの作業ツリー。指定すると引数なしの `nvimx-lock` が `configDirRelative` / `lockDirRelative` を対象に実行される。 |
+| `lock.configDirRelative` | `str` | `"nvim"` | `projectDir` から見た `configDir` の相対パス。 |
+| `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | `projectDir` から見た `lockDir` の相対パス。 |
+
 ## 仕組み
 
 lock 時 (`nvimx-lock`) にのみネットワークを使い、headless nvim がユーザーの
