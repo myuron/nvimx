@@ -1,0 +1,12 @@
+name: aarch64-darwin
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+    with:
+      runs-on: macos-latest
