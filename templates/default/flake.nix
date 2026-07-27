@@ -20,6 +20,7 @@
     {
       # TODO: ユーザー名・ホームディレクトリを自分のものに変更する
       homeConfigurations."myuser" = home-manager.lib.homeManagerConfiguration {
+        # macOS (Intel) の場合は "x86_64-darwin" に変更する
         pkgs = import nixpkgs { system = "x86_64-linux"; };
         modules = [
           nvimx.homeModules.nvimx
@@ -36,7 +37,7 @@
               # 引数なし `nvimx-lock` の対象 (dotfiles 作業ツリー)
               lock.projectDir = "~/dotfiles";
 
-              # neovim 本体の差し替え例:
+              # neovim 本体の差し替え例 (macOS は x86_64-darwin に読み替える):
               # package = inputs.neovim-nightly-overlay.packages.x86_64-linux.default;
 
               # extraPackages = [ pkgs.ripgrep ];

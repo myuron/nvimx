@@ -23,8 +23,20 @@
       home-manager,
     }:
     let
-      system = "x86_64-linux";
-      pkgs = import nixpkgs { inherit system; };
+      systems = [
+        "x86_64-linux"
+        "x86_64-darwin"
+      ];
+      forAllSystems = nixpkgs.lib.genAttrs systems;
+      pkgsFor = system: import nixpkgs { inherit system; };
+      nvimxLibFor =
+        system:
+        import ./nix/lib {
+          pkgs = pkgsFor system;
+          lazyNvimSeed = lazy-nvim;
+        };
+
+      # agent skills 関連は pkgs 非依存 (bundle のみ pkgs 依存なので apps 内で組む)
       agentLib = agent-skills.lib.agent-skills;
       sources = {
         anthropic = {
@@ -44,21 +56,20 @@
         inherit catalog allowlist sources;
         skills = { };
       };
-      bundle = agentLib.mkBundle { inherit pkgs selection; };
       localTargets = {
         claude = agentLib.defaultLocalTargets.claude // {
           enable = true;
         };
       };
-      nvimxLib = import ./nix/lib {
-        inherit pkgs;
-        lazyNvimSeed = lazy-nvim;
-      };
     in
     {
-      lib = nvimxLib // {
-        lazyNvimSeed = lazy-nvim;
-      };
+      lib = forAllSystems (
+        system:
+        (nvimxLibFor system)
+        // {
+          lazyNvimSeed = lazy-nvim;
+        }
+      );
 
       homeModules = rec {
         nvimx = import ./nix/home-manager { lazyNvimSeed = lazy-nvim; };
@@ -70,37 +81,53 @@
         description = "nvimx を組み込んだ home-manager dotfiles の雛形";
       };
 
-      packages.${system}.demo =
+      packages = forAllSystems (
+        system:
         let
-          env = nvimxLib.makeEnv {
-            package = pkgs.neovim-unwrapped;
-            lockDir = ./tests/fixtures/basic-config/nvimx-lock;
-          };
-          configDir = ./tests/fixtures/basic-config;
+          pkgs = pkgsFor system;
+          nvimxLib = nvimxLibFor system;
         in
-        pkgs.writeShellApplication {
-          name = "nvim";
-          text = ''
-            base="''${XDG_CACHE_HOME:-$HOME/.cache}/nvimx-demo"
-            mkdir -p "$base/config" "$base/data/nvim/lazy" "$base/state" "$base/cache"
-            ln -sfT ${configDir} "$base/config/nvim"
-            ln -sfT ${env.farm}/lazy.nvim "$base/data/nvim/lazy/lazy.nvim"
-            export XDG_CONFIG_HOME="$base/config"
-            export XDG_DATA_HOME="$base/data"
-            export XDG_STATE_HOME="$base/state"
-            export XDG_CACHE_HOME="$base/cache"
-            exec ${env.wrapped}/bin/nvim "$@"
-          '';
-        };
+        {
+          demo =
+            let
+              env = nvimxLib.makeEnv {
+                package = pkgs.neovim-unwrapped;
+                lockDir = ./tests/fixtures/basic-config/nvimx-lock;
+              };
+              configDir = ./tests/fixtures/basic-config;
+            in
+            pkgs.writeShellApplication {
+              name = "nvim";
+              text = ''
+                base="''${XDG_CACHE_HOME:-$HOME/.cache}/nvimx-demo"
+                mkdir -p "$base/config" "$base/data/nvim/lazy" "$base/state" "$base/cache"
+                ln -sfT ${configDir} "$base/config/nvim"
+                ln -sfT ${env.farm}/lazy.nvim "$base/data/nvim/lazy/lazy.nvim"
+                export XDG_CONFIG_HOME="$base/config"
+                export XDG_DATA_HOME="$base/data"
+                export XDG_STATE_HOME="$base/state"
+                export XDG_CACHE_HOME="$base/cache"
+                exec ${env.wrapped}/bin/nvim "$@"
+              '';
+            };
+        }
+      );
 
-      formatter.${system} = treefmt-nix.lib.mkWrapper pkgs {
-        projectRootFile = "flake.nix";
-        programs = {
-          nixfmt.enable = true;
-        };
-      };
-      checks.${system} =
+      formatter = forAllSystems (
+        system:
+        treefmt-nix.lib.mkWrapper (pkgsFor system) {
+          projectRootFile = "flake.nix";
+          programs = {
+            nixfmt.enable = true;
+          };
+        }
+      );
+
+      checks = forAllSystems (
+        system:
         let
+          pkgs = pkgsFor system;
+          nvimxLib = nvimxLibFor system;
           # fixture config で hm module を実際に評価・ビルドする
           mkHmCheck =
             nvimxConfig:
@@ -182,7 +209,11 @@
           extractor-no-setup =
             pkgs.runCommand "extractor-no-setup"
               {
-                nativeBuildInputs = [ pkgs.neovim-unwrapped ];
+                nativeBuildInputs = [
+                  pkgs.neovim-unwrapped
+                  # darwin sandbox で timeout / grep を確実に解決するため明示
+                  pkgs.coreutils
+                ];
               }
               ''
                 export HOME=$TMPDIR
@@ -208,22 +239,31 @@
                 grep -q 'did not call require("lazy").setup' stderr.log
                 touch $out
               '';
-        };
+        }
+      );
 
-      apps.${system} = {
-        lock = {
-          type = "app";
-          program = "${nvimxLib.lockApp}/bin/nvimx-lock";
-        };
-        skills-install = {
-          type = "app";
-          program = "${
-            agentLib.mkLocalInstallScript {
-              inherit pkgs bundle;
-              targets = localTargets;
-            }
-          }/bin/skills-install-local";
-        };
-      };
+      apps = forAllSystems (
+        system:
+        let
+          pkgs = pkgsFor system;
+          nvimxLib = nvimxLibFor system;
+          bundle = agentLib.mkBundle { inherit pkgs selection; };
+        in
+        {
+          lock = {
+            type = "app";
+            program = "${nvimxLib.lockApp}/bin/nvimx-lock";
+          };
+          skills-install = {
+            type = "app";
+            program = "${
+              agentLib.mkLocalInstallScript {
+                inherit pkgs bundle;
+                targets = localTargets;
+              }
+            }/bin/skills-install-local";
+          };
+        }
+      );
     };
 }

@@ -7,7 +7,15 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-13 は Intel (x86_64-darwin)。macos-14 以降は Apple Silicon
+        # (aarch64-darwin) で、現状 flake が対応しない system になるため不可。
+        os:
+          - ubuntu-latest
+          - macos-13
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
 
