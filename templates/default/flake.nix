@@ -18,11 +18,11 @@
       ...
     }:
     {
-      # TODO: ユーザー名・ホームディレクトリを自分のものに変更する
+      # TODO: change the username and home directory to your own
       homeConfigurations."myuser" = home-manager.lib.homeManagerConfiguration {
-        # macOS (Apple Silicon) の場合は "aarch64-darwin" に変更する。
-        # Intel Mac ("x86_64-darwin") は nixpkgs 26.11 でサポート打ち切りのため
-        # nvimx の対応対象外。
+        # On macOS (Apple Silicon), change this to "aarch64-darwin".
+        # Intel Mac ("x86_64-darwin") is not supported by nvimx because
+        # nixpkgs 26.11 dropped support for it.
         pkgs = import nixpkgs { system = "x86_64-linux"; };
         modules = [
           nvimx.homeModules.nvimx
@@ -36,15 +36,15 @@
               configDir = ./nvim;
               lockDir = ./nvim/nvimx-lock;
 
-              # 引数なし `nvimx-lock` の対象 (dotfiles 作業ツリー)
+              # What a bare `nvimx-lock` targets (the dotfiles working tree)
               lock.projectDir = "~/dotfiles";
 
-              # neovim 本体の差し替え例 (macOS では system 名を読み替える):
+              # Example of swapping out neovim itself (substitute your system name on macOS):
               # package = inputs.neovim-nightly-overlay.packages.x86_64-linux.default;
 
               # extraPackages = [ pkgs.ripgrep ];
 
-              # vimAlias = true;  # `vim` でも起動したい場合
+              # vimAlias = true;  # if you also want to launch it with `vim`
             };
           }
         ];

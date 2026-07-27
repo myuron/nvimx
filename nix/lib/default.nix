@@ -1,4 +1,4 @@
-# nvimx lib エントリ
+# nvimx lib entry point
 { pkgs, lazyNvimSeed }:
 {
   makeEnv = import ./make-env.nix { inherit pkgs lazyNvimSeed; };

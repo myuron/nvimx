@@ -1,4 +1,4 @@
-# ユーザー選択の neovim (unwrapped 系) を wrapProgram し、bootstrap.lua を注入する
+# wrapProgram the user-selected neovim (an unwrapped style package) and inject bootstrap.lua
 { pkgs }:
 {
   package,

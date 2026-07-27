@@ -1,12 +1,12 @@
--- nvimx runtime bootstrap (wrapper の --cmd luafile で注入される)
--- ユーザーの lua は無修正。require("lazy") を preload で横取りし、
--- 強制 opts をマージした setup に差し替える。
+-- nvimx runtime bootstrap (injected via the wrapper's --cmd luafile)
+-- The user's lua stays unmodified. require("lazy") is intercepted via preload and
+-- replaced with a setup that merges in the forced opts.
 local farm = "@farm@"
 
 vim.opt.rtp:prepend(farm .. "/lazy.nvim")
 
 package.preload["lazy"] = function()
-  -- 自己解除してから本物の lazy を require する
+  -- Unregister ourselves first, then require the real lazy
   package.preload["lazy"] = nil
   package.loaded["lazy"] = nil
   local lazy = require("lazy")
@@ -18,10 +18,10 @@ package.preload["lazy"] = function()
     pkg = { enabled = false },
     rocks = { enabled = false, hererocks = false },
     readme = { enabled = false },
-    -- 全 plugin を farm 配下の is_local 扱いにし、lazy の git/install パイプラインを
-    -- 完全にスキップさせる (store から読むだけ)
+    -- Treat every plugin as is_local under the farm so that lazy's git/install
+    -- pipeline is skipped entirely (we only read from the store)
     dev = {
-      -- TODO (Phase 7): devPlugins / devPath を考慮した関数にする
+      -- TODO (Phase 7): make this a function that accounts for devPlugins / devPath
       path = farm,
       patterns = { "" },
       fallback = false,
@@ -31,7 +31,7 @@ package.preload["lazy"] = function()
   local setup = lazy.setup
   ---@diagnostic disable-next-line: duplicate-set-field
   lazy.setup = function(spec, opts)
-    -- setup(opts) 形式 (spec が opts.spec に入る) にも対応
+    -- Also handle the setup(opts) form, where the spec lives in opts.spec
     if type(spec) == "table" and spec.spec ~= nil and not vim.islist(spec) then
       return setup(vim.tbl_deep_extend("force", spec, forced))
     end

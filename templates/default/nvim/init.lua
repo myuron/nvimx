@@ -1,6 +1,6 @@
--- 標準的な lazy.nvim bootstrap snippet をそのまま使える。
--- nvimx 環境では stdpath("data")/lazy/lazy.nvim が /nix/store の farm への
--- symlink になるため、git clone は走らない。
+-- The standard lazy.nvim bootstrap snippet works as-is.
+-- Under nvimx, stdpath("data")/lazy/lazy.nvim is a symlink into the farm in
+-- /nix/store, so the git clone never runs.
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not (vim.uv or vim.loop).fs_stat(lazypath) then
   local lazyrepo = "https://github.com/folke/lazy.nvim.git"

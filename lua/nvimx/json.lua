@@ -1,9 +1,9 @@
--- 決定的 JSON エンコーダ (キーをソートし 2-space indent で pretty-print)。
--- lock 成果物 (plugins.json) は git にコミットされる唯一の真実なので、
--- vim.json.encode のテーブル走査順に依存しない安定した出力が必要。
+-- Deterministic JSON encoder (sorts keys and pretty-prints with a 2-space indent).
+-- The lock artifact (plugins.json) is the single source of truth committed to git,
+-- so it needs stable output that does not depend on vim.json.encode's table traversal order.
 local M = {}
 
--- 空テーブルの array / object 判別のためのマーカー
+-- Marker used to tell arrays from objects for empty tables
 function M.array(t)
   return setmetatable(t or {}, { __jsontype = "array" })
 end

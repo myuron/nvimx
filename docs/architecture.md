@@ -1,34 +1,34 @@
-# nvimx アーキテクチャ設計
+# nvimx architecture
 
-## 概要
+## Overview
 
-nvimx は「neovim の Lua の柔軟性 × nix の再現性」を両立する nix x neovim manager。
+nvimx is a nix x neovim manager that combines "the flexibility of neovim's Lua" with "the reproducibility of nix".
 
-- home-manager module を提供し、ユーザーの dotfiles に組み込める
-- lazy.nvim 形式の lua を解析し、必要な plugin を取得し flake.lock に pin する
-- neovim 本体は nixpkgs / neovim-nightly-overlay をユーザーが自由に選択できる
+- Provides a home-manager module that can be embedded in the user's dotfiles
+- Parses lazy.nvim-style lua, fetches the required plugins, and pins them in flake.lock
+- Lets the user freely choose neovim itself from nixpkgs or neovim-nightly-overlay
 
-モデルは **twist.nix 型**: lua を解析 → GitHub から plugin 取得 → /nix/store 配置 → symlink。
-lock 情報は nvimx 専用の flake.nix を自動生成し flake.lock で pin する。
-`nix run .#lock` で再評価・更新し、home-manager build は flake.lock から pure に評価する。
+The model is **twist.nix style**: parse lua → fetch plugins from GitHub → place in /nix/store → symlink.
+Lock information is stored by auto-generating an nvimx-specific flake.nix and pinning it with flake.lock.
+`nix run .#lock` re-evaluates and updates it, and the home-manager build evaluates purely from flake.lock.
 
-### 確定済みの設計判断
+### Settled design decisions
 
-1. **解析**: `nix run .#lock` 実行時に headless nvim がユーザーの lazy spec を実評価(評価時 IFD なし)
-2. **ランタイム**: lazy.nvim をそのまま使用。ユーザーの lua は無修正で動く
-3. **build 付き plugin** (telescope-fzf-native 等): 初期からフル対応
+1. **Parsing**: when `nix run .#lock` runs, a headless nvim actually evaluates the user's lazy spec (no IFD at evaluation time)
+2. **Runtime**: lazy.nvim is used as-is. The user's lua runs unmodified
+3. **Plugins with a build step** (telescope-fzf-native, etc.): fully supported from the start
 
-## アーキテクチャ図
+## Architecture diagrams
 
-### 全体像
+### Big picture
 
 ```mermaid
 flowchart TB
-    subgraph dotfiles["ユーザーの dotfiles リポジトリ"]
-        config["configDir (./nvim)<br/>init.lua + lazy.nvim 形式の spec"]
+    subgraph dotfiles["The user's dotfiles repository"]
+        config["configDir (./nvim)<br/>init.lua + lazy.nvim-style spec"]
         subgraph lockdir["lockDir (./nvim/nvimx-lock)"]
-            pjson["plugins.json<br/>(plugin 名 → source/ref/build)"]
-            lflake["flake.nix (自動生成)<br/>inputs.&lt;plugin&gt; = {url, flake=false}"]
+            pjson["plugins.json<br/>(plugin name → source/ref/build)"]
+            lflake["flake.nix (auto-generated)<br/>inputs.&lt;plugin&gt; = {url, flake=false}"]
             llock["flake.lock<br/>(pin DB)"]
         end
     end
@@ -38,24 +38,24 @@ flowchart TB
         hm["homeModules.nvimx<br/>(programs.nvimx.*)"]
         lockapp["lock app (nvimx-lock)"]
         extractor["lua/nvimx/<br/>extract.lua / resolve.lua / genflake.lua"]
-        seed["input: lazy-nvim (シード)"]
+        seed["input: lazy-nvim (seed)"]
     end
 
     subgraph store["/nix/store"]
         srcs["plugin sources<br/>(fetchTree)"]
         drvs["plugin derivations<br/>(cp + helptags / build)"]
-        farm["linkFarm nvimx-plugins<br/>(名前 = lazy 導出名)"]
+        farm["linkFarm nvimx-plugins<br/>(name = lazy-derived name)"]
         boot["bootstrap.lua"]
         wrapped["wrapped neovim<br/>(--cmd luafile bootstrap.lua)"]
     end
 
-    config -- "① nvimx-lock:<br/>headless nvim で spec 実評価" --> lockapp
-    lockapp -- "② 生成" --> pjson
-    lockapp -- "③ 生成 + nix flake lock" --> lflake
+    config -- "(1) nvimx-lock:<br/>evaluate spec in headless nvim" --> lockapp
+    lockapp -- "(2) generate" --> pjson
+    lockapp -- "(3) generate + nix flake lock" --> lflake
     lflake --> llock
 
-    pjson -- "④ fromJSON (pure)" --> lib
-    llock -- "⑤ nodes.*.locked → fetchTree" --> srcs
+    pjson -- "(4) fromJSON (pure)" --> lib
+    llock -- "(5) nodes.*.locked → fetchTree" --> srcs
     hm --> lib
     srcs --> drvs
     drvs --> farm
@@ -64,225 +64,225 @@ flowchart TB
     farm --> boot
     boot --> wrapped
 
-    wrapped -- "home-manager switch で配備" --> runtime["実行時: ユーザー lua 無修正<br/>require('lazy') → preload shim<br/>dev.path = farm で全 plugin is_local"]
+    wrapped -- "deployed by home-manager switch" --> runtime["runtime: user lua unmodified<br/>require('lazy') → preload shim<br/>dev.path = farm makes every plugin is_local"]
     extractor -.-> lockapp
-    seed -. "初回のみ抽出に使用" .-> lockapp
+    seed -. "used for extraction only on the first run" .-> lockapp
 ```
 
-### lock フロー(`nvimx-lock`)
+### Lock flow (`nvimx-lock`)
 
 ```mermaid
 sequenceDiagram
-    participant U as ユーザー
+    participant U as User
     participant L as nvimx-lock
-    participant N as nvim --headless<br/>(XDG サンドボックス)
+    participant N as nvim --headless<br/>(XDG sandbox)
     participant G as git ls-remote
     participant F as nix flake lock
 
     U->>L: nvimx-lock [--update] [--import-lazy-lock]
-    L->>N: extract.lua を --cmd で注入し init.lua 実行
-    Note over N: package.preload["lazy"] で<br/>setup(spec, opts) を横取り捕捉<br/>→ Spec.new で正規化(import/deps 展開)
+    L->>N: inject extract.lua with --cmd and run init.lua
+    Note over N: intercept setup(spec, opts)<br/>via package.preload["lazy"]<br/>→ normalize with Spec.new (expand import/deps)
     N-->>L: raw-spec.json
-    L->>G: version (semver) 指定の plugin の tag 一覧
+    L->>G: list tags for plugins with a version (semver) constraint
     G-->>L: tags
-    Note over L: resolve.lua: lazy.manage.semver で解決<br/>lock モード: 既存 pin 維持 + 新規のみ
+    Note over L: resolve.lua: resolve with lazy.manage.semver<br/>lock mode: keep existing pins, resolve new ones only
     L->>L: genflake.lua: plugins.json → flake.nix + nixfmt
     L->>F: cd lockDir && nix flake lock
-    F-->>L: flake.lock 更新(新規のみ fetch)
+    F-->>L: flake.lock updated (fetch new inputs only)
     L-->>U: plugins.json / flake.nix / flake.lock<br/>→ git add & commit
 ```
 
-### build フロー(`home-manager switch`、完全 pure)
+### Build flow (`home-manager switch`, fully pure)
 
 ```mermaid
 flowchart LR
-    A["plugins.json<br/>+ flake.lock"] -- "builtins.fromJSON" --> B["locked 情報"]
-    B -- "builtins.fetchTree" --> C["plugin src 群"]
-    C --> D{"derivation 解決"}
-    D -- "1. overrides" --> E["ユーザー定義 drv"]
-    D -- "2. build-registry" --> F["nixpkgs レシピ<br/>src 差し替え"]
-    D -- "3. nixpkgsFallback" --> G["nixpkgs 版そのまま"]
-    D -- "4. デフォルト" --> H["cp + helptags<br/>(shell build は buildPhase 実行)"]
+    A["plugins.json<br/>+ flake.lock"] -- "builtins.fromJSON" --> B["locked info"]
+    B -- "builtins.fetchTree" --> C["plugin sources"]
+    C --> D{"derivation resolution"}
+    D -- "1. overrides" --> E["user-defined drv"]
+    D -- "2. build-registry" --> F["nixpkgs recipe<br/>with src replaced"]
+    D -- "3. nixpkgsFallback" --> G["nixpkgs version as-is"]
+    D -- "4. default" --> H["cp + helptags<br/>(shell build runs buildPhase)"]
     E & F & G & H --> I["linkFarm<br/>nvimx-plugins"]
-    I --> J["bootstrap.lua<br/>(farm パス埋め込み)"]
+    I --> J["bootstrap.lua<br/>(farm path embedded)"]
     J --> K["wrapProgram neovim<br/>--cmd luafile"]
-    K --> M["home.packages 配備"]
+    K --> M["deployed via home.packages"]
 ```
 
-## 設計原則
+## Design principles
 
-1. **lock 成果物 = コミットされた `plugins.json` + `flake.lock` が唯一の真実**。
-   build 時は JSON を `builtins.fromJSON` で読むだけの完全 pure 評価。
-   twist.nix が必要とする初回 `--impure` は原理的に不要(eval 時に解決すべき未知情報が存在しない)。
-2. **spec 正規化は lazy.nvim 自身にやらせる**。
-   lazy の `Spec` が導出した plugin 名をそのまま symlink farm のディレクトリ名に使う → nix 側ディレクトリ名と lazy の plugin 名の一致が構成上保証される(突き合わせロジックを自作しない)。
-3. **lock パイプラインは `nvim -l` (Lua) に統一**。
-   lazy.nvim 同梱の semver モジュール (`lazy.manage.semver`) を再利用し、version 解決セマンティクスが lazy と完全に同一になる。
-4. **ランタイム注入は wrapper `--cmd luafile` + `package.preload["lazy"]` のみ**。
-   ユーザーの lua は無修正。
+1. **The lock artifacts — the committed `plugins.json` + `flake.lock` — are the single source of truth**.
+   At build time the JSON is simply read with `builtins.fromJSON`, so evaluation is fully pure.
+   The initial `--impure` that twist.nix requires is unnecessary in principle (there is no unknown information left to resolve at evaluation time).
+2. **Let lazy.nvim itself normalize the spec**.
+   The plugin names derived by lazy's `Spec` are used verbatim as directory names in the symlink farm → the nix-side directory names and lazy's plugin names are guaranteed to match by construction (no hand-rolled reconciliation logic).
+3. **The lock pipeline is unified on `nvim -l` (Lua)**.
+   Reusing the semver module bundled with lazy.nvim (`lazy.manage.semver`) makes the version resolution semantics identical to lazy's.
+4. **Runtime injection is limited to the wrapper's `--cmd luafile` + `package.preload["lazy"]`**.
+   The user's lua stays unmodified.
 
-## データフロー
+## Data flow
 
-### lock 時 (`nvimx-lock` / `nix run .#lock`)
+### At lock time (`nvimx-lock` / `nix run .#lock`)
 
 ```
-[1] 抽出用 lazy.nvim を選択:
-      ユーザーの lock に lazy.nvim があればそれ(locked store path)
-      なければ nvimx 自身の flake input のシード(鶏卵問題の解消)
-[2] 抽出: XDG_{CONFIG,DATA,STATE,CACHE}_HOME をサンドボックス化し
+[1] Select the lazy.nvim used for extraction:
+      the one in the user's lock if present (locked store path)
+      otherwise the seed from nvimx's own flake input (resolves the chicken-and-egg problem)
+[2] Extraction: sandbox XDG_{CONFIG,DATA,STATE,CACHE}_HOME and run
       nvim --headless --cmd "luafile extract.lua"
-      - package.preload["lazy"] で setup(spec, opts) を横取り捕捉(本物の setup は呼ばない)
-      - Config.setup(安全 opts をマージ) → Spec.new(spec, {pkg=false}) で正規化
-        (import 再帰解決・fragment マージ・dependencies 展開まで lazy 自身のロジック)
+      - intercept setup(spec, opts) via package.preload["lazy"] (the real setup is never called)
+      - Config.setup (merging safe opts) → Spec.new(spec, {pkg=false}) to normalize
+        (recursive import resolution, fragment merging, dependency expansion — all lazy's own logic)
       → raw-spec.json
-[3] 解決: nvim -l resolve.lua
-      - version (semver range) を git ls-remote --tags + lazy.manage.semver で解決
-      - lock モード: 既存 pin 維持 + 新規のみ解決 / update モード: 全再解決
+[3] Resolution: nvim -l resolve.lua
+      - resolve version (semver range) with git ls-remote --tags + lazy.manage.semver
+      - lock mode: keep existing pins, resolve new ones only / update mode: re-resolve everything
       → plugins.json
-[4] 生成: nvim -l genflake.lua
+[4] Generation: nvim -l genflake.lua
       → lockDir/flake.nix (inputs.<name> = { url = ...; flake = false; }, outputs = _: {})
-      → nixfmt で整形
-[5] lockDir に配置し (cd lockDir && nix flake lock)
-      → flake.lock 生成/更新(lock モードでは既存 node は不変、新規のみ fetch)
+      → formatted with nixfmt
+[5] Place it in lockDir and run (cd lockDir && nix flake lock)
+      → generate/update flake.lock (in lock mode existing nodes stay untouched, only new ones are fetched)
 ```
 
-### build 時 (`home-manager switch`) — 完全 pure、ネットワーク不要
+### At build time (`home-manager switch`) — fully pure, no network required
 
 ```
-[1] lockDir/plugins.json + flake.lock を builtins.fromJSON で読む
-      ※ lock flake は flake として評価しない。flake.lock は単なる pin DB
+[1] Read lockDir/plugins.json + flake.lock with builtins.fromJSON
+      NOTE: the lock flake is never evaluated as a flake. flake.lock is just a pin DB
 [2] nodes.<inputName>.locked → builtins.fetchTree → src
-[3] plugin derivation 化: overrides > build-registry > デフォルト(cp + helptags)
-[4] linkFarm "nvimx-plugins" [ { name = <lazy 導出名>; path = drv; } ... ]
-[5] bootstrap.lua 生成(farm パス・強制 opts を埋め込み)
-      → neovim (ユーザー選択 package) を wrapProgram --cmd 'luafile <bootstrap.lua>'
-[6] hm 配備:
+[3] Turn plugins into derivations: overrides > build-registry > default (cp + helptags)
+[4] linkFarm "nvimx-plugins" [ { name = <lazy-derived name>; path = drv; } ... ]
+[5] Generate bootstrap.lua (embedding the farm path and the forced opts)
+      → wrapProgram neovim (the user-selected package) with --cmd 'luafile <bootstrap.lua>'
+[6] hm deployment:
       home.packages = [ wrapped-nvim, nvimx-lock ]
-      xdg.configFile."nvim" = configDir            (manageConfig = true 時)
+      xdg.configFile."nvim" = configDir            (when manageConfig = true)
       xdg.dataFile."nvim/lazy/lazy.nvim" → farm/lazy.nvim
-        (既存 bootstrap snippet の git clone を無害化)
+        (neutralizes the git clone in the user's existing bootstrap snippet)
 ```
 
-実行時: ユーザーの init.lua がそのまま走り、`require("lazy")` は preload 経由で強制 opts がマージされた setup になる。全 plugin が `dev.path = farm, patterns = {""}, fallback = false` で `is_local` 扱い → lazy の git/install パイプラインを完全スキップし、store から読み込む。
+At runtime the user's init.lua runs as-is, and `require("lazy")` goes through the preload shim so that `setup` receives the merged forced opts. Every plugin is treated as `is_local` via `dev.path = farm, patterns = {""}, fallback = false` → lazy's git/install pipeline is skipped entirely and everything is loaded from the store.
 
-## 主要コンポーネント
+## Main components
 
-### plugins.json スキーマ
+### plugins.json schema
 
 ```jsonc
 {
   "schemaVersion": 1,
-  "lazyNvim": { "inputName": "lazy-nvim", "synthetic": true },  // 常に存在
+  "lazyNvim": { "inputName": "lazy-nvim", "synthetic": true },  // always present
   "plugins": {
-    "telescope.nvim": {                     // キー = lazy が導出した plugin 名 (= farm dir 名)
-      "inputName": "telescope-nvim",        // flake input 名 ([^A-Za-z0-9_-] → "-")
+    "telescope.nvim": {                     // key = plugin name derived by lazy (= farm dir name)
+      "inputName": "telescope-nvim",        // flake input name ([^A-Za-z0-9_-] → "-")
       "source": { "type": "github", "owner": "nvim-telescope", "repo": "telescope.nvim" },
       "branch": null, "tag": null, "commit": null,
-      "version": "^0.1",                    // 元の semver 制約(情報保持)
-      "resolvedRef": "refs/tags/0.1.8",     // lock 時に解決した ref (null = default branch)
+      "version": "^0.1",                    // the original semver constraint (kept for reference)
+      "resolvedRef": "refs/tags/0.1.8",     // the ref resolved at lock time (null = default branch)
       "build": { "kind": "none" }           // "none" | "shell" | "excmd" | "function"
     }
   },
-  "localPlugins": { "myplugin": { "dir": "~/projects/myplugin" } },  // dir 指定。lock 対象外
+  "localPlugins": { "myplugin": { "dir": "~/projects/myplugin" } },  // dir-specified. not locked
   "warnings": [ "..." ]
 }
 ```
 
-- `enabled = false` リテラルの plugin は除外。関数 / `cond` 付きは**包含**(マシン依存分岐のスーパーセットを lock)
-- `lazyNvim` エントリ常設: 2 回目以降の抽出・ランタイムは同一の locked lazy.nvim を使い、名前導出規則のバージョン skew を防ぐ
+- Plugins with a literal `enabled = false` are excluded. Those with a function or `cond` are **included** (a superset of the machine-dependent branches is locked)
+- The `lazyNvim` entry is always present: extraction and runtime from the second run onward use the same locked lazy.nvim, preventing version skew in the name derivation rules
 
-### lazy spec → flake input URL マッピング
+### lazy spec → flake input URL mapping
 
-| lazy 指定 | flake input URL | `nix flake update` の挙動 |
+| lazy spec | flake input URL | behavior of `nix flake update` |
 |---|---|---|
-| 指定なし | `github:owner/repo` | default branch HEAD に追従 |
-| `branch = "b"` | `github:owner/repo/b` | branch HEAD に追従 |
-| `tag = "t"` | `github:owner/repo/refs/tags/t` | 不動 |
-| `commit = "sha"` | `github:owner/repo/<sha>` | 不動 |
-| `version = "^1.2"` | 解決した tag で `refs/tags/vX.Y.Z` | 不動(`--update` で再解決) |
-| `pin = true` | 現 lock の rev を凍結 | 不動 |
-| git URL 直指定 | `git+https://...?ref=...`(github.com は github 型に正規化) | ref に追従 |
+| unspecified | `github:owner/repo` | follows the default branch HEAD |
+| `branch = "b"` | `github:owner/repo/b` | follows the branch HEAD |
+| `tag = "t"` | `github:owner/repo/refs/tags/t` | frozen |
+| `commit = "sha"` | `github:owner/repo/<sha>` | frozen |
+| `version = "^1.2"` | `refs/tags/vX.Y.Z` for the resolved tag | frozen (re-resolved with `--update`) |
+| `pin = true` | freezes the current lock's rev | frozen |
+| explicit git URL | `git+https://...?ref=...` (github.com is normalized to the github type) | follows the ref |
 
-**semver 解決**: `git ls-remote --tags`(peeled `^{}` 優先)で tag 一覧を取得し、lazy 同梱の `lazy.manage.semver` を `nvim -l` から呼ぶ。GitHub API は使わない(レート制限・非 GitHub 対応のため)。
+**semver resolution**: the tag list is obtained with `git ls-remote --tags` (preferring peeled `^{}`) and lazy's bundled `lazy.manage.semver` is called from `nvim -l`. The GitHub API is not used (rate limits, and non-GitHub support).
 
-### 更新セマンティクス
+### Update semantics
 
-- `nvimx-lock`: 新規 plugin の追加 + 除去された plugin の削除のみ。既存 pin は不変
-- `nvimx-lock --update [name...]`: version 制約の再解決 + `nix flake update [name...]`
-- 裏口: lockDir で素の `nix flake update <inputName>` も可(twist と同じ)
-- `nvimx-lock --import-lazy-lock <path>`: 既存 lazy-lock.json の `{branch, commit}` で初回 pin し bit-identical 移行。`--update` 時点で通常追従に復帰
+- `nvimx-lock`: only adds new plugins and removes deleted ones. Existing pins stay untouched
+- `nvimx-lock --update [name...]`: re-resolves version constraints + `nix flake update [name...]`
+- Back door: plain `nix flake update <inputName>` in lockDir also works (same as twist)
+- `nvimx-lock --import-lazy-lock <path>`: pins from an existing lazy-lock.json's `{branch, commit}` on the first run for a bit-identical migration. Returns to normal tracking at `--update` time
 
-### plugin derivation(1 plugin = 1 derivation)
+### Plugin derivations (1 plugin = 1 derivation)
 
-fetchTree 結果の直接使用は不採用: helptags が生成されず `:h` が死ぬ、build 統合が不可能。
+Using the fetchTree result directly was rejected: helptags are not generated so `:h` breaks, and build integration becomes impossible.
 
-- **デフォルト**: `runCommand` で `cp -r src $out` + `doc/` があれば helptags 生成。
-  `vimUtils.buildVimPlugin` は require チェックの偽陽性が多くデフォルトでは使わない
-- **build 解決順序**:
-  1. ユーザー `plugins.overrides."<lazy名>" = { pkgs, src, defaultDrv }: drv;`
-  2. 組み込み registry (`nix/build-registry/`): **nixpkgs vimPlugins レシピの src 差し替え**
-     (`overrideAttrs (o: { src = <locked src>; })`)で pin セマンティクスを保ったまま nixpkgs のビルドノウハウを再利用
-  3. `plugins.nixpkgsFallback = [ "..." ]`(opt-in): nixpkgs 版をそのまま使用(pin 一貫性が崩れるため自動 name-match はしない)
-  4. `build.kind == "shell"` はデフォルト buildPhase で実行(ネットワーク不要な make/cmake 系はこれで動く)。
-     `excmd`/`function` は 1〜3 が無ければ eval 時 warning(helptags のみで続行)
-- **nvim-treesitter**: 本体(src 差し替え)+ nixpkgs の grammar 群を **symlinkJoin で単一 derivation にマージ**(farm 1 エントリで完結。別 rtp エントリは `performance.rtp.reset` と干渉するため不採用)。
-  `treesitter.grammars = "all" | [ names ] | null`。grammar rev と本体 rev の微差は既知の制限(将来: locked src の lockfile から grammar を直接ビルドする厳密モード)
+- **Default**: `runCommand` doing `cp -r src $out` + generating helptags if `doc/` exists.
+  `vimUtils.buildVimPlugin` produces too many false positives in its require check, so it is not used by default
+- **Build resolution order**:
+  1. The user's `plugins.overrides."<lazy name>" = { pkgs, src, defaultDrv }: drv;`
+  2. Built-in registry (`nix/build-registry/`): **replace the src of a nixpkgs vimPlugins recipe**
+     (`overrideAttrs (o: { src = <locked src>; })`), reusing nixpkgs' build know-how while preserving the pin semantics
+  3. `plugins.nixpkgsFallback = [ "..." ]` (opt-in): use the nixpkgs version as-is (automatic name matching is not done because it would break pin consistency)
+  4. `build.kind == "shell"` runs in the default buildPhase (make/cmake-style builds that need no network work this way).
+     For `excmd`/`function`, if none of 1–3 apply a warning is emitted at evaluation time (it continues with helptags only)
+- **nvim-treesitter**: the plugin itself (src replaced) plus nixpkgs' grammars are **merged into a single derivation with symlinkJoin** (self-contained in a single farm entry; a separate rtp entry was rejected because it conflicts with `performance.rtp.reset`).
+  `treesitter.grammars = "all" | [ names ] | null`. The slight mismatch between the grammar revs and the plugin rev is a known limitation (future work: a strict mode that builds grammars directly from the locked src's lockfile)
 
-### ランタイム注入(bootstrap.lua)
+### Runtime injection (bootstrap.lua)
 
 1. `vim.opt.rtp:prepend(farm .. "/lazy.nvim")`
-2. `package.preload["lazy"]` を登録: 初回 require 時に自己解除 → 本物を require → `setup` を monkeypatch(`setup(spec, opts)` / `setup(opts)` 両対応)→ forced opts を `vim.tbl_deep_extend("force", ...)`
-3. forced opts: `install.missing=false`, `checker.enabled=false`, `change_detection.enabled=false`, `pkg.enabled=false`, `rocks.enabled=false`, `readme.enabled=false`, `dev = { path = <関数>, patterns = {""}, fallback = false }`
-4. **dev.path は関数**: `devPlugins` に含まれる名前は `devPath`(例 `~/projects`)、それ以外は farm を返す → ユーザー自身の plugin ローカル開発 (dev=true) ワークフローを潰さない
-5. `xdg.dataFile."<app>/lazy/lazy.nvim"` → farm への symlink で、ユーザーの標準 bootstrap snippet の `fs_stat` が成功し git clone が走らない
+2. Register `package.preload["lazy"]`: on the first require it unregisters itself → requires the real module → monkeypatches `setup` (handling both `setup(spec, opts)` and `setup(opts)`) → merges the forced opts with `vim.tbl_deep_extend("force", ...)`
+3. Forced opts: `install.missing=false`, `checker.enabled=false`, `change_detection.enabled=false`, `pkg.enabled=false`, `rocks.enabled=false`, `readme.enabled=false`, `dev = { path = <function>, patterns = {""}, fallback = false }`
+4. **dev.path is a function**: names listed in `devPlugins` return `devPath` (e.g. `~/projects`), everything else returns the farm → this keeps the user's own local plugin development (dev=true) workflow intact
+5. `xdg.dataFile."<app>/lazy/lazy.nvim"` symlinks to the farm so that the `fs_stat` in the user's standard bootstrap snippet succeeds and no git clone runs
 
-読み取り専用 store との整合性: `dir` が lazy root 配下でない plugin は `is_local = true` となり、clone/fetch/checkout/status 等の git タスクと install パイプラインが全てスキップされる(lazy.nvim の実装で保証)。
+Consistency with the read-only store: a plugin whose `dir` is not under the lazy root becomes `is_local = true`, which makes lazy skip all git tasks (clone/fetch/checkout/status, etc.) and the whole install pipeline (guaranteed by lazy.nvim's implementation).
 
-## home-manager module インターフェース
+## home-manager module interface
 
-module が `lib.makeEnv` を内包する(twist と意図的に乖離: twist は複数 profile 配布用途だが、nvimx の主用途は「dotfiles に 1 つの nvim」であり設定 1 箇所の UX が勝る)。上級者向けに `programs.nvimx.env` の直接指定も許す。
+The module embeds `lib.makeEnv` (a deliberate divergence from twist: twist targets distributing multiple profiles, whereas nvimx's main use case is "one nvim in your dotfiles", where the UX of configuring things in a single place wins). Advanced users may still specify `programs.nvimx.env` directly.
 
 ```nix
 programs.nvimx = {
   enable = true;
 
-  # neovim 本体の選択: -unwrapped 系 drv を渡すだけ
+  # Choosing neovim itself: just pass an -unwrapped style drv
   package = pkgs.neovim-unwrapped;
   # package = inputs.neovim-nightly-overlay.packages.${pkgs.system}.default;
 
-  configDir = ./nvim;              # lua config (path 型 → store へ)
+  configDir = ./nvim;              # lua config (path type → goes to the store)
   lockDir   = ./nvim/nvimx-lock;   # plugins.json / flake.nix / flake.lock
 
-  manageConfig = true;             # true: xdg.configFile で store 配備(再現性重視、既定)
-                                   # false: ~/.config/nvim はユーザー管理(高速イテレーション派)
+  manageConfig = true;             # true: deploy from the store via xdg.configFile (reproducibility-first, default)
+                                   # false: ~/.config/nvim is user-managed (for fast iteration)
 
   plugins = {
-    overrides = { };               # per-plugin derivation 上書き
-    nixpkgsFallback = [ ];         # nixpkgs 版をそのまま使う plugin 名 (opt-in)
+    overrides = { };               # per-plugin derivation overrides
+    nixpkgsFallback = [ ];         # plugin names to take from nixpkgs as-is (opt-in)
   };
   treesitter.grammars = "all";     # "all" | [ names ] | null
 
-  devPlugins = [ ];                # ローカル開発中 plugin 名
+  devPlugins = [ ];                # names of plugins under local development
   devPath = "~/projects";
 
-  extraPackages = [ ];             # wrapper PATH 前置 (ripgrep, lsp 等)
-  extraLuaPackages = ps: [ ];      # luarocks 依存の手動供給 (escape hatch)
+  extraPackages = [ ];             # prepended to the wrapper's PATH (ripgrep, lsp, etc.)
+  extraLuaPackages = ps: [ ];      # manual luarocks dependencies (escape hatch)
 
   lock = {
-    installCommand = true;         # nvimx-lock を home.packages に追加
+    installCommand = true;         # add nvimx-lock to home.packages
     projectDir = "~/dotfiles";
     lockDirRelative = "nvim/nvimx-lock";
   };
 };
 ```
 
-**lock 不在時は degrade ビルド**(farm = lazy.nvim シードのみ + activation 時警告)。
-lock コマンド自体が hm build 産物のため、eval を失敗させると鶏卵になる。degrade モードでも `nvimx-lock` は PATH に入るので、`nvimx-lock` → commit → `home-manager switch` で完全状態に到達できる。`--impure` は一切不要。
+**When the lock is absent, the build degrades** (farm = the lazy.nvim seed only + a warning at activation time).
+Since the lock command itself is a product of the hm build, failing evaluation would create a chicken-and-egg problem. Even in degraded mode `nvimx-lock` lands on PATH, so `nvimx-lock` → commit → `home-manager switch` reaches the complete state. `--impure` is never needed.
 
-## ユーザーから見た使用フロー
+## Usage flow from the user's perspective
 
 ```nix
-# dotfiles の flake.nix
+# flake.nix of your dotfiles
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
@@ -307,37 +307,37 @@ lock コマンド自体が hm build 産物のため、eval を失敗させると
 }
 ```
 
-- **初回**: `nix run github:myuron/nvimx#lock -- --config ./nvim --out ./nvim/nvimx-lock`
-  (既存 lazy 環境からは `--import-lazy-lock ~/.config/nvim/lazy-lock.json` 併用)
-  → `git add` → `home-manager switch`。先に switch(degrade)→ `nvimx-lock` の順でも可
-- **plugin 追加**: lua に spec を書く → `git add` → `nvimx-lock`(新規のみ fetch)→ commit → switch。
-  lock 忘れで switch しても nvim は起動し、当該 plugin のみ not installed 表示(安全な失敗)
-- **更新**: `nvimx-lock --update`(全体)/ `nvimx-lock --update telescope.nvim`(個別)→ switch。
-  flake.lock が動かない限り何度 switch しても同一結果
+- **First run**: `nix run github:myuron/nvimx#lock -- --config ./nvim --out ./nvim/nvimx-lock`
+  (coming from an existing lazy setup, add `--import-lazy-lock ~/.config/nvim/lazy-lock.json`)
+  → `git add` → `home-manager switch`. Switching first (degraded) and running `nvimx-lock` afterwards also works
+- **Adding a plugin**: write the spec in lua → `git add` → `nvimx-lock` (fetches only the new inputs) → commit → switch.
+  Even if you forget to lock and switch anyway, nvim still starts and only that plugin shows as not installed (safe failure)
+- **Updating**: `nvimx-lock --update` (everything) / `nvimx-lock --update telescope.nvim` (individual) → switch.
+  As long as flake.lock does not move, switching any number of times yields the same result
 
-## リポジトリ構成
+## Repository layout
 
 ```
-flake.nix                    # lazy-nvim input 追加、outputs 拡張
+flake.nix                    # adds the lazy-nvim input, extends outputs
 nix/
   lib/
-    default.nix              # lib エントリ (makeEnv, mkLockApp)
-    make-env.nix             # env 組み立ての中核
+    default.nix              # lib entry point (makeEnv, mkLockApp)
+    make-env.nix             # the core of env assembly
     sources.nix              # flake.lock JSON → name → fetchTree src
-    plugin-drv.nix           # 1 plugin derivation 化 (helptags / build / override 解決)
-    farm.nix                 # linkFarm 構築
-    bootstrap.nix            # bootstrap.lua 生成
-    wrapper.nix              # neovim の wrapProgram
-    treesitter.nix           # nvim-treesitter + grammar マージ derivation
-    lock-app.nix             # lock スクリプト (writeShellApplication)
-  build-registry/            # 名前 → ビルドレシピ (telescope-fzf-native.nvim 等)
-  home-manager/default.nix   # programs.nvimx モジュール
+    plugin-drv.nix           # turning 1 plugin into a derivation (helptags / build / override resolution)
+    farm.nix                 # linkFarm construction
+    bootstrap.nix            # bootstrap.lua generation
+    wrapper.nix              # wrapProgram for neovim
+    treesitter.nix           # nvim-treesitter + grammar merge derivation
+    lock-app.nix             # lock script (writeShellApplication)
+  build-registry/            # name → build recipe (telescope-fzf-native.nvim, etc.)
+  home-manager/default.nix   # the programs.nvimx module
 lua/nvimx/
-  extract.lua                # preload shim + spec 捕捉 + 正規化 + JSON dump
-  resolve.lua                # semver 解決 + 前回 plugins.json とのマージ
-  genflake.lua               # plugins.json → lock/flake.nix テキスト生成
-  bootstrap.lua.in           # ランタイム bootstrap テンプレート
-templates/default/           # dotfiles 組み込み雛形
+  extract.lua                # preload shim + spec capture + normalization + JSON dump
+  resolve.lua                # semver resolution + merge with the previous plugins.json
+  genflake.lua               # plugins.json → lock/flake.nix text generation
+  bootstrap.lua.in           # runtime bootstrap template
+templates/default/           # template for embedding into dotfiles
 tests/fixtures/              # basic-config / build-plugins / golden/
 ```
 
@@ -345,53 +345,53 @@ flake outputs:
 
 - `lib.{makeEnv, mkLockApp}`
 - `homeModules.nvimx`
-- `apps.x86_64-linux.lock`(スタンドアロン、ブートストラップ・CI 用)
-- `packages.x86_64-linux.demo`(fixture を使った動作確認・dogfooding 用)
+- `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
+- `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
 - `checks.x86_64-linux.{extractor-snapshot, genflake-golden, e2e-offline}`
-  (e2e-offline は path 型 input の fixture lock でネットワークなし E2E)
+  (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
 
-## エッジケースと明示的な制限
+## Edge cases and explicit limitations
 
-| ケース | 挙動 / 対応 |
+| Case | Behavior / handling |
 |---|---|
-| 初回 bootstrap (lock 不在) | degrade ビルド + 警告。`--impure` 不要 |
-| lock 後に lua へ plugin 追加して switch | eval 成功、当該 plugin のみ未インストール表示。警告で lock 再実行を促す |
-| git 未追跡の lua ファイル | flake source に入らず抽出漏れ → lock app が作業ツリー差分を検知して warn |
-| GitHub 以外 / git URL 直指定 | `git+https://` / `git+ssh://` input に正規化 |
-| plugin 名衝突 | lazy の Spec 正規化段階で顕在化(lazy と同じ挙動)。inputName 衝突は lock 時エラー |
-| build が Lua 関数 / excmd | 自動実行不可。lock 時に警告し registry / overrides / nixpkgsFallback を案内 |
-| luarocks (rocks) | **非対応を明示**。`rocks.enabled=false` 強制。`extraLuaPackages` が escape hatch |
-| マシン依存 spec (`enabled = fn`, `cond`) | スーパーセットを lock。spec リスト自体の if 分岐は lock 実行マシンの分岐のみ(文書化) |
-| plugin ローカル開発 (dev=true) | `devPlugins` / `devPath` + dev.path 関数で両立 |
-| lazy の state 書き込み | stdpath(data/state/cache) はユーザー領域なので問題なし |
-| treesitter grammar rev の微差 | 既知の制限。将来厳密モード |
+| First bootstrap (no lock) | degraded build + warning. `--impure` not needed |
+| Adding a plugin to lua after locking, then switching | evaluation succeeds, only that plugin shows as not installed. A warning prompts you to re-run lock |
+| lua files not tracked by git | they are not part of the flake source, so they are missed during extraction → the lock app detects working-tree differences and warns |
+| Non-GitHub / explicit git URL | normalized to a `git+https://` / `git+ssh://` input |
+| Plugin name collision | surfaces during lazy's Spec normalization (same behavior as lazy). inputName collisions are an error at lock time |
+| build is a Lua function / excmd | cannot be run automatically. Warns at lock time and points to registry / overrides / nixpkgsFallback |
+| luarocks (rocks) | **explicitly unsupported**. `rocks.enabled=false` is forced. `extraLuaPackages` is the escape hatch |
+| Machine-dependent spec (`enabled = fn`, `cond`) | the superset is locked. `if` branching on the spec list itself only captures the branch taken on the machine running lock (documented) |
+| Local plugin development (dev=true) | supported alongside via `devPlugins` / `devPath` + the dev.path function |
+| lazy writing state | stdpath(data/state/cache) is user-owned territory, so this is fine |
+| Slight mismatch in treesitter grammar revs | known limitation. A strict mode is planned |
 
-## 実装フェーズ
+## Implementation phases
 
-各フェーズ末に動作確認可能な成果物を置く:
+Each phase ends with an artifact you can actually try out:
 
-1. **抽出器**(最大リスク先行): `extract.lua` + fixture → raw-spec.json、`checks.extractor-snapshot`。lazy-nvim を flake input に追加
-2. **lock パイプライン**: `genflake.lua` + lock app → `nix run .#lock` で lockDir 一式生成、golden テスト
-3. **build 経路**: sources / plugin-drv / farm / bootstrap / wrapper → `packages.demo` で `:Lazy` 全 loaded/local 確認。dogfooding 開始
-4. **hm module + template**: `programs.nvimx.*`、degrade モード、`nvimx-lock`、実 dotfiles E2E
-5. **build plugin フル対応**: build-registry、shell build、treesitter マージ drv、nixpkgsFallback、lock 時警告
-6. **version/更新系**: `resolve.lua`(semver)、`--update [name]`、pin 維持マージ、`--import-lazy-lock`
-7. **仕上げ**: devPlugins、extraLuaPackages、非 GitHub 検証、`checks.e2e-offline`、README
+1. **Extractor** (highest risk first): `extract.lua` + fixture → raw-spec.json, `checks.extractor-snapshot`. Add lazy-nvim as a flake input
+2. **Lock pipeline**: `genflake.lua` + lock app → `nix run .#lock` produces a full lockDir, golden tests
+3. **Build path**: sources / plugin-drv / farm / bootstrap / wrapper → verify with `packages.demo` that `:Lazy` shows everything loaded/local. Start dogfooding
+4. **hm module + template**: `programs.nvimx.*`, degraded mode, `nvimx-lock`, E2E against real dotfiles
+5. **Full build-plugin support**: build-registry, shell builds, the treesitter merge drv, nixpkgsFallback, warnings at lock time
+6. **Version/update features**: `resolve.lua` (semver), `--update [name]`, pin-preserving merge, `--import-lazy-lock`
+7. **Finishing touches**: devPlugins, extraLuaPackages, non-GitHub validation, `checks.e2e-offline`, README
 
-## 検証方法
+## How to verify
 
-- Phase 1-2: fixture config に対し `nvim --headless --cmd "luafile extract.lua"` → JSON 確認 → snapshot check 化。`nix run .#lock` 後に `cd lockDir && nix flake lock` が成功すること
-- Phase 3 以降: `nix build .#demo && ./result/bin/nvim` で `:Lazy` を開き全 plugin が loaded/local(git 操作なし)、`:h telescope` が引けること
-- Phase 4: 実 dotfiles で `nvimx-lock` → commit → `home-manager switch` → flake.lock 不変のまま再 switch して同一結果であること
-- CI: `nix flake check`(オフライン checks)+ `nix fmt` 済み確認
+- Phase 1-2: run `nvim --headless --cmd "luafile extract.lua"` against the fixture config → inspect the JSON → turn it into a snapshot check. After `nix run .#lock`, `cd lockDir && nix flake lock` must succeed
+- Phase 3 onward: `nix build .#demo && ./result/bin/nvim`, open `:Lazy` and confirm every plugin is loaded/local (no git operations) and that `:h telescope` works
+- Phase 4: against real dotfiles, `nvimx-lock` → commit → `home-manager switch` → switching again with flake.lock unchanged must give the same result
+- CI: `nix flake check` (offline checks) + confirming `nix fmt` has been applied
 
-## 参考: twist.nix からの主な乖離点
+## Appendix: main divergences from twist.nix
 
-| 項目 | twist.nix | nvimx | 理由 |
+| Item | twist.nix | nvimx | Rationale |
 |---|---|---|---|
-| パッケージ解決のタイミング | eval 時(pure Nix の elisp パーサ) | lock 時(headless nvim) | Lua は pure Nix でパース不能。lock 時解決により eval が完全 pure になり `--impure` 不要 |
-| 解決結果の永続化 | metadata.json(IFD 回避のオプション) | plugins.json(必須、唯一の真実) | 同上 |
-| lock flake の扱い | flake.lock を importJSON + fetchTree | 同じ | 実証済みパターンをそのまま採用 |
-| env 構築の場所 | ユーザー flake の packages 側 | hm module 内包(env 直接指定も可) | 単一 profile 用途では設定 1 箇所が勝る |
-| 未 pin 時の挙動 | impure fetch にフォールバック | degrade ビルド | eval 時に未知情報がないため impure の出番がない |
+| When package resolution happens | at evaluation time (an elisp parser in pure Nix) | at lock time (headless nvim) | Lua cannot be parsed in pure Nix. Resolving at lock time makes evaluation fully pure, so `--impure` is unnecessary |
+| Persisting the resolution result | metadata.json (an option to avoid IFD) | plugins.json (mandatory, the single source of truth) | same as above |
+| Handling of the lock flake | importJSON the flake.lock + fetchTree | same | adopts a proven pattern as-is |
+| Where the env is assembled | on the packages side of the user's flake | embedded in the hm module (direct env specification also possible) | for the single-profile use case, configuring in one place wins |
+| Behavior when nothing is pinned | falls back to an impure fetch | degraded build | there is no unknown information at evaluation time, so impure has no role to play |

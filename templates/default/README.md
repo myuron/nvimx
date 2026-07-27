@@ -1,24 +1,25 @@
 # nvimx template
 
-nvimx を組み込んだ dotfiles の雛形。
+A dotfiles template with nvimx integrated.
 
-## 使い方
+## Usage
 
-1. `flake.nix` の `myuser` / `home.homeDirectory` / `lock.projectDir` を自分の環境に合わせて変更する
-2. `nvim/` に lazy.nvim 形式の lua config を書く (雛形の `init.lua` 参照)
-3. plugin を lock する:
+1. Change `myuser` / `home.homeDirectory` / `lock.projectDir` in `flake.nix` to match your environment
+2. Write your lazy.nvim-style lua config in `nvim/` (see the `init.lua` in this template)
+3. Lock your plugins:
 
    ```sh
    nix run github:myuron/nvimx#lock -- --config ./nvim --out ./nvim/nvimx-lock
    git add nvim/nvimx-lock
    ```
 
-4. `home-manager switch --flake .` で配備
+4. Deploy with `home-manager switch --flake .`
 
-lock を忘れて switch しても degrade ビルド (lazy.nvim のみ) で nvim は起動し、
-`nvimx-lock` コマンドが PATH に入るので、lock → commit → 再 switch で完全状態に到達できる。
+If you switch before locking, you still get a degraded build (lazy.nvim only) and nvim starts,
+and since the `nvimx-lock` command lands on your PATH you can reach the complete state with
+lock → commit → switch again.
 
-## plugin の追加・更新
+## Adding and updating plugins
 
-- 追加: lua に spec を書く → `git add` → `nvimx-lock` → commit → switch
-- 更新: `nvimx-lock --update` (Phase 6 で対応予定) → switch
+- Add: write the spec in lua → `git add` → `nvimx-lock` → commit → switch
+- Update: `nvimx-lock --update` (planned for Phase 6) → switch

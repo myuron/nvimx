@@ -1,9 +1,10 @@
--- nvimx 解決器 (Phase 2 最小版)
+-- nvimx resolver (minimal Phase 2 version)
 --
--- 使い方: nvim -l resolve.lua <raw-spec.json> <plugins.json 出力先>
+-- Usage: nvim -l resolve.lua <raw-spec.json> <where to write plugins.json>
 --
--- raw-spec.json を plugins.json スキーマに変換する。
--- TODO: version (semver) の git ls-remote 解決、既存 plugins.json との pin 維持マージ
+-- Converts raw-spec.json into the plugins.json schema.
+-- TODO: resolve version (semver) via git ls-remote, and merge with an existing
+-- plugins.json while preserving pins
 
 local raw_path, out_path = arg[1], arg[2]
 assert(raw_path and out_path, "usage: nvim -l resolve.lua <raw-spec.json> <plugins.json>")
@@ -19,12 +20,12 @@ end
 
 local raw = read_json(raw_path)
 
--- flake input 名として使える形に正規化 ([^A-Za-z0-9_-] → "-")
+-- Normalize into a form usable as a flake input name ([^A-Za-z0-9_-] → "-")
 local function to_input_name(name)
   return (name:gsub("[^%w_-]", "-"))
 end
 
--- lazy が正規化した git URL を source 構造体に変換 (github は専用型に)
+-- Convert the git URL normalized by lazy into a source struct (github gets its own type)
 local function parse_source(url)
   local owner, repo = url:match("^https://github%.com/([^/]+)/(.+)$")
   if owner then

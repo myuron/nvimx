@@ -1,28 +1,28 @@
 # CLAUDE.md
 
-## 目的
+## Purpose
 
-- neovimで使用されているLuaの柔軟性を活かしつつ、nixの再現性を享受する最強のnix x neovim managerを作る
+- Build the ultimate nix x neovim manager that takes advantage of the flexibility of Lua as used in neovim while enjoying the reproducibility of nix
 
-## 要件
+## Requirements
 
-- home-manager moduleを提供し、ユーザーのdotfilesに組み込めること。
-- lazy.nvim形式のluaを解析し、必要なpluginを取得し、flake.lockにpinすること。
-- neovim本体は、nixpkgsのneovimか、neovim-overlayかはユーザーが自由に選択でき、nvimxと統合できること。
+- Provide a home-manager module that can be embedded in the user's dotfiles.
+- Parse lazy.nvim-style lua, fetch the required plugins, and pin them in flake.lock.
+- Let the user freely choose neovim itself — either the nixpkgs neovim or neovim-overlay — and integrate it with nvimx.
 
-## 構成メモ
+## Structure notes
 
-- `flake.nix` は `x86_64-linux` / `aarch64-darwin` の複数systemに対応している(`forAllSystems = nixpkgs.lib.genAttrs systems`)。system依存のoutput(`lib` / `packages` / `formatter` / `checks` / `apps`)を追加する際は必ず `forAllSystems (system: ...)` でラップすること。`homeModules` / `templates` はpkgs非依存なのでsystem別にしない。
-- `x86_64-darwin` (Intel Mac) は対象外。nixpkgs 26.11 がサポートを打ち切っており、`nixpkgs-unstable` をpinしている限り評価時点で `throw` する。Intel Macで使いたい場合はユーザー側で `nixpkgs-26.05-darwin` を指定してもらう(同ブランチも2026年末でEOL)。
-- CI はsystemごとにworkflowを分けている。実体は再利用可能workflow `.github/workflows/check.yml` (`workflow_call`、入力は `runs-on`) 1本で、`ci-linux.yml` (`ubuntu-latest`) と `ci-darwin.yml` (`macos-latest`) がそれを呼ぶ。READMEでsystemごとのCIバッジを出すためにこの構成にしている(GitHubのbadgeはworkflow単位でしか出せず、matrix jobを区別できない)。checkステップを増やすときは `check.yml` だけを編集すること。macOSのrunner labelは廃止サイクルが速いため、追加・変更時は必ず現行の [GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) に存在するlabelか確認すること。**廃止済みlabelを指定してもジョブはエラーにならず、永久にqueuedのまま残る**(過去に `macos-13` でこれが発生)。
-- ローカル(Linux)の `nix flake check` は他systemを `omitted these incompatible systems` でスキップするため、darwin側の評価エラーは検出できない。darwin側を触ったら `nix eval .#checks.aarch64-darwin.<name>.drvPath` で評価だけ確認すること。
+- `flake.nix` supports multiple systems, `x86_64-linux` and `aarch64-darwin` (`forAllSystems = nixpkgs.lib.genAttrs systems`). When adding system-dependent outputs (`lib` / `packages` / `formatter` / `checks` / `apps`), always wrap them in `forAllSystems (system: ...)`. `homeModules` / `templates` do not depend on pkgs, so do not split them per system.
+- `x86_64-darwin` (Intel Mac) is out of scope. nixpkgs 26.11 has dropped support for it, so as long as we pin `nixpkgs-unstable` it `throw`s at evaluation time. Users who want to use it on an Intel Mac need to specify `nixpkgs-26.05-darwin` on their side (that branch also reaches EOL at the end of 2026).
+- CI is split into one workflow per system. The actual work lives in a single reusable workflow, `.github/workflows/check.yml` (`workflow_call`, with `runs-on` as its input), which `ci-linux.yml` (`ubuntu-latest`) and `ci-darwin.yml` (`macos-latest`) call. This structure exists so the README can show a CI badge per system (GitHub badges are per workflow only and cannot distinguish matrix jobs). When adding check steps, edit only `check.yml`. macOS runner labels are retired on a fast cycle, so whenever you add or change one, always confirm that the label exists in the current [GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) list. **Specifying a retired label does not make the job fail — it stays queued forever** (this happened before with `macos-13`).
+- A local (Linux) `nix flake check` skips other systems with `omitted these incompatible systems`, so it cannot catch evaluation errors on the darwin side. Whenever you touch darwin-related code, verify evaluation alone with `nix eval .#checks.aarch64-darwin.<name>.drvPath`.
 
-## コミュニケーション
+## Communication
 
-- コミュニケーションは日本語で行うこと。
+- Communicate in Japanese.
 
-## バージョン管理
+## Version control
 
-- commit messageはconventional commitsに準拠すること
-- mainへのpushは禁止。必ずブランチを作成し、PRでマージすること
-- commit messageおよびPRは英語で記述すること
+- Commit messages must follow conventional commits
+- Pushing to main is forbidden. Always create a branch and merge via a PR
+- Write commit messages and PRs in English

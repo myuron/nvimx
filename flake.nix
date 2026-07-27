@@ -7,7 +7,7 @@
     anthropic-skills.flake = false;
     lazy-nvim.url = "github:folke/lazy.nvim";
     lazy-nvim.flake = false;
-    # hm module の checks 用。module 自体は home-manager に依存しない
+    # For the hm module checks. The module itself does not depend on home-manager
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
   };
@@ -23,7 +23,7 @@
       home-manager,
     }:
     let
-      # x86_64-darwin は nixpkgs 26.11 でサポート打ち切りのため対象外
+      # x86_64-darwin is out of scope: nixpkgs 26.11 dropped support for it
       systems = [
         "x86_64-linux"
         "aarch64-darwin"
@@ -37,8 +37,8 @@
           lazyNvimSeed = lazy-nvim;
         };
 
-      # agent skills の catalog / allowlist / selection は pkgs 非依存。
-      # pkgs に依存するのは bundle だけなので apps 側で組む。
+      # The agent skills catalog / allowlist / selection do not depend on pkgs.
+      # Only the bundle does, so it is assembled on the apps side.
       agentLib = agent-skills.lib.agent-skills;
       sources = {
         anthropic = {
@@ -80,7 +80,7 @@
 
       templates.default = {
         path = ./templates/default;
-        description = "nvimx を組み込んだ home-manager dotfiles の雛形";
+        description = "home-manager dotfiles template with nvimx integrated";
       };
 
       packages = forAllSystems (
@@ -130,7 +130,7 @@
         let
           pkgs = pkgsFor system;
           nvimxLib = nvimxLibFor system;
-          # fixture config で hm module を実際に評価・ビルドする
+          # Actually evaluate and build the hm module against a fixture config
           mkHmCheck =
             nvimxConfig:
             (home-manager.lib.homeManagerConfiguration {
@@ -150,7 +150,7 @@
             }).activationPackage;
         in
         {
-          # lock あり: farm / wrapper / dataFile 配備まで一式ビルドできること
+          # With a lock: the whole set (farm / wrapper / dataFile deployment) must build
           hm-module = mkHmCheck {
             configDir = ./tests/fixtures/basic-config;
             lockDir = ./tests/fixtures/basic-config/nvimx-lock;
@@ -158,12 +158,13 @@
             viAlias = true;
             lock.projectDir = "~/dotfiles";
           };
-          # lock 不在: degrade ビルドで eval が通り切ること (鶏卵問題の検証)
+          # Without a lock: evaluation must still succeed via the degraded build
+          # (verifies the chicken-and-egg problem is solved)
           hm-module-degrade = mkHmCheck {
             configDir = ./tests/fixtures/basic-config;
             lockDir = ./tests/fixtures/basic-config/no-such-lock;
           };
-          # vimAlias / viAlias: wrapper に vim / vi の symlink が生えること
+          # vimAlias / viAlias: the wrapper must grow vim / vi symlinks
           wrapper-aliases =
             let
               env = nvimxLib.makeEnv {
@@ -178,8 +179,8 @@
               test -L ${env.wrapped}/bin/vi
               touch $out
             '';
-          # fixture config に対する抽出結果のスナップショット比較。
-          # 全て store 内 (fixture + seed + neovim) で完結するためネットワーク不要。
+          # Snapshot comparison of the extraction result for a fixture config.
+          # Everything is self-contained in the store (fixture + seed + neovim), so no network is needed.
           extractor-snapshot =
             pkgs.runCommand "extractor-snapshot"
               {
@@ -202,18 +203,18 @@
                   NVIMX_LAZY_SEED=${lazy-nvim} \
                   NVIMX_OUT=$sb/raw-spec.json \
                   nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
-                # lazyNvim.source は store path を含み seed 更新で変わるため除外して比較
+                # lazyNvim.source contains a store path that changes when the seed is updated, so exclude it
                 jq -S 'del(.lazyNvim)' $sb/raw-spec.json > got.json
                 diff -u ${./tests/fixtures/golden/basic-config.raw-spec.json} got.json
                 touch $out
               '';
-          # lazy.setup を呼ばない config でハングせず明確なエラーで非ゼロ終了すること (#3)
+          # A config that never calls lazy.setup must not hang; it must exit non-zero with a clear error (#3)
           extractor-no-setup =
             pkgs.runCommand "extractor-no-setup"
               {
                 nativeBuildInputs = [
                   pkgs.neovim-unwrapped
-                  # darwin の sandbox では timeout が PATH に無いため明示する
+                  # timeout is not on PATH inside the darwin sandbox, so pull it in explicitly
                   pkgs.coreutils
                 ];
               }
