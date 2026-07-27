@@ -17,10 +17,6 @@
 - CI is split into one workflow per system. The actual work lives in a single reusable workflow, `.github/workflows/check.yml` (`workflow_call`, with `runs-on` as its input), which `ci-linux.yml` (`ubuntu-latest`) and `ci-darwin.yml` (`macos-latest`) call. This structure exists so the README can show a CI badge per system (GitHub badges are per workflow only and cannot distinguish matrix jobs). When adding check steps, edit only `check.yml`. macOS runner labels are retired on a fast cycle, so whenever you add or change one, always confirm that the label exists in the current [GitHub-hosted runners](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) list. **Specifying a retired label does not make the job fail — it stays queued forever** (this happened before with `macos-13`).
 - A local (Linux) `nix flake check` skips other systems with `omitted these incompatible systems`, so it cannot catch evaluation errors on the darwin side. Whenever you touch darwin-related code, verify evaluation alone with `nix eval .#checks.aarch64-darwin.<name>.drvPath`.
 
-## Communication
-
-- Communicate in Japanese.
-
 ## Version control
 
 - Commit messages must follow conventional commits
