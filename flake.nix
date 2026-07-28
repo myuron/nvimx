@@ -505,17 +505,124 @@
                   exit 1
                 ''
             );
+          # nix/build-registry: a shipped recipe must fix a plugin up with no user configuration,
+          # must lose to both per-user hatches, and must leave every other plugin on the generic
+          # path -- including when its entry is removed.
+          build-registry =
+            let
+              inherit (pkgs) lib;
+              # End to end: the fixture spec declares no build at all (as many real specs do),
+              # so build/libfzf.so can only come from the registry entry.
+              env = nvimxLib.makeEnv {
+                package = pkgs.neovim-unwrapped;
+                lockDir = ./tests/fixtures/registry-plugins/nvimx-lock;
+              };
+              # The entry replaces a build that downloads its artifact, so nothing here is fetched
+              fzf = nvimxLib.resolvePlugin {
+                name = "fzf";
+                src = ./tests/fixtures/local-plugin;
+                build = {
+                  kind = "shell";
+                  cmd = "./install --bin";
+                };
+              };
+              # The mechanism itself, checked against a stub registry so that it does not depend
+              # on which plugins happen to be shipped today. Compared by outPath: nothing below
+              # has to be built.
+              pname = "telescope-fzf-native.nvim";
+              mkGeneric =
+                n:
+                nvimxLib.mkPluginDrv {
+                  name = n;
+                  src = ./tests/fixtures/local-plugin;
+                  build = {
+                    kind = "none";
+                  };
+                };
+              resolve =
+                n: extra:
+                nvimxLib.resolvePlugin (
+                  {
+                    name = n;
+                    src = ./tests/fixtures/local-plugin;
+                    build = {
+                      kind = "none";
+                    };
+                  }
+                  // extra
+                );
+              stubDrv = pkgs.runCommand "nvimx-registry-stub" { } "mkdir -p $out";
+              stub.${pname} = _: stubDrv;
+              # an entry must be handed the plugin it is keyed by, plus the generic builder
+              echoArgs.${pname} =
+                {
+                  name,
+                  src,
+                  mkPluginDrv,
+                  ...
+                }:
+                mkPluginDrv {
+                  inherit name src;
+                  build = {
+                    kind = "none";
+                  };
+                };
+              echoDefault.${pname} = { defaultDrv, ... }: defaultDrv;
+              failures =
+                lib.optional (
+                  (resolve pname { registry = stub; }).outPath != stubDrv.outPath
+                ) "a registry entry did not win over the generic build"
+                ++ lib.optional (
+                  (resolve pname { registry = echoArgs; }).outPath != (mkGeneric pname).outPath
+                ) "a registry entry did not receive name / src / mkPluginDrv"
+                ++ lib.optional (
+                  (resolve pname { registry = echoDefault; }).outPath != (mkGeneric pname).outPath
+                ) "a registry entry's defaultDrv should be the generic build"
+                ++ lib.optional (
+                  (resolve pname { registry = { }; }).outPath != (mkGeneric pname).outPath
+                ) "removing an entry should fall back to the generic build"
+                ++ lib.optional (
+                  (resolve "no-such.nvim" { }).outPath != (mkGeneric "no-such.nvim").outPath
+                ) "a plugin the shipped registry does not cover should take the generic build"
+                ++ lib.optional (
+                  (resolve pname {
+                    registry = stub;
+                    nixpkgsFallback = [ pname ];
+                  }).outPath != pkgs.vimPlugins.telescope-fzf-native-nvim.outPath
+                ) "plugins.nixpkgsFallback should outrank the registry"
+                ++ lib.optional (
+                  (resolve pname {
+                    registry = stub;
+                    overrides.${pname} = { defaultDrv, ... }: defaultDrv;
+                  }).outPath != stubDrv.outPath
+                ) "an override's defaultDrv should be the registry entry's result";
+            in
+            pkgs.runCommand "build-registry" { } (
+              if failures == [ ] then
+                ''
+                  # the spec declares no build, so only the registry can have produced this
+                  test -f ${env.farm}/telescope-fzf-native.nvim/build/libfzf.so
+                  # ... and here the entry stands in for a binary the sandbox cannot download
+                  test -x ${fzf}/bin/fzf
+                  touch $out
+                ''
+              else
+                ''
+                  ${lib.concatMapStringsSep "\n" (f: "echo ${lib.escapeShellArg f} >&2") failures}
+                  exit 1
+                ''
+            );
           # The escape hatches must actually rescue a plugin whose build needs the network --
-          # that is what build-network.nix's error message promises. Both hatches sit in front
-          # of the generic build, so the throw must never be reached.
+          # that is what build-network.nix's error message promises. All three sit in front of
+          # the generic build, so the throw must never be reached.
           plugins-escape-hatch =
             let
               inherit (pkgs) lib;
               resolve =
-                extra:
+                name: extra:
                 nvimxLib.resolvePlugin (
                   {
-                    name = "telescope-fzf-native.nvim";
+                    inherit name;
                     src = ./tests/fixtures/local-plugin;
                     build = {
                       kind = "shell";
@@ -524,19 +631,25 @@
                   }
                   // extra
                 );
-              evaluates = extra: (builtins.tryEval (builtins.seq (resolve extra).drvPath null)).success;
+              evaluates =
+                name: extra: (builtins.tryEval (builtins.seq (resolve name extra).drvPath null)).success;
               failures =
-                lib.optional (evaluates { }) "a build needing the network must still be rejected"
+                lib.optional (evaluates "tokyonight.nvim" { }) "a build needing the network must still be rejected"
                 ++ lib.optional (
-                  !(evaluates {
-                    overrides."telescope-fzf-native.nvim" =
+                  !(evaluates "tokyonight.nvim" {
+                    overrides."tokyonight.nvim" =
                       { pkgs, ... }:
                       pkgs.runCommand "nvimx-hatch" { } "mkdir -p $out";
                   })
                 ) "plugins.overrides did not rescue a build needing the network"
                 ++ lib.optional (
-                  !(evaluates { nixpkgsFallback = [ "telescope-fzf-native.nvim" ]; })
-                ) "plugins.nixpkgsFallback did not rescue a build needing the network";
+                  !(evaluates "tokyonight.nvim" { nixpkgsFallback = [ "tokyonight.nvim" ]; })
+                ) "plugins.nixpkgsFallback did not rescue a build needing the network"
+                # "fzf" is shipped in nix/build-registry precisely because its declared build
+                # downloads a release binary
+                ++ lib.optional (
+                  !(evaluates "fzf" { })
+                ) "nix/build-registry did not rescue a build needing the network";
             in
             pkgs.runCommand "plugins-escape-hatch" { } (
               if failures == [ ] then

@@ -11,7 +11,7 @@
 # gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz, patch, diffutils, bash) plus cmake and
 # pkg-config. Anything beyond that needs the build-registry / overrides escape hatches.
 #
-# TODO (Phase 5): build-registry, overrides, nixpkgsFallback
+# This is only the *generic* path: which plugins reach it is decided by resolve-plugin.nix.
 { pkgs }:
 let
   inherit (pkgs) lib;

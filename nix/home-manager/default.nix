@@ -104,12 +104,15 @@ in
         '';
         description = ''
           Per-plugin derivation overrides, keyed by the plugin name lazy derived.
-          The function receives { pkgs, name, src, build, defaultDrv } and must return a
-          derivation. Always accept `...` as well: more arguments may be added later.
+          The function receives { pkgs, name, src, build, defaultDrv, mkPluginDrv } and must
+          return a derivation. Always accept `...` as well: more arguments may be added later.
 
           `src` is the locked source tree and `defaultDrv` is the derivation nvimx would
           have used without this override, so both patching (defaultDrv.overrideAttrs)
-          and replacing it outright (build your own from src) work.
+          and replacing it outright (build your own from src) work. `mkPluginDrv` is nvimx's
+          generic builder ({ name, src, build } -> drv), for "the usual treatment, but with
+          the build command corrected" -- which is also how to bypass a nix/build-registry
+          recipe nvimx ships for the plugin.
 
           This wins over every other resolution step, and it is the way out when a plugin's
           build cannot run inside the nix sandbox.
