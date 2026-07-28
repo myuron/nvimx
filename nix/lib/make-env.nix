@@ -33,6 +33,7 @@ let
         mkPluginDrv {
           inherit name;
           src = getSource p.inputName;
+          build = p.build or { kind = "none"; };
         }
       ) pluginsDb.plugins
     else

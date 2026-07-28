@@ -1,0 +1,4 @@
+#!/usr/bin/env -S nvim -l
+-- A shebang that stdenv's patchShebangs mangles into `env -S  -l` (it drops the
+-- interpreter). checks.plugin-drv-phases asserts this line survives verbatim.
+print("local-plugin")

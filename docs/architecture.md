@@ -216,15 +216,33 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
 
 Using the fetchTree result directly was rejected: helptags are not generated so `:h` breaks, and build integration becomes impossible.
 
-- **Default**: `runCommand` doing `cp -r src $out` + generating helptags if `doc/` exists.
-  `vimUtils.buildVimPlugin` produces too many false positives in its require check, so it is not used by default
+- **Default**: `mkDerivation` that unpacks the src, runs the recorded shell build if there is one,
+  copies the resulting tree to `$out`, and generates helptags if `doc/` exists.
+  `stdenvNoCC` is used unless there is a shell build, so a pure-lua plugin never drags the C
+  toolchain into its build closure.
+  `vimUtils.buildVimPlugin` produces too many false positives in its require check, so it is not used by default.
+  `dontFixup = true`: the plugin tree must reach the farm exactly as upstream shipped it
+  (stdenv's `move-docs` hook would relocate `doc/` to `share/doc/` and break `:h`, and `patchShebangs`
+  would rewrite files such as `#!/usr/bin/env -S nvim -l`)
 - **Build resolution order**:
   1. The user's `plugins.overrides."<lazy name>" = { pkgs, src, defaultDrv }: drv;`
   2. Built-in registry (`nix/build-registry/`): **replace the src of a nixpkgs vimPlugins recipe**
      (`overrideAttrs (o: { src = <locked src>; })`), reusing nixpkgs' build know-how while preserving the pin semantics
   3. `plugins.nixpkgsFallback = [ "..." ]` (opt-in): use the nixpkgs version as-is (automatic name matching is not done because it would break pin consistency)
-  4. `build.kind == "shell"` runs in the default buildPhase (make/cmake-style builds that need no network work this way).
+  4. `build.kind == "shell"` runs in `buildPhase`, in the unpacked source directory (make/cmake-style builds
+     that need no network work this way). The tools available are whatever stdenv provides
+     (cc, gnumake, coreutils, gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz, patch, diffutils, bash)
+     plus `cmake` and `pkg-config`; anything beyond that needs 1–3.
      For `excmd`/`function`, if none of 1–3 apply a warning is emitted at evaluation time (it continues with helptags only)
+- **Builds that need the network**: a sandboxed build can never reach a package registry, so
+  `nix/lib/build-network.nix` inspects the first word of every command segment against a list of
+  fetching tools (`cargo` / `npm` / `go` / `curl` / `git` / ...) and **throws at evaluation time** with a
+  message naming the build-registry / `plugins.overrides` / `plugins.nixpkgsFallback` escape hatches,
+  instead of letting the build die later with an opaque fetch error.
+  Quoted text is stripped first, and `$(...)` / backticks are inspected as their own segments.
+  Matching is deliberately first-word-only and fails **open**: a false positive is a hard evaluation
+  failure for the user, so a command that hides its real work (`sh -c "npm install"`, `make deps`)
+  is attempted and left to die in the sandbox rather than guessed at
 - **nvim-treesitter**: the plugin itself (src replaced) plus nixpkgs' grammars are **merged into a single derivation with symlinkJoin** (self-contained in a single farm entry; a separate rtp entry was rejected because it conflicts with `performance.rtp.reset`).
   `treesitter.grammars = "all" | [ names ] | null`. The slight mismatch between the grammar revs and the plugin rev is a known limitation (future work: a strict mode that builds grammars directly from the locked src's lockfile)
 
@@ -325,6 +343,7 @@ nix/
     make-env.nix             # the core of env assembly
     sources.nix              # flake.lock JSON → name → fetchTree src
     plugin-drv.nix           # turning 1 plugin into a derivation (helptags / build / override resolution)
+    build-network.nix        # detecting build commands that cannot run in the sandbox
     farm.nix                 # linkFarm construction
     bootstrap.nix            # bootstrap.lua generation
     wrapper.nix              # wrapProgram for neovim
@@ -338,7 +357,7 @@ lua/nvimx/
   genflake.lua               # plugins.json → lock/flake.nix text generation
   bootstrap.lua.in           # runtime bootstrap template
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / golden/
+tests/fixtures/              # basic-config / build-plugins / local-plugin / golden/
 ```
 
 flake outputs:
@@ -347,7 +366,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, e2e-offline}`
+- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, build-shell, plugin-drv-phases, build-network-detect, e2e-offline}`
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
 
@@ -361,6 +380,7 @@ flake outputs:
 | Non-GitHub / explicit git URL | normalized to a `git+https://` / `git+ssh://` input |
 | Plugin name collision | surfaces during lazy's Spec normalization (same behavior as lazy). inputName collisions are an error at lock time |
 | build is a Lua function / excmd | cannot be run automatically. Warns at lock time and points to registry / overrides / nixpkgsFallback |
+| build is a shell command needing the network | detected at evaluation time and thrown with a message naming the same three escape hatches |
 | luarocks (rocks) | **explicitly unsupported**. `rocks.enabled=false` is forced. `extraLuaPackages` is the escape hatch |
 | Machine-dependent spec (`enabled = fn`, `cond`) | the superset is locked. `if` branching on the spec list itself only captures the branch taken on the machine running lock (documented) |
 | Local plugin development (dev=true) | supported alongside via `devPlugins` / `devPath` + the dev.path function |
