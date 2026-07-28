@@ -115,13 +115,67 @@ All options live under `programs.nvimx`.
 | `vimAlias` | `bool` | `false` | Add a symlink so that the `vim` command launches the wrapped Neovim. |
 | `viAlias` | `bool` | `false` | Add a symlink so that the `vi` command launches the wrapped Neovim. |
 | `extraPackages` | `listOf package` | `[ ]` | Packages prepended to the wrapper's `PATH` (ripgrep, language servers, etc.). |
+| `plugins.overrides` | `attrsOf (functionTo package)` | `{ }` | Per-plugin derivation overrides, keyed by the plugin name lazy derived. See [Escape hatches](#escape-hatches). |
+| `plugins.nixpkgsFallback` | `listOf str` | `[ ]` | Plugin names to take from `pkgs.vimPlugins` as-is instead of building from the lock. Opt-in per plugin. See [Escape hatches](#escape-hatches). |
 | `lock.installCommand` | `bool` | `true` | Add the `nvimx-lock` command to `home.packages`. |
 | `lock.projectDir` | `nullOr str` | `null` | The working tree of your dotfiles repository. When set, running `nvimx-lock` with no arguments targets `configDirRelative` / `lockDirRelative`. |
 | `lock.configDirRelative` | `str` | `"nvim"` | Path to `configDir`, relative to `projectDir`. |
 | `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | Path to `lockDir`, relative to `projectDir`. |
-| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
+| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
 
 `lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module.
+
+### Escape hatches
+
+Most plugins are pure Lua and need nothing beyond the default treatment. When one does — a build
+step that cannot run inside the Nix sandbox, a missing dependency, a patch you need — you have two
+options, and neither requires forking nvimx.
+
+```nix
+programs.nvimx.plugins = {
+  # Take the nixpkgs package as-is instead of building from the lock.
+  # Opt-in per plugin: names are never matched automatically, because that would silently
+  # detach the plugin from its flake.lock pin. The nixpkgs attribute is looked up under the
+  # name verbatim (LazyVim), then with "." replaced by "-" (CopilotChat.nvim ->
+  # CopilotChat-nvim), then lowercased on top of that (telescope.nvim -> telescope-nvim).
+  nixpkgsFallback = [ "telescope-fzf-native.nvim" ];
+
+  overrides = {
+    # Patch the derivation nvimx would have built.
+    "telescope-fzf-native.nvim" =
+      { pkgs, defaultDrv, ... }:
+      defaultDrv.overrideAttrs (o: {
+        nativeBuildInputs = o.nativeBuildInputs ++ [ pkgs.fzf ];
+      });
+
+    # Or replace it outright, building whatever you like from the locked source tree.
+    "blink.cmp" =
+      { pkgs, src, ... }:
+      pkgs.rustPlatform.buildRustPackage { inherit src; /* ... */ };
+  };
+};
+```
+
+An override function receives `{ pkgs, name, src, build, defaultDrv }` and returns a derivation.
+Always accept `...` too — more arguments may be added later. `src` is the locked source tree, and
+`defaultDrv` is the derivation that would have been used without the override, so patching and
+replacing are both one-liners.
+
+One caveat on `defaultDrv`: for a plugin whose declared build needs the network, `defaultDrv` is
+the very derivation nvimx refuses to evaluate, so touching it re-raises that error. Such a plugin
+needs either the wholesale-replacement form above (ignore `defaultDrv`, build from `src`), or a
+`nixpkgsFallback` entry — which makes `defaultDrv` the nixpkgs package, and patching works again.
+
+Resolution order, highest first:
+
+1. `plugins.overrides."<name>"`
+2. `plugins.nixpkgsFallback`
+3. `nix/build-registry/` — nvimx's shipped build recipes (not implemented yet)
+4. The generic build: run `build.kind == "shell"` if the spec declared one, otherwise a plain copy
+
+A user's explicit opt-in outranks a shipped default, hence 1 and 2 above 3. Both apply only to
+plugins present in the lock; a name that matches nothing there is reported as a warning at
+activation time rather than silently doing nothing.
 
 ## How it works
 

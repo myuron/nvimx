@@ -159,13 +159,11 @@ in
       Nix builds run in a sandbox with no network access, so nvimx refuses it here rather
       than failing later with an opaque fetch error.
 
-      The intended escape hatches are:
-        - a recipe under nix/build-registry/ (reuses a nixpkgs vimPlugins build with the locked src)
-        - programs.nvimx.plugins.overrides."${name}" = { pkgs, src, defaultDrv }: <your derivation>;
+      The escape hatches, in the order nvimx applies them:
+        - programs.nvimx.plugins.overrides."${name}" = { pkgs, src, ... }: <your derivation>;
         - programs.nvimx.plugins.nixpkgsFallback = [ "${name}" ];
-
-      None of the three are implemented yet (nvimx issues #19 and #20). Until they land the
-      only workaround is to drop this plugin from your lazy spec and re-run nvimx-lock.
+        - a recipe under nix/build-registry/ (reuses a nixpkgs vimPlugins build with the
+          locked src) -- not implemented yet, nvimx issue #19
 
       See docs/architecture.md ("Plugin derivations") for details.
     '';
