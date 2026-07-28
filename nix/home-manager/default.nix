@@ -89,6 +89,49 @@ in
       description = "Packages prepended to the wrapper's PATH (ripgrep, lsp servers, etc.)";
     };
 
+    plugins = {
+      overrides = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.functionTo lib.types.package);
+        default = { };
+        example = lib.literalExpression ''
+          {
+            "markdown-preview.nvim" =
+              { pkgs, defaultDrv, ... }:
+              defaultDrv.overrideAttrs (o: {
+                nativeBuildInputs = o.nativeBuildInputs ++ [ pkgs.nodejs ];
+              });
+          }
+        '';
+        description = ''
+          Per-plugin derivation overrides, keyed by the plugin name lazy derived.
+          The function receives { pkgs, name, src, build, defaultDrv } and must return a
+          derivation. Always accept `...` as well: more arguments may be added later.
+
+          `src` is the locked source tree and `defaultDrv` is the derivation nvimx would
+          have used without this override, so both patching (defaultDrv.overrideAttrs)
+          and replacing it outright (build your own from src) work.
+
+          This wins over every other resolution step, and it is the way out when a plugin's
+          build cannot run inside the nix sandbox.
+        '';
+      };
+
+      nixpkgsFallback = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "telescope-fzf-native.nvim" ];
+        description = ''
+          Plugin names to take from pkgs.vimPlugins as-is instead of building from the lock.
+          Opt-in per plugin: matching names automatically would silently detach plugins from
+          their flake.lock pins.
+
+          The nixpkgs attribute is looked up by the name verbatim first, then lowercased with
+          "." replaced by "-" (telescope.nvim -> telescope-nvim). A name that resolves to
+          neither fails evaluation; use plugins.overrides to point at an attribute directly.
+        '';
+      };
+    };
+
     lock = {
       installCommand = lib.mkOption {
         type = lib.types.bool;
@@ -123,7 +166,8 @@ in
       type = lib.types.attrs;
       defaultText = lib.literalExpression "nvimx lib.makeEnv { ... }";
       description = ''
-        The result of makeEnv (farm / bootstrap / wrapped / hasLock).
+        The result of makeEnv (farm / bootstrap / wrapped / pluginDrvs /
+        unknownPluginNames / hasLock).
         By default it is built automatically from the options above.
         This is an escape hatch for advanced users who want to supply it directly.
       '';
@@ -138,11 +182,18 @@ in
       }
     ];
 
-    warnings = lib.optional (!(cfg.env.hasLock or true)) ''
-      programs.nvimx: lock files (plugins.json / flake.lock) not found in lockDir.
-      Building in degraded mode (lazy.nvim seed only).
-      Run `nvimx-lock`, commit the lock files, then re-run home-manager switch.
-    '';
+    warnings =
+      lib.optional (!(cfg.env.hasLock or true)) ''
+        programs.nvimx: lock files (plugins.json / flake.lock) not found in lockDir.
+        Building in degraded mode (lazy.nvim seed only).
+        Run `nvimx-lock`, commit the lock files, then re-run home-manager switch.
+      ''
+      ++ lib.optional ((cfg.env.unknownPluginNames or [ ]) != [ ]) ''
+        programs.nvimx: plugins.overrides / plugins.nixpkgsFallback name plugins that are
+        not in the lock, so they have no effect:
+        ${lib.concatMapStringsSep "\n" (n: "  - ${n}") (cfg.env.unknownPluginNames or [ ])}
+        Use the name lazy derived for the plugin (the key in nvimx-lock/plugins.json).
+      '';
 
     programs.nvimx.env = lib.mkDefault (
       nvimxLib.makeEnv {
@@ -152,6 +203,7 @@ in
           extraPackages
           vimAlias
           viAlias
+          plugins
           ;
       }
     );

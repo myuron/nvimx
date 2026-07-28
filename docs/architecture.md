@@ -224,16 +224,31 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
   `dontFixup = true`: the plugin tree must reach the farm exactly as upstream shipped it
   (stdenv's `move-docs` hook would relocate `doc/` to `share/doc/` and break `:h`, and `patchShebangs`
   would rewrite files such as `#!/usr/bin/env -S nvim -l`)
-- **Build resolution order**:
-  1. The user's `plugins.overrides."<lazy name>" = { pkgs, src, defaultDrv }: drv;`
-  2. Built-in registry (`nix/build-registry/`): **replace the src of a nixpkgs vimPlugins recipe**
+- **Build resolution order** (implemented in `nix/lib/resolve-plugin.nix`, the single place where
+  "a plugin name + its locked src" becomes a derivation). A per-user opt-in outranks a shipped default,
+  which is why 2 sits above 3:
+  1. The user's `plugins.overrides."<lazy name>" = { pkgs, name, src, build, defaultDrv, ... }: drv;`
+     — `src` is the locked source tree and `defaultDrv` is **the derivation that would have been used
+     without this override** (i.e. the result of 2–4), so patching (`defaultDrv.overrideAttrs`) and
+     replacing it outright are both one-liners. Overrides must accept `...`: more arguments may be added later
+  2. `plugins.nixpkgsFallback = [ "..." ]` (opt-in): use the nixpkgs version as-is (automatic name matching is
+     not done because it would break pin consistency). The `pkgs.vimPlugins` attribute is looked up by the
+     name verbatim first, then lowercased with `.` replaced by `-` (`telescope.nvim` → `telescope-nvim`);
+     verbatim comes first so attributes that keep their upstream casing (`LazyVim`) still resolve.
+     A name that resolves to neither **throws at evaluation time** and points at `plugins.overrides`
+  3. Built-in registry (`nix/build-registry/`, not implemented yet — #19): **replace the src of a nixpkgs vimPlugins recipe**
      (`overrideAttrs (o: { src = <locked src>; })`), reusing nixpkgs' build know-how while preserving the pin semantics
-  3. `plugins.nixpkgsFallback = [ "..." ]` (opt-in): use the nixpkgs version as-is (automatic name matching is not done because it would break pin consistency)
   4. `build.kind == "shell"` runs in `buildPhase`, in the unpacked source directory (make/cmake-style builds
      that need no network work this way). The tools available are whatever stdenv provides
      (cc, gnumake, coreutils, gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz, patch, diffutils, bash)
      plus `cmake` and `pkg-config`; anything beyond that needs 1–3.
      For `excmd`/`function`, if none of 1–3 apply a warning is emitted at evaluation time (it continues with helptags only)
+
+  1–3 only ever apply to plugins in the lock; the lazy.nvim seed is nvimx's own foundation and is
+  not overridable. A name matching nothing in the lock is a typo that would silently do nothing, so
+  `makeEnv` reports it as `unknownPluginNames` and the module turns that into an activation warning.
+  Steps 3 and 4 stay **unevaluated** until something forces them — that laziness is what lets 1 and 2
+  rescue a plugin whose build would otherwise throw (see below)
 - **Builds that need the network**: a sandboxed build can never reach a package registry, so
   `nix/lib/build-network.nix` inspects the first word of every command segment against a list of
   fetching tools (`cargo` / `npm` / `go` / `curl` / `git` / ...) and **throws at evaluation time** with a
