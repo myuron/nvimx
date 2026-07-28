@@ -125,9 +125,10 @@ in
           Opt-in per plugin: matching names automatically would silently detach plugins from
           their flake.lock pins.
 
-          The nixpkgs attribute is looked up by the name verbatim first, then lowercased with
-          "." replaced by "-" (telescope.nvim -> telescope-nvim). A name that resolves to
-          neither fails evaluation; use plugins.overrides to point at an attribute directly.
+          The nixpkgs attribute is looked up by the name verbatim (LazyVim), then with "."
+          replaced by "-" (CopilotChat.nvim -> CopilotChat-nvim), then lowercased on top of
+          that (telescope.nvim -> telescope-nvim). A name that resolves to none of the three
+          fails evaluation; use plugins.overrides to point at an attribute directly.
         '';
       };
     };

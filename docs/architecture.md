@@ -232,10 +232,11 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
      without this override** (i.e. the result of 2–4), so patching (`defaultDrv.overrideAttrs`) and
      replacing it outright are both one-liners. Overrides must accept `...`: more arguments may be added later
   2. `plugins.nixpkgsFallback = [ "..." ]` (opt-in): use the nixpkgs version as-is (automatic name matching is
-     not done because it would break pin consistency). The `pkgs.vimPlugins` attribute is looked up by the
-     name verbatim first, then lowercased with `.` replaced by `-` (`telescope.nvim` → `telescope-nvim`);
-     verbatim comes first so attributes that keep their upstream casing (`LazyVim`) still resolve.
-     A name that resolves to neither **throws at evaluation time** and points at `plugins.overrides`
+     not done because it would break pin consistency). nixpkgs has no single spelling to normalize to,
+     so the `pkgs.vimPlugins` attribute is looked up under three names, most faithful first: verbatim
+     (`LazyVim`), then `.` replaced by `-` (`CopilotChat.nvim` → `CopilotChat-nvim`), then lowercased on
+     top of that (`telescope.nvim` → `telescope-nvim`).
+     A name that resolves to none of the three **throws at evaluation time** and points at `plugins.overrides`
   3. Built-in registry (`nix/build-registry/`, not implemented yet — #19): **replace the src of a nixpkgs vimPlugins recipe**
      (`overrideAttrs (o: { src = <locked src>; })`), reusing nixpkgs' build know-how while preserving the pin semantics
   4. `build.kind == "shell"` runs in `buildPhase`, in the unpacked source directory (make/cmake-style builds

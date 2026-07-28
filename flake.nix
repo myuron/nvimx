@@ -164,6 +164,22 @@
             configDir = ./tests/fixtures/basic-config;
             lockDir = ./tests/fixtures/basic-config/no-such-lock;
           };
+          # plugins.overrides / plugins.nixpkgsFallback through the module's option types
+          # (attrsOf (functionTo package) / listOf str), which the lib-level checks bypass.
+          # Both are set for the same plugin on purpose: the override then patches the
+          # nixpkgs package, so the two must compose, not just evaluate.
+          hm-module-plugins = mkHmCheck {
+            configDir = ./tests/fixtures/basic-config;
+            lockDir = ./tests/fixtures/basic-config/nvimx-lock;
+            plugins = {
+              nixpkgsFallback = [ "tokyonight.nvim" ];
+              overrides."tokyonight.nvim" =
+                { defaultDrv, ... }:
+                defaultDrv.overrideAttrs (o: {
+                  postInstall = (o.postInstall or "") + "touch $out/nvimx-hm-marker\n";
+                });
+            };
+          };
           # vimAlias / viAlias: the wrapper must grow vim / vi symlinks
           wrapper-aliases =
             let
@@ -407,12 +423,7 @@
                 ) "a name absent from the lock should show up in unknownPluginNames";
             in
             pkgs.runCommand "plugins-overrides" { } (
-              if failures != [ ] then
-                ''
-                  ${lib.concatMapStringsSep "\n" (f: "echo ${lib.escapeShellArg f} >&2") failures}
-                  exit 1
-                ''
-              else
+              if failures == [ ] then
                 ''
                   # overrideAttrs-style patch: the default build still ran, plus the added step
                   test -f ${patched.farm}/tokyonight.nvim/nvimx-override-marker
@@ -427,6 +438,11 @@
                   test -f ${precedence.farm}/tokyonight.nvim/nvimx-override-wins
                   touch $out
                 ''
+              else
+                ''
+                  ${lib.concatMapStringsSep "\n" (f: "echo ${lib.escapeShellArg f} >&2") failures}
+                  exit 1
+                ''
             );
           # plugins.nixpkgsFallback: the plugin comes from pkgs.vimPlugins instead of the lock,
           # including the "." -> "-" attribute-name normalization
@@ -438,17 +454,33 @@
                 lockDir = ./tests/fixtures/build-plugins/nvimx-lock;
                 plugins.nixpkgsFallback = [ "telescope-fzf-native.nvim" ];
               };
+              # nixpkgs has no single spelling for a vimPlugins attribute, so every spelling
+              # the lookup tries must work. Compared by outPath: nothing here has to be built.
+              resolveByName =
+                name:
+                nvimxLib.resolvePlugin {
+                  inherit name;
+                  src = ./tests/fixtures/local-plugin;
+                  nixpkgsFallback = [ name ];
+                };
+              nameCases = [
+                {
+                  name = "LazyVim"; # verbatim
+                  want = pkgs.vimPlugins.LazyVim;
+                }
+                {
+                  name = "CopilotChat.nvim"; # "." -> "-", casing preserved
+                  want = pkgs.vimPlugins.CopilotChat-nvim;
+                }
+                {
+                  name = "telescope.nvim"; # "." -> "-", lowercased
+                  want = pkgs.vimPlugins.telescope-nvim;
+                }
+              ];
+              misresolved = builtins.filter (c: (resolveByName c.name).outPath != c.want.outPath) nameCases;
               # a name matching no vimPlugins attribute must fail loudly, not silently build
               unknownEvaluates =
-                (builtins.tryEval (
-                  builtins.seq
-                    (nvimxLib.resolvePlugin {
-                      name = "no-such-plugin.nvim";
-                      src = ./tests/fixtures/local-plugin;
-                      nixpkgsFallback = [ "no-such-plugin.nvim" ];
-                    }).drvPath
-                    null
-                )).success;
+                (builtins.tryEval (builtins.seq (resolveByName "no-such-plugin.nvim").drvPath null)).success;
               failures =
                 lib.optional
                   (
@@ -456,20 +488,21 @@
                     != pkgs.vimPlugins.telescope-fzf-native-nvim.outPath
                   )
                   "nixpkgsFallback did not resolve telescope-fzf-native.nvim to pkgs.vimPlugins.telescope-fzf-native-nvim"
+                ++ map (c: "nixpkgsFallback resolved ${builtins.toJSON c.name} to the wrong attribute") misresolved
                 ++ lib.optional unknownEvaluates "nixpkgsFallback did not throw for a name absent from vimPlugins";
             in
             pkgs.runCommand "plugins-nixpkgs-fallback" { } (
-              if failures != [ ] then
-                ''
-                  ${lib.concatMapStringsSep "\n" (f: "echo ${lib.escapeShellArg f} >&2") failures}
-                  exit 1
-                ''
-              else
+              if failures == [ ] then
                 ''
                   # nixpkgs lays a vim plugin out at $out (rtpPath = "."), so it drops into the
                   # farm as-is and stays usable
                   test -f ${env.farm}/telescope-fzf-native.nvim/build/libfzf.so
                   touch $out
+                ''
+              else
+                ''
+                  ${lib.concatMapStringsSep "\n" (f: "echo ${lib.escapeShellArg f} >&2") failures}
+                  exit 1
                 ''
             );
           # The escape hatches must actually rescue a plugin whose build needs the network --

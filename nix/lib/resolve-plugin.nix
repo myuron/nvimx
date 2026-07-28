@@ -13,16 +13,24 @@ let
   mkPluginDrv = import ./plugin-drv.nix { inherit pkgs; };
 
   # nixpkgs names a vimPlugins attribute after the upstream repo with "." replaced by "-",
-  # usually lowercased (telescope.nvim -> telescope-nvim). The verbatim name is tried first
-  # so attributes that keep their upstream casing (LazyVim, LuaSnip) still resolve.
+  # but there is no single spelling to normalize to: most are lowercased
+  # (telescope.nvim -> telescope-nvim), some keep their upstream casing
+  # (CopilotChat.nvim -> CopilotChat-nvim), and some keep the name verbatim (LazyVim).
+  # All three are tried, most faithful first.
   fromNixpkgs =
     name:
     let
-      normalized = lib.toLower (builtins.replaceStrings [ "." ] [ "-" ] name);
+      dashed = builtins.replaceStrings [ "." ] [ "-" ] name;
+      lowered = lib.toLower dashed;
+      tried = lib.unique [
+        name
+        dashed
+        lowered
+      ];
     in
-    pkgs.vimPlugins.${name} or pkgs.vimPlugins.${normalized} or (throw ''
+    pkgs.vimPlugins.${name} or pkgs.vimPlugins.${dashed} or pkgs.vimPlugins.${lowered} or (throw ''
       nvimx: plugins.nixpkgsFallback lists "${name}", but nixpkgs has no matching
-      vimPlugins attribute (tried "${name}" and "${normalized}").
+      vimPlugins attribute (tried ${lib.concatMapStringsSep ", " (n: "\"${n}\"") tried}).
 
       If the package exists under a different attribute name, point at it directly:
 

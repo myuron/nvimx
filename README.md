@@ -135,16 +135,17 @@ options, and neither requires forking nvimx.
 programs.nvimx.plugins = {
   # Take the nixpkgs package as-is instead of building from the lock.
   # Opt-in per plugin: names are never matched automatically, because that would silently
-  # detach the plugin from its flake.lock pin. The nixpkgs attribute is looked up by the
-  # name verbatim first, then lowercased with "." replaced by "-".
+  # detach the plugin from its flake.lock pin. The nixpkgs attribute is looked up under the
+  # name verbatim (LazyVim), then with "." replaced by "-" (CopilotChat.nvim ->
+  # CopilotChat-nvim), then lowercased on top of that (telescope.nvim -> telescope-nvim).
   nixpkgsFallback = [ "telescope-fzf-native.nvim" ];
 
   overrides = {
     # Patch the derivation nvimx would have built.
-    "markdown-preview.nvim" =
+    "telescope-fzf-native.nvim" =
       { pkgs, defaultDrv, ... }:
       defaultDrv.overrideAttrs (o: {
-        nativeBuildInputs = o.nativeBuildInputs ++ [ pkgs.nodejs ];
+        nativeBuildInputs = o.nativeBuildInputs ++ [ pkgs.fzf ];
       });
 
     # Or replace it outright, building whatever you like from the locked source tree.
@@ -159,6 +160,11 @@ An override function receives `{ pkgs, name, src, build, defaultDrv }` and retur
 Always accept `...` too — more arguments may be added later. `src` is the locked source tree, and
 `defaultDrv` is the derivation that would have been used without the override, so patching and
 replacing are both one-liners.
+
+One caveat on `defaultDrv`: for a plugin whose declared build needs the network, `defaultDrv` is
+the very derivation nvimx refuses to evaluate, so touching it re-raises that error. Such a plugin
+needs either the wholesale-replacement form above (ignore `defaultDrv`, build from `src`), or a
+`nixpkgsFallback` entry — which makes `defaultDrv` the nixpkgs package, and patching works again.
 
 Resolution order, highest first:
 
