@@ -216,8 +216,10 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
 
 Using the fetchTree result directly was rejected: helptags are not generated so `:h` breaks, and build integration becomes impossible.
 
-- **Default**: `stdenv.mkDerivation` that unpacks the src, runs the recorded shell build if there is one,
+- **Default**: `mkDerivation` that unpacks the src, runs the recorded shell build if there is one,
   copies the resulting tree to `$out`, and generates helptags if `doc/` exists.
+  `stdenvNoCC` is used unless there is a shell build, so a pure-lua plugin never drags the C
+  toolchain into its build closure.
   `vimUtils.buildVimPlugin` produces too many false positives in its require check, so it is not used by default.
   `dontFixup = true`: the plugin tree must reach the farm exactly as upstream shipped it
   (stdenv's `move-docs` hook would relocate `doc/` to `share/doc/` and break `:h`, and `patchShebangs`
@@ -237,7 +239,10 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
   fetching tools (`cargo` / `npm` / `go` / `curl` / `git` / ...) and **throws at evaluation time** with a
   message naming the build-registry / `plugins.overrides` / `plugins.nixpkgsFallback` escape hatches,
   instead of letting the build die later with an opaque fetch error.
-  Matching is deliberately first-word-only: a false positive is a hard build failure for the user
+  Quoted text is stripped first, and `$(...)` / backticks are inspected as their own segments.
+  Matching is deliberately first-word-only and fails **open**: a false positive is a hard evaluation
+  failure for the user, so a command that hides its real work (`sh -c "npm install"`, `make deps`)
+  is attempted and left to die in the sandbox rather than guessed at
 - **nvim-treesitter**: the plugin itself (src replaced) plus nixpkgs' grammars are **merged into a single derivation with symlinkJoin** (self-contained in a single farm entry; a separate rtp entry was rejected because it conflicts with `performance.rtp.reset`).
   `treesitter.grammars = "all" | [ names ] | null`. The slight mismatch between the grammar revs and the plugin rev is a known limitation (future work: a strict mode that builds grammars directly from the locked src's lockfile)
 
@@ -352,7 +357,7 @@ lua/nvimx/
   genflake.lua               # plugins.json → lock/flake.nix text generation
   bootstrap.lua.in           # runtime bootstrap template
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / golden/
+tests/fixtures/              # basic-config / build-plugins / local-plugin / golden/
 ```
 
 flake outputs:
@@ -361,7 +366,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, build-shell, build-network-detect, e2e-offline}`
+- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, build-shell, plugin-drv-phases, build-network-detect, e2e-offline}`
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
 

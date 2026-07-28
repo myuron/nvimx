@@ -39,7 +39,9 @@ if networkTool != null then
     }
   )
 else
-  pkgs.stdenv.mkDerivation {
+  # Most plugins are pure lua and have no build step at all: keep the C toolchain out of
+  # their build closure (it is a meaningful download, especially on darwin).
+  (if isShell then pkgs.stdenv else pkgs.stdenvNoCC).mkDerivation {
     name = "nvimx-plugin-${name}";
     inherit src;
 

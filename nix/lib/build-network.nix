@@ -6,6 +6,14 @@
 # evaluation time with an actionable message instead of letting them die later with an
 # opaque fetch error.
 #
+# This is a heuristic on a shell string, not a shell parser. Known blind spots, all of
+# which fail *open* (the build is attempted and dies in the sandbox):
+#   - an interpreter hiding the real command: `sh -c "npm install"`, `bash install.sh`
+#   - a Makefile or script that fetches internally: `make deps`
+#   - a tool aliased to an unusual name
+# Failing open is the deliberate trade-off: a false positive is a hard evaluation failure
+# for the user, so detection only fires on evidence it can actually see.
+#
 # Everything here is a pure function of the command string so that flake checks can
 # exercise it directly (see checks.build-network-detect).
 { lib }:
@@ -39,34 +47,54 @@ let
     "nix"
   ];
 
-  # Shell wrappers that only prefix the real command
+  # Why each tool cannot run here. Most download; git is rejected for a second reason too,
+  # so saying "downloads from the network" about it would be misleading.
+  reasons = {
+    git = "needs network access, or a .git directory that the locked source tree does not have";
+  };
+
+  # Shell wrappers that only prefix the real command. `sudo` is meaningless in a sandbox but
+  # is listed anyway: its job here is to expose the `cargo` in `sudo cargo build`.
   wrappers = [
     "env"
     "exec"
     "command"
     "nice"
+    "nohup"
+    "stdbuf"
     "sudo"
     "time"
+    "timeout"
+    "xargs"
   ];
 
   isAssignment = word: builtins.match "[A-Za-z_][A-Za-z0-9_]*=.*" word != null;
+  isFlag = word: lib.hasPrefix "-" word;
+  # `timeout 60` / `sleep 2s`: an argument consumed by a wrapper, not the real command
+  isDuration = word: builtins.match "[0-9]+[smhd]?" word != null;
 
-  # Strip leading `VAR=x` assignments and wrapper commands so `env FOO=1 cargo build`
-  # still resolves to `cargo`.
+  # Strip leading `VAR=x` assignments and wrapper commands so `env FOO=1 cargo build` and
+  # `timeout 60 curl ...` still resolve to `cargo` / `curl`. Flags and durations are only
+  # skipped once a wrapper has been seen -- otherwise `make -j4` would lose its head word.
   stripPrefixes =
-    words:
+    words: sawWrapper:
     if words == [ ] then
       [ ]
     else
       let
         word = builtins.head words;
+        rest = builtins.tail words;
       in
-      if isAssignment word || builtins.elem word wrappers then
-        stripPrefixes (builtins.tail words)
+      if isAssignment word then
+        stripPrefixes rest sawWrapper
+      else if builtins.elem word wrappers then
+        stripPrefixes rest true
+      else if sawWrapper && (isFlag word || isDuration word) then
+        stripPrefixes rest true
       else
         words;
 
-  # `(cd build && cmake ..)` / `/usr/bin/curl` → `cmake` / `curl`
+  # `{ cmake ..` / `/usr/bin/curl` → `cmake` / `curl`
   normalizeWord =
     word:
     let
@@ -83,7 +111,7 @@ let
   toolOf =
     segment:
     let
-      words = stripPrefixes (wordsOf segment);
+      words = stripPrefixes (wordsOf segment) false;
     in
     if words == [ ] then
       null
@@ -93,15 +121,25 @@ let
       in
       if builtins.elem head networkTools then head else null;
 
-  # builtins.split returns the separators as nested lists; keep the plain strings only
-  segmentsOf = cmd: builtins.filter builtins.isString (builtins.split "[;&|\n\r]+" cmd);
+  # Quoted text is data, not commands: `echo "done; git skipped"` must not read as a git
+  # invocation. Collapse every quoted run to a single placeholder word before splitting.
+  stripQuoted =
+    cmd:
+    lib.concatStrings (
+      map (part: if builtins.isString part then part else "Q") (builtins.split "'[^']*'|\"[^\"]*\"" cmd)
+    );
+
+  # Segment separators. `(`, `)` and backticks are included so that command substitution
+  # (`make VERSION=$(git describe)`) is inspected rather than swallowed by the outer command.
+  # builtins.split returns the separators as nested lists; keep the plain strings only.
+  segmentsOf = cmd: builtins.filter builtins.isString (builtins.split "[;&|`()\n\r]+" cmd);
 in
 {
   # cmd string → the name of the offending tool, or null when the command looks offline-safe
   detect =
     cmd:
     let
-      hits = builtins.filter (t: t != null) (map toolOf (segmentsOf cmd));
+      hits = builtins.filter (t: t != null) (map toolOf (segmentsOf (stripQuoted cmd)));
     in
     if hits == [ ] then null else builtins.head hits;
 
@@ -117,14 +155,17 @@ in
 
         build = ${builtins.toJSON cmd}
 
-      This command runs `${tool}`, which downloads from the network. Nix builds run in a
-      sandbox with no network access, so nvimx refuses it here rather than failing later
-      with an opaque fetch error.
+      This command runs `${tool}`, which ${reasons.${tool} or "downloads from the network"}.
+      Nix builds run in a sandbox with no network access, so nvimx refuses it here rather
+      than failing later with an opaque fetch error.
 
-      Use one of these escape hatches:
-        - add a recipe under nix/build-registry/ (reuses a nixpkgs vimPlugins build with the locked src)
+      The intended escape hatches are:
+        - a recipe under nix/build-registry/ (reuses a nixpkgs vimPlugins build with the locked src)
         - programs.nvimx.plugins.overrides."${name}" = { pkgs, src, defaultDrv }: <your derivation>;
         - programs.nvimx.plugins.nixpkgsFallback = [ "${name}" ];
+
+      None of the three are implemented yet (nvimx issues #19 and #20). Until they land the
+      only workaround is to drop this plugin from your lazy spec and re-run nvimx-lock.
 
       See docs/architecture.md ("Plugin derivations") for details.
     '';
