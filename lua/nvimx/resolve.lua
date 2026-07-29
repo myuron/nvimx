@@ -1,24 +1,150 @@
 -- nvimx resolver (minimal Phase 2 version)
 --
--- Usage: nvim -l resolve.lua <raw-spec.json> <where to write plugins.json>
+-- Usage:
+--   nvim -l resolve.lua <raw-spec.json> <where to write plugins.json> \
+--     [--prev <existing plugins.json>] [--lock <existing flake.lock>]
 --
--- Converts raw-spec.json into the plugins.json schema.
--- TODO: resolve version (semver) via git ls-remote, and merge with an existing
--- plugins.json while preserving pins
+-- Converts raw-spec.json into the plugins.json schema, merging with the previous lock so that
+-- refs already decided stay decided (--prev) and `pin = true` plugins get frozen onto the rev
+-- the lock currently records (--lock). Both are read up front and the output is written last,
+-- so --prev may safely point at the very path being written.
+-- TODO: resolve version (semver) via git ls-remote
 
-local raw_path, out_path = arg[1], arg[2]
-assert(raw_path and out_path, "usage: nvim -l resolve.lua <raw-spec.json> <plugins.json>")
+local function fail(msg)
+  io.stderr:write("[nvimx] resolve failed: " .. tostring(msg) .. "\n")
+  os.exit(1)
+end
+
+local function usage()
+  io.stderr:write(
+    "usage: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>] [--lock <flake.lock>]\n"
+  )
+  os.exit(2)
+end
+
+-- A flag loop rather than fixed positions: #24 (--update [name...]) and #25 (--import-lazy-lock)
+-- add themselves here without disturbing the callers that only pass the two positional paths.
+local raw_path, out_path, prev_path, lock_path
+do
+  local positional = {}
+  local i = 1
+  while i <= #arg do
+    local a = arg[i]
+    if a == "--prev" or a == "--lock" then
+      local value = arg[i + 1]
+      if not value then
+        io.stderr:write(("[nvimx] resolve: %s needs a path\n"):format(a))
+        usage()
+      end
+      if a == "--prev" then
+        prev_path = value
+      else
+        lock_path = value
+      end
+      i = i + 2
+    elseif a:sub(1, 2) == "--" then
+      io.stderr:write(("[nvimx] resolve: unknown option %s\n"):format(a))
+      usage()
+    else
+      positional[#positional + 1] = a
+      i = i + 1
+    end
+  end
+  raw_path, out_path = positional[1], positional[2]
+  if not raw_path or not out_path or positional[3] then
+    usage()
+  end
+end
 
 local json = dofile(arg[0]:gsub("resolve%.lua$", "json.lua"))
 
-local function read_json(path)
-  local f = assert(io.open(path, "r"))
+local function read_json(path, what)
+  local f = io.open(path, "r")
+  if not f then
+    fail(("cannot open %s: %s"):format(what, path))
+  end
   local text = f:read("*a")
   f:close()
-  return vim.json.decode(text)
+  local ok, decoded = pcall(vim.json.decode, text)
+  if not ok then
+    -- Silently regenerating would drop every pinned rev, so this has to be fatal.
+    fail(
+      ("%s is not valid JSON (%s): %s. Fix the file, or delete it and run nvimx-lock again -- "):format(
+        what,
+        path,
+        decoded
+      ) .. "deleting it loses the pinned revs."
+    )
+  end
+  return decoded
 end
 
-local raw = read_json(raw_path)
+local raw = read_json(raw_path, "the raw spec")
+
+-- vim.NIL and "key absent" mean the same thing everywhere below; normalize once, here.
+local function is_null(v)
+  return v == nil or v == vim.NIL
+end
+
+local function norm(v)
+  if is_null(v) then
+    return nil
+  end
+  return v
+end
+
+local function is_true(v)
+  return not is_null(v) and v ~= false
+end
+
+-- The previous lock, when one was passed. Nothing else in this file reads plugins.json.
+local prev_plugins = nil
+if prev_path then
+  local prev = read_json(prev_path, "the existing plugins.json")
+  if type(prev) ~= "table" then
+    fail(("the existing plugins.json (%s) is not a JSON object"):format(prev_path))
+  end
+  if prev.schemaVersion ~= 1 then
+    fail(
+      ("the existing plugins.json (%s) has schemaVersion %s, but this nvimx only understands 1. "):format(
+        prev_path,
+        tostring(prev.schemaVersion)
+      )
+        .. "Upgrade nvimx, or delete the file and run nvimx-lock again -- deleting it loses the pinned revs."
+    )
+  end
+  prev_plugins = type(prev.plugins) == "table" and prev.plugins or {}
+end
+
+-- flake.lock is read as a pin DB only, exactly the way nix/lib/sources.nix reads it:
+-- root node → inputs.<inputName> → nodes.<node>.locked.rev.
+local locked_rev
+do
+  local nodes, root_inputs = {}, {}
+  if lock_path then
+    local lock = read_json(lock_path, "the existing flake.lock")
+    if type(lock) ~= "table" then
+      fail(("the existing flake.lock (%s) is not a JSON object"):format(lock_path))
+    end
+    nodes = type(lock.nodes) == "table" and lock.nodes or {}
+    local root = lock.root and nodes[lock.root]
+    root_inputs = (type(root) == "table" and type(root.inputs) == "table") and root.inputs or {}
+  end
+  locked_rev = function(input_name)
+    local node_name = root_inputs[input_name]
+    if type(node_name) ~= "string" then
+      return nil
+    end
+    local node = nodes[node_name]
+    local locked = type(node) == "table" and node.locked or nil
+    local rev = type(locked) == "table" and locked.rev or nil
+    return type(rev) == "string" and rev or nil
+  end
+end
+
+-- Plugins whose previous decision must be thrown away and re-resolved. Always empty today;
+-- #24 (`nvimx-lock --update [name...]`) fills it from the command line.
+local force = {}
 
 -- Normalize into a form usable as a flake input name ([^A-Za-z0-9_-] → "-")
 local function to_input_name(name)
@@ -33,6 +159,47 @@ local function parse_source(url)
     return { type = "github", owner = owner, repo = repo }
   end
   return { type = "git", url = url }
+end
+
+-- Spec identity: the fields that decide which ref a plugin resolves to. When all of them are
+-- unchanged the previous `resolvedRef` is carried over untouched; when any of them changed the
+-- user asked for something else, so the ref goes back to null and is resolved again.
+-- pin / optional / dependencies / build are deliberately excluded: they are metadata that never
+-- influences the ref, and editing them must not invalidate a pin.
+local identity_fields = { "branch", "tag", "commit", "version" }
+local source_fields = { "type", "owner", "repo", "url" }
+
+local function same_identity(a, b)
+  for _, k in ipairs(identity_fields) do
+    if norm(a[k]) ~= norm(b[k]) then
+      return false
+    end
+  end
+  local sa, sb = a.source, b.source
+  if type(sa) ~= "table" or type(sb) ~= "table" then
+    return false
+  end
+  for _, k in ipairs(source_fields) do
+    if norm(sa[k]) ~= norm(sb[k]) then
+      return false
+    end
+  end
+  return true
+end
+
+-- Dependencies are recorded for reference only, so the order lazy happened to produce carries no
+-- meaning -- sort it, or an unrelated spec edit would churn the committed plugins.json.
+local function sorted_deps(deps)
+  local out = {}
+  if type(deps) == "table" then
+    for _, d in ipairs(deps) do
+      if type(d) == "string" then
+        out[#out + 1] = d
+      end
+    end
+  end
+  table.sort(out)
+  return out
 end
 
 -- Non-fatal problems are both recorded in plugins.json (for the lock) and written to stderr
@@ -84,10 +251,6 @@ for name, p in pairs(raw.plugins or {}) do
     end
     seen_inputs[input_name] = name
 
-    if p.version then
-      warn_plugin(name, ("version constraint %q is not resolved yet (TODO: semver)"):format(tostring(p.version)))
-    end
-
     local build = { kind = "none" }
     if type(p.build) == "string" then
       if p.build:sub(1, 1) == "<" then
@@ -115,16 +278,45 @@ for name, p in pairs(raw.plugins or {}) do
       warn_plugin(name, msg)
     end
 
-    plugins[name] = {
+    local entry = {
       inputName = input_name,
       source = parse_source(p.url),
       branch = p.branch or vim.NIL,
       tag = p.tag or vim.NIL,
       commit = p.commit or vim.NIL,
       version = p.version or vim.NIL,
+      pin = p.pin or vim.NIL,
+      optional = p.optional or vim.NIL,
+      dependencies = json.array(sorted_deps(p.dependencies)),
       resolvedRef = vim.NIL,
       build = build,
     }
+
+    -- Merge with the previous lock. A plugin that is new, that was removed and re-added, or
+    -- whose spec identity changed has no decision to inherit and starts over at null.
+    local prev = (prev_plugins and not force[name]) and prev_plugins[name] or nil
+    local unchanged = prev ~= nil and same_identity(prev, entry)
+    if unchanged then
+      entry.resolvedRef = norm(prev.resolvedRef) or vim.NIL
+    end
+
+    -- `pin = true`: freeze onto the rev the lock currently records, so that even a bare
+    -- `nix flake update` in lockDir cannot move it. Skipped when the spec already nails the rev
+    -- down (`commit`), when a ref was carried over above, and when the spec changed -- in the
+    -- last case flake.lock still holds the rev of the *old* spec, and nvimx-lock resolves a
+    -- second time after `nix flake lock` has caught up.
+    if is_true(entry.pin) and unchanged and is_null(entry.resolvedRef) and is_null(entry.commit) then
+      entry.resolvedRef = locked_rev(input_name) or vim.NIL
+    end
+
+    -- Warn only about what the merge left unresolved: a version constraint that was already
+    -- pinned down on an earlier run needs nothing from the user. This is also the exact set
+    -- #23 (semver resolution) has to resolve.
+    if p.version and is_null(entry.resolvedRef) then
+      warn_plugin(name, ("version constraint %q is not resolved yet (TODO: semver)"):format(tostring(p.version)))
+    end
+
+    plugins[name] = entry
   end
 end
 

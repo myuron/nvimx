@@ -1,0 +1,96 @@
+{
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": true
+  },
+  "localPlugins": {},
+  "plugins": {
+    "custom.nvim": {
+      "branch": "trunk",
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "custom-nvim",
+      "optional": null,
+      "pin": true,
+      "resolvedRef": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "source": {
+        "type": "git",
+        "url": "https://git.example.com/custom.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "plenary.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "plenary-nvim",
+      "optional": null,
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "nvim-lua",
+        "repo": "plenary.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "telescope.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [
+        "nui.nvim",
+        "plenary.nvim"
+      ],
+      "inputName": "telescope-nvim",
+      "optional": true,
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "nvim-telescope",
+        "repo": "telescope.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": "^0.1"
+    },
+    "tokyonight.nvim": {
+      "branch": "main",
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "tokyonight-nvim",
+      "optional": null,
+      "pin": true,
+      "resolvedRef": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "source": {
+        "owner": "folke",
+        "repo": "tokyonight.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": [
+    "plugin \"telescope.nvim\": version constraint \"^0.1\" is not resolved yet (TODO: semver)"
+  ]
+}

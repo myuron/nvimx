@@ -1,0 +1,54 @@
+{
+  "_comment": [
+    "A plugins.json as an older nvimx wrote it: schemaVersion 1, but without the pin / optional /",
+    "dependencies fields. Reading it must work, the missing fields must read as unset, and the",
+    "decision it already records (tokyonight.nvim's resolvedRef) must survive untouched -- in",
+    "particular it must win over the rev in tests/fixtures/merge/flake.lock."
+  ],
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": true
+  },
+  "localPlugins": {},
+  "plugins": {
+    "plenary.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "inputName": "plenary-nvim",
+      "resolvedRef": null,
+      "source": {
+        "owner": "nvim-lua",
+        "repo": "plenary.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "tokyonight.nvim": {
+      "branch": "main",
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "inputName": "tokyonight-nvim",
+      "resolvedRef": "1111111111111111111111111111111111111111",
+      "source": {
+        "owner": "folke",
+        "repo": "tokyonight.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": []
+}

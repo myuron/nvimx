@@ -16,7 +16,10 @@
         "kind": "none"
       },
       "commit": null,
+      "dependencies": [],
       "inputName": "nvim-treesitter",
+      "optional": null,
+      "pin": null,
       "resolvedRef": null,
       "source": {
         "owner": "nvim-treesitter",

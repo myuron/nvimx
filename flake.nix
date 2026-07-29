@@ -973,6 +973,154 @@
                 jq -e '.warnings == []' quiet.json > /dev/null
                 touch $out
               '';
+          # Merging with the previous lock is what makes plugins.json a lock rather than a report:
+          # a decision already made must survive the next run, and `pin = true` must freeze (#18).
+          # resolve.lua is the only stage that carries state, so driving it directly covers the
+          # whole contract offline -- the `nix flake lock` around it needs the network and is
+          # stubbed out here by a hand-written tests/fixtures/merge/flake.lock.
+          resolve-merge =
+            pkgs.runCommand "resolve-merge"
+              {
+                nativeBuildInputs = [
+                  pkgs.neovim-unwrapped
+                  pkgs.jq
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                # the whole directory, not the single file: resolve.lua dofile()s json.lua next to it
+                lua=${./lua/nvimx}
+                fx=${./tests/fixtures/merge}
+
+                # The first resolve of a lock run cannot freeze anything: there is no previous
+                # plugins.json to tell whether the flake.lock next to it still describes this spec.
+                nvim -l $lua/resolve.lua $fx/raw-spec-base.json pass1.json --lock $fx/flake.lock \
+                  2> pass1.log
+                jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' pass1.json > /dev/null
+                jq -e '.plugins["custom.nvim"].resolvedRef == null' pass1.json > /dev/null
+
+                # The second one -- the pass nvimx-lock runs once `nix flake lock` has caught up --
+                # is what freezes them, and is the steady state. golden/base.plugins.json is that
+                # state written out for review: the new schema fields plus both frozen revs.
+                nvim -l $lua/resolve.lua $fx/raw-spec-base.json out1.json \
+                  --prev pass1.json --lock $fx/flake.lock 2> out1.log
+                diff -u $fx/golden/base.plugins.json out1.json
+
+                # "Running lock twice with no config change produces a byte-identical plugins.json":
+                # the steady state has to be a fixed point, or the convergence pass would never end.
+                nvim -l $lua/resolve.lua $fx/raw-spec-base.json out2.json \
+                  --prev out1.json --lock $fx/flake.lock 2> out2.log
+                cmp out1.json out2.json
+                # warnings are derived every run and never merged, so they repeat verbatim
+                diff -u out1.log out2.log
+
+                # "A pinned plugin keeps its ref after an unrelated plugin is added."
+                nvim -l $lua/resolve.lua $fx/raw-spec-added.json out3.json \
+                  --prev out1.json --lock $fx/flake.lock 2> /dev/null
+                for pinned in tokyonight.nvim custom.nvim; do
+                  diff -u \
+                    <(jq -S --arg n "$pinned" '.plugins[$n]' out1.json) \
+                    <(jq -S --arg n "$pinned" '.plugins[$n]' out3.json)
+                done
+                # a plugin with no previous decision starts out unresolved
+                jq -e '.plugins["nvim-cmp"].resolvedRef == null' out3.json > /dev/null
+
+                # "Removing a plugin from the config removes it from plugins.json and the
+                # generated flake." Nothing else may move: back to base is back to out1 byte for byte.
+                nvim -l $lua/resolve.lua $fx/raw-spec-base.json out4.json \
+                  --prev out3.json --lock $fx/flake.lock 2> /dev/null
+                cmp out1.json out4.json
+                nvim -l $lua/genflake.lua out3.json flake-added.nix
+                nvim -l $lua/genflake.lua out4.json flake-base.nix
+                grep -q 'nvim-cmp = {' flake-added.nix
+                if grep -q 'nvim-cmp' flake-base.nix; then
+                  echo "the removed plugin is still an input of the generated flake" >&2
+                  exit 1
+                fi
+                # and the frozen rev must actually reach the URL, for both source types --
+                # otherwise a bare `nix flake update` in lockDir would walk a pin forward
+                grep -q 'url = "github:folke/tokyonight.nvim/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";' flake-base.nix
+                grep -q 'url = "git+https://git.example.com/custom.nvim.git?ref=trunk&rev=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";' flake-base.nix
+
+                # Editing the spec beats the pin: the user asked for another branch, so the frozen
+                # rev is dropped. Editing metadata that cannot influence a ref (optional /
+                # dependencies) does not, or every such edit would silently unpin a plugin.
+                nvim -l $lua/resolve.lua $fx/raw-spec-branch-changed.json out5.json \
+                  --prev out1.json --lock $fx/flake.lock 2> /dev/null
+                jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' out5.json > /dev/null
+                jq -e '.plugins["tokyonight.nvim"].branch == "master"' out5.json > /dev/null
+                jq -e '.plugins["custom.nvim"].resolvedRef
+                       == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' out5.json > /dev/null
+                jq -e '.plugins["custom.nvim"].optional == true' out5.json > /dev/null
+                jq -e '.plugins["telescope.nvim"].dependencies == ["plenary.nvim"]' out5.json > /dev/null
+
+                # A plugins.json written before these fields existed must still be readable, and
+                # the decision it records must win over the rev in flake.lock (a resolvedRef that
+                # is already set is never recomputed -- that is the whole point of the merge).
+                nvim -l $lua/resolve.lua $fx/raw-spec-base.json out6.json \
+                  --prev $fx/prev-v1.json --lock $fx/flake.lock 2> /dev/null
+                jq -e '.plugins["tokyonight.nvim"].resolvedRef
+                       == "1111111111111111111111111111111111111111"' out6.json > /dev/null
+                jq -e '.plugins["tokyonight.nvim"].pin == true' out6.json > /dev/null
+                jq -e '.plugins["tokyonight.nvim"].dependencies == []' out6.json > /dev/null
+                # not in the old prev at all, so there is nothing to trust yet
+                jq -e '.plugins["custom.nvim"].resolvedRef == null' out6.json > /dev/null
+
+                # An unresolved version constraint is the one thing #18 leaves to #23, so it warns
+                # -- but only while it is still unresolved. Once a ref is on record the merge keeps
+                # it and the warning has to go, or every lock would nag about a settled constraint.
+                jq '.plugins["telescope.nvim"].resolvedRef = "refs/tags/0.1.8"' out1.json > resolved-prev.json
+                nvim -l $lua/resolve.lua $fx/raw-spec-base.json out7.json \
+                  --prev resolved-prev.json --lock $fx/flake.lock 2> resolved.log
+                jq -e '.plugins["telescope.nvim"].resolvedRef == "refs/tags/0.1.8"' out7.json > /dev/null
+                jq -e '.warnings == []' out7.json > /dev/null
+                if [ -s resolved.log ]; then
+                  echo "a resolved version constraint must not warn, got:" >&2
+                  cat resolved.log >&2
+                  exit 1
+                fi
+                grep -q 'version constraint "\^0.1" is not resolved yet' out1.log
+
+                # A prev nvimx cannot read must stop the run. Regenerating from scratch instead
+                # would quietly throw away every pinned rev in it, so say what to do and fail.
+                for bad in prev-broken prev-future; do
+                  rc=0
+                  nvim -l $lua/resolve.lua $fx/raw-spec-base.json bad.json --prev $fx/$bad.json \
+                    2> $bad.log || rc=$?
+                  cat $bad.log >&2
+                  if [ "$rc" -eq 0 ]; then
+                    echo "resolve.lua silently accepted $bad.json" >&2
+                    exit 1
+                  fi
+                  grep -q 'run nvimx-lock again' $bad.log
+                done
+                grep -q 'is not valid JSON' prev-broken.log
+                grep -q 'schemaVersion 2' prev-future.log
+
+                # Everything above starts from a hand-written raw-spec, so one case goes through
+                # the real extractor to prove the three fields survive lazy's normalization too.
+                sb=$TMPDIR/sandbox
+                mkdir -p $sb/config $sb/data/nvim/lazy $sb/state $sb/cache
+                ln -s ${./tests/fixtures/merge-config} $sb/config/nvim
+                ln -s ${lazy-nvim} $sb/data/nvim/lazy/lazy.nvim
+                env \
+                  XDG_CONFIG_HOME=$sb/config \
+                  XDG_DATA_HOME=$sb/data \
+                  XDG_STATE_HOME=$sb/state \
+                  XDG_CACHE_HOME=$sb/cache \
+                  NVIMX_LAZY_SEED=${lazy-nvim} \
+                  NVIMX_OUT=$sb/raw-spec.json \
+                  nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
+                nvim -l $lua/resolve.lua $sb/raw-spec.json extracted.json 2> /dev/null
+                jq -e '.plugins["tokyonight.nvim"].pin == true' extracted.json > /dev/null
+                jq -e '.plugins["telescope.nvim"].version == "^0.1"' extracted.json > /dev/null
+                jq -e '.plugins["telescope.nvim"].dependencies == ["plenary.nvim"]' extracted.json > /dev/null
+                # ...and stay absent when the spec does not set them
+                jq -e '.plugins["plenary.nvim"].pin == null' extracted.json > /dev/null
+                jq -e '.plugins["plenary.nvim"].optional == null' extracted.json > /dev/null
+                jq -e '.plugins["plenary.nvim"].dependencies == []' extracted.json > /dev/null
+                touch $out
+              '';
         }
       );
 
