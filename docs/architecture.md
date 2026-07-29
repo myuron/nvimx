@@ -241,12 +241,14 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
      is wrong, absent, or impossible in the sandbox — so that they work with no user configuration.
      One file per plugin, keyed by the lazy name, and each entry is a function of exactly the same shape as
      an override plus one extra argument, `mkPluginDrv` (the generic builder), so a recipe can move between
-     the registry and a user's `plugins.overrides` unchanged. Entries always build from the **locked src**:
+     the registry and a user's `plugins.overrides` unchanged. Entries build from the **locked src**:
      substituting a `pkgs.vimPlugins` attribute wholesale would detach the plugin from its pin, which is what
-     the opt-in 2 above is for. Because an entry applies to everyone, it must also hold for any rev the user
-     may have pinned — version-sensitive patching belongs in `plugins.overrides`.
+     the opt-in 2 above is for (borrowing a *companion binary* that cannot be produced offline from the locked
+     src either — `fzf` — is the one carve-out). Because an entry applies to everyone, it must also hold for
+     any rev the user may have pinned — version-sensitive patching belongs in `plugins.overrides`.
      Shipped today: `telescope-fzf-native.nvim` (always the Makefile, whatever the spec declared) and
-     `fzf` (`bin/fzf` from nixpkgs instead of the release binary `./install --bin` downloads)
+     `fzf` (`bin/fzf` from nixpkgs instead of the release binary `./install --bin` downloads; keyed by a
+     name generic enough to collide, so the build asserts the tree really is junegunn/fzf)
   4. `build.kind == "shell"` runs in `buildPhase`, in the unpacked source directory (make/cmake-style builds
      that need no network work this way). The tools available are whatever stdenv provides
      (cc, gnumake, coreutils, gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz, patch, diffutils, bash)

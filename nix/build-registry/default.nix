@@ -39,6 +39,12 @@
 #   Version-sensitive patching belongs in a user's `plugins.overrides`.
 # - It must keep building from the locked src. Substituting `pkgs.vimPlugins.<attr>` wholesale
 #   detaches the plugin from its pin, which is exactly why `plugins.nixpkgsFallback` is opt-in.
+#   Taking a *companion binary* from nixpkgs (fzf.nix) is the one carve-out: when the artifact a
+#   build downloads cannot be produced offline from the locked src either, nixpkgs' build of the
+#   same program is the closest thing to it, and the plugin's own files still come from the lock.
+# - Keying is by name alone, so an entry doubles as an assertion that the plugin really is the
+#   one it is named after. Where the name is generic enough to collide, say so in the build
+#   rather than silently mistreating someone else's plugin (again fzf.nix).
 {
   "telescope-fzf-native.nvim" = import ./telescope-fzf-native.nvim.nix;
   "fzf" = import ./fzf.nix;

@@ -517,10 +517,13 @@
                 package = pkgs.neovim-unwrapped;
                 lockDir = ./tests/fixtures/registry-plugins/nvimx-lock;
               };
-              # The entry replaces a build that downloads its artifact, so nothing here is fetched
+              # The entry replaces a build that downloads its artifact, so nothing here is
+              # fetched. Resolved against the real upstream tree (pkgs.fzf is already a
+              # dependency of the entry, so its src costs nothing extra): the entry checks the
+              # tree it was handed, and bin/ exists there with other files in it.
               fzf = nvimxLib.resolvePlugin {
                 name = "fzf";
-                src = ./tests/fixtures/local-plugin;
+                src = pkgs.fzf.src;
                 build = {
                   kind = "shell";
                   cmd = "./install --bin";
@@ -553,7 +556,9 @@
                 );
               stubDrv = pkgs.runCommand "nvimx-registry-stub" { } "mkdir -p $out";
               stub.${pname} = _: stubDrv;
-              # an entry must be handed the plugin it is keyed by, plus the generic builder
+              # An entry must be handed the plugin it is keyed by, plus the generic builder.
+              # Fed to `overrides` further down as well: the two contracts are meant to be
+              # identical, so the very same function has to work in both positions.
               echoArgs.${pname} =
                 {
                   name,
@@ -578,6 +583,10 @@
                 ++ lib.optional (
                   (resolve pname { registry = echoDefault; }).outPath != (mkGeneric pname).outPath
                 ) "a registry entry's defaultDrv should be the generic build"
+                # the documented way out of a shipped recipe: rebuild with mkPluginDrv
+                ++ lib.optional (
+                  (resolve pname { overrides = echoArgs; }).outPath != (mkGeneric pname).outPath
+                ) "an override did not receive name / src / mkPluginDrv"
                 ++ lib.optional (
                   (resolve pname { registry = { }; }).outPath != (mkGeneric pname).outPath
                 ) "removing an entry should fall back to the generic build"
@@ -602,8 +611,11 @@
                 ''
                   # the spec declares no build, so only the registry can have produced this
                   test -f ${env.farm}/telescope-fzf-native.nvim/build/libfzf.so
-                  # ... and here the entry stands in for a binary the sandbox cannot download
+                  # ... and here the entry stands in for a binary the sandbox cannot download,
+                  # without disturbing what upstream already ships next to it
                   test -x ${fzf}/bin/fzf
+                  test -f ${fzf}/bin/fzf-tmux
+                  test -f ${fzf}/plugin/fzf.vim
                   touch $out
                 ''
               else
@@ -646,7 +658,9 @@
                   !(evaluates "tokyonight.nvim" { nixpkgsFallback = [ "tokyonight.nvim" ]; })
                 ) "plugins.nixpkgsFallback did not rescue a build needing the network"
                 # "fzf" is shipped in nix/build-registry precisely because its declared build
-                # downloads a release binary
+                # downloads a release binary. Its real command (`./install --bin`) is not what
+                # is resolved here on purpose: build-network.nix cannot see the fetch inside
+                # that script, so it would not exercise the rescue at all
                 ++ lib.optional (
                   !(evaluates "fzf" { })
                 ) "nix/build-registry did not rescue a build needing the network";

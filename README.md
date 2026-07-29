@@ -198,8 +198,10 @@ missing, or one that downloads something the Nix sandbox can never reach. `nix/b
 holds nvimx's own recipes for those, so they build correctly with nothing configured on your side.
 It currently covers `telescope-fzf-native.nvim` and `fzf`.
 
-Registry entries are ordinary override functions that nvimx happens to ship, and they always build
-from your locked source — they never silently swap in a nixpkgs package. Since both hatches above
+Registry entries are ordinary override functions that nvimx happens to ship, and they build your
+locked source rather than silently swapping in a nixpkgs package. The `fzf` entry borrows only the
+*binary* from nixpkgs, because the release binary its build downloads cannot be produced offline
+from the locked source either; the plugin files still come from your lock. Since both hatches above
 outrank the registry, you can replace an entry (`plugins.overrides`), take nixpkgs' package instead
 (`plugins.nixpkgsFallback`), or go back to the generic treatment with `mkPluginDrv` as shown above.
 
