@@ -5,7 +5,7 @@
 # build.kind (recorded by resolve.lua):
 #   "none"              → no build phase
 #   "shell"             → build.cmd runs in the unpacked source directory
-#   "excmd" / "function" → cannot be run automatically; helptags only (warned at lock time, #22)
+#   "excmd" / "function" → cannot be run automatically; helptags only (resolve.lua warns at lock time)
 #
 # Tools available to a shell build: whatever stdenv provides (cc, gnumake, coreutils,
 # gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz, patch, diffutils, bash) plus cmake and
