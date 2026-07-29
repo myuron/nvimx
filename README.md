@@ -117,11 +117,12 @@ All options live under `programs.nvimx`.
 | `extraPackages` | `listOf package` | `[ ]` | Packages prepended to the wrapper's `PATH` (ripgrep, language servers, etc.). |
 | `plugins.overrides` | `attrsOf (functionTo package)` | `{ }` | Per-plugin derivation overrides, keyed by the plugin name lazy derived. See [Escape hatches](#escape-hatches). |
 | `plugins.nixpkgsFallback` | `listOf str` | `[ ]` | Plugin names to take from `pkgs.vimPlugins` as-is instead of building from the lock. Opt-in per plugin. See [Escape hatches](#escape-hatches). |
+| `treesitter.grammars` | `nullOr (either (enum [ "all" ]) (listOf str))` | `null` | Tree-sitter grammars to merge into the locked `nvim-treesitter`, so no `:TSInstall` ever runs. See [Tree-sitter grammars](#tree-sitter-grammars). |
 | `lock.installCommand` | `bool` | `true` | Add the `nvimx-lock` command to `home.packages`. |
 | `lock.projectDir` | `nullOr str` | `null` | The working tree of your dotfiles repository. When set, running `nvimx-lock` with no arguments targets `configDirRelative` / `lockDirRelative`. |
 | `lock.configDirRelative` | `str` | `"nvim"` | Path to `configDir`, relative to `projectDir`. |
 | `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | Path to `lockDir`, relative to `projectDir`. |
-| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
+| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
 
 `lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module.
 
@@ -208,6 +209,43 @@ outrank the registry, you can replace an entry (`plugins.overrides`), take nixpk
 Contributions are welcome: add `nix/build-registry/<plugin name>.nix`, list it in that directory's
 `default.nix` (its header documents the criteria an entry has to meet), and extend
 `checks.build-registry`.
+
+### Tree-sitter grammars
+
+`nvim-treesitter` is the one plugin the generic build cannot finish on its own: its parsers are
+compiled at runtime by `:TSInstall`, into exactly the kind of user-owned mutable state nvimx exists
+to avoid. So nvimx merges prebuilt grammars into the plugin instead, and you name the languages you
+want:
+
+```nix
+programs.nvimx.treesitter.grammars = [ "lua" "nix" "rust" ];
+# or, at the cost of a much larger build:
+# programs.nvimx.treesitter.grammars = "all";
+```
+
+Names are nvim-treesitter's own language names — the ones `:TSInstall` takes, underscores and all
+(`c_sharp`, not `c-sharp`). A name nixpkgs has no grammar for fails evaluation rather than quietly
+leaving you without a parser, and a grammar that needs another one (`angular` needs `html`) pulls it
+in for you. The default, `null`, leaves `nvim-treesitter` untouched.
+
+Neovim finds the merged parsers on the runtimepath, which is all `vim.treesitter` (and therefore
+highlighting) needs. nvim-treesitter's own bookkeeping is a separate matter: `get_installed()` and
+`:checkhealth nvim-treesitter` only look at the directory `:TSInstall` writes to, so they will keep
+reporting nothing installed.
+
+The grammars come from `pkgs.vimPlugins.nvim-treesitter.grammarPlugins`: nixpkgs already builds
+them, keys them by nvim-treesitter's language names, and lays each one out as `parser/<lang>.so`,
+which is exactly where Neovim looks on the runtimepath. (`pkgs.tree-sitter-grammars` is the same
+set one layer down, but named and shaped differently, so it would only mean re-deriving what
+nixpkgs already gets right.) Queries always come from *your* locked `nvim-treesitter`, never from
+nixpkgs' copy.
+
+**Known limitation**: the grammar revs follow nixpkgs while the plugin rev follows your lock, so the
+two are close but not identical. In practice this is fine — grammars and queries move slowly — but a
+badly timed mismatch can produce a query error for a node type the parser does not have. Pinning
+grammars to the locked `nvim-treesitter` revision (a strict mode) is future work. For the same
+reason the grammars are built against nixpkgs' Neovim: if you point `package` at a nightly Neovim
+with a different tree-sitter ABI, a parser may refuse to load.
 
 ## How it works
 

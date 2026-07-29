@@ -11,11 +11,14 @@
   viAlias ? false,
   # Same shape as the module's programs.nvimx.plugins, so it can be passed straight through
   plugins ? { },
+  # Likewise for programs.nvimx.treesitter
+  treesitter ? { },
 }:
 let
   inherit (pkgs) lib;
   overrides = plugins.overrides or { };
   nixpkgsFallback = plugins.nixpkgsFallback or [ ];
+  grammars = treesitter.grammars or null;
   hasLock =
     builtins.pathExists (lockDir + "/plugins.json") && builtins.pathExists (lockDir + "/flake.lock");
   pluginsDb = builtins.fromJSON (builtins.readFile (lockDir + "/plugins.json"));
@@ -23,6 +26,7 @@ let
   mkPluginDrv = import ./plugin-drv.nix { inherit pkgs; };
   resolvePlugin = import ./resolve-plugin.nix { inherit pkgs; };
   mkFarm = import ./farm.nix { inherit pkgs; };
+  mkTreesitter = import ./treesitter.nix { inherit pkgs; };
   mkBootstrap = import ./bootstrap.nix { inherit pkgs; };
   mkWrapper = import ./wrapper.nix { inherit pkgs; };
 
@@ -33,7 +37,7 @@ let
 
   # overrides / nixpkgsFallback only ever apply to plugins from the lock: lazy.nvim itself is
   # nvimx's own foundation, not a plugin the user declared.
-  pluginDrvs =
+  resolvedDrvs =
     if hasLock then
       lib.mapAttrs (
         name: p:
@@ -45,6 +49,25 @@ let
       ) pluginsDb.plugins
     else
       { };
+
+  treesitterName = "nvim-treesitter";
+
+  # Grammars are merged on top of whatever resolution produced, so an override or a
+  # nixpkgsFallback for nvim-treesitter still decides what the plugin itself is.
+  # grammars = null leaves the plugin exactly as resolved (the opt-out).
+  pluginDrvs =
+    resolvedDrvs
+    // lib.optionalAttrs (grammars != null && resolvedDrvs ? ${treesitterName}) {
+      ${treesitterName} = mkTreesitter {
+        plugin = resolvedDrvs.${treesitterName};
+        inherit grammars;
+      };
+    };
+
+  # Selecting grammars without nvim-treesitter in the lock does nothing at all, which is
+  # worth saying out loud. Reported rather than thrown, like unknownPluginNames, and only
+  # when there is a lock to judge against (the degraded path has its own warning).
+  treesitterWithoutPlugin = hasLock && grammars != null && !(resolvedDrvs ? ${treesitterName});
 
   # A name that matches nothing in the lock is a typo that would otherwise be a silent no-op.
   # Reported rather than thrown: it must not break the degraded (no lock) path.
@@ -87,6 +110,7 @@ in
     wrapped
     pluginDrvs
     unknownPluginNames
+    treesitterWithoutPlugin
     hasLock
     ;
 }

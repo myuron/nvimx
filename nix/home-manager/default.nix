@@ -136,6 +136,31 @@ in
       };
     };
 
+    treesitter = {
+      grammars = lib.mkOption {
+        type = lib.types.nullOr (
+          lib.types.either (lib.types.enum [ "all" ]) (lib.types.listOf lib.types.str)
+        );
+        default = null;
+        example = [
+          "lua"
+          "nix"
+        ];
+        description = ''
+          Tree-sitter grammars to merge into the locked nvim-treesitter, so that the parsers
+          are present at build time and `:TSInstall` never has to run.
+
+          A list of nvim-treesitter language names ("c_sharp", not "c-sharp"), or "all" for
+          every grammar nixpkgs ships (a large build -- name what you use instead).
+          null (the default) leaves nvim-treesitter alone, parsers and all.
+
+          Grammars come from pkgs.vimPlugins.nvim-treesitter.grammarPlugins, so their revs
+          follow nixpkgs rather than the nvim-treesitter rev in your lock. Queries always come
+          from your locked plugin. Has no effect unless nvim-treesitter is in the lock.
+        '';
+      };
+    };
+
     lock = {
       installCommand = lib.mkOption {
         type = lib.types.bool;
@@ -171,7 +196,7 @@ in
       defaultText = lib.literalExpression "nvimx lib.makeEnv { ... }";
       description = ''
         The result of makeEnv (farm / bootstrap / wrapped / pluginDrvs /
-        unknownPluginNames / hasLock).
+        unknownPluginNames / treesitterWithoutPlugin / hasLock).
         By default it is built automatically from the options above.
         This is an escape hatch for advanced users who want to supply it directly.
       '';
@@ -197,6 +222,12 @@ in
         not in the lock, so they have no effect:
         ${lib.concatMapStringsSep "\n" (n: "  - ${n}") (cfg.env.unknownPluginNames or [ ])}
         Use the name lazy derived for the plugin (the key in nvimx-lock/plugins.json).
+      ''
+      ++ lib.optional (cfg.env.treesitterWithoutPlugin or false) ''
+        programs.nvimx: treesitter.grammars is set, but nvim-treesitter is not in the lock,
+        so the grammars have nowhere to go and are ignored.
+        Add nvim-treesitter to your lazy spec and re-run `nvimx-lock`, or set
+        treesitter.grammars = null.
       '';
 
     programs.nvimx.env = lib.mkDefault (
@@ -208,6 +239,7 @@ in
           vimAlias
           viAlias
           plugins
+          treesitter
           ;
       }
     );
