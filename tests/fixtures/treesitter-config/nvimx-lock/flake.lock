@@ -1,0 +1,44 @@
+{
+  "nodes": {
+    "lazy-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1765971162,
+        "narHash": "sha256-5A4kducPwKb5fKX4oSUFvo898P0dqfsqqLxFaXBsbQY=",
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "rev": "306a05526ada86a7b30af95c5cc81ffba93fef97",
+        "type": "github"
+      },
+      "original": {
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "type": "github"
+      }
+    },
+    "nvim-treesitter": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1785054252,
+        "narHash": "sha256-h0O7KX8rIAhOW5MxQPvw9MeTNsjBxP2JuS/9sgcfzrw=",
+        "owner": "nvim-treesitter",
+        "repo": "nvim-treesitter",
+        "rev": "61df84986b4b4ec469ee745a182e433d49f8c27e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nvim-treesitter",
+        "repo": "nvim-treesitter",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "lazy-nvim": "lazy-nvim",
+        "nvim-treesitter": "nvim-treesitter"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

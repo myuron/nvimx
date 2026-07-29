@@ -269,8 +269,20 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
   Matching is deliberately first-word-only and fails **open**: a false positive is a hard evaluation
   failure for the user, so a command that hides its real work (`sh -c "npm install"`, `make deps`)
   is attempted and left to die in the sandbox rather than guessed at
-- **nvim-treesitter**: the plugin itself (src replaced) plus nixpkgs' grammars are **merged into a single derivation with symlinkJoin** (self-contained in a single farm entry; a separate rtp entry was rejected because it conflicts with `performance.rtp.reset`).
-  `treesitter.grammars = "all" | [ names ] | null`. The slight mismatch between the grammar revs and the plugin rev is a known limitation (future work: a strict mode that builds grammars directly from the locked src's lockfile)
+- **nvim-treesitter** (`nix/lib/treesitter.nix`): the locked plugin plus nixpkgs' grammars are **merged into a single derivation with symlinkJoin** (self-contained in a single farm entry; a separate rtp entry was rejected because it conflicts with `performance.rtp.reset`).
+  `treesitter.grammars = "all" | [ names ] | null`, where the names are nvim-treesitter's own language names.
+  The merge sits **on top of** resolution, so `plugins.overrides` / `plugins.nixpkgsFallback` still decide what the plugin
+  itself is; `null` (the default) is the opt-out and leaves the resolved derivation untouched.
+  Grammars come from `pkgs.vimPlugins.nvim-treesitter.grammarPlugins` rather than `pkgs.tree-sitter-grammars`:
+  nixpkgs keys that set by nvim-treesitter's language names and already lays each grammar out as `parser/<lang>.so`,
+  which is exactly what neovim looks for on the runtimepath. A grammar's `requires` are pulled in transitively,
+  the same expansion nvim-treesitter's own installer does. Queries always come from the **locked** plugin: on the
+  `main` layout they live under `runtime/queries/` (off the runtimepath) and upstream links only the installed
+  languages into place at `:TSInstall` time, so the merge does that same linking at build time for the selected
+  languages; on the `master` layout `queries/` is already at the plugin root and nothing is linked.
+  Selecting grammars with no nvim-treesitter in the lock is reported as `treesitterWithoutPlugin` and warned about
+  at activation time, like `unknownPluginNames`.
+  The slight mismatch between the grammar revs and the plugin rev is a known limitation (future work: a strict mode that builds grammars directly from the locked src's lockfile)
 
 ### Runtime injection (bootstrap.lua)
 
@@ -304,7 +316,7 @@ programs.nvimx = {
     overrides = { };               # per-plugin derivation overrides
     nixpkgsFallback = [ ];         # plugin names to take from nixpkgs as-is (opt-in)
   };
-  treesitter.grammars = "all";     # "all" | [ names ] | null
+  treesitter.grammars = null;      # "all" | [ names ] | null (default: null, i.e. nvim-treesitter untouched)
 
   devPlugins = [ ];                # names of plugins under local development
   devPath = "~/projects";
@@ -386,7 +398,7 @@ lua/nvimx/
   genflake.lua               # plugins.json → lock/flake.nix text generation
   bootstrap.lua.in           # runtime bootstrap template
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / registry-plugins / local-plugin / golden/
+tests/fixtures/              # basic-config / build-plugins / registry-plugins / treesitter-config / local-plugin / golden/
 ```
 
 flake outputs:
@@ -395,7 +407,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, build-shell, plugin-drv-phases, build-network-detect, build-registry, e2e-offline}`
+- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, e2e-offline}`
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
 
