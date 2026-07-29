@@ -38,11 +38,32 @@ local function input_url(p)
     end
     return base
   end
-  -- explicit git URL
+  -- explicit git URL. Unlike the github type, ref and rev are separate query parameters rather
+  -- than one path component, so a pinned rev can be carried alongside the branch it lives on.
   local url = "git+" .. src.url
-  local ref = (not is_null(p.branch) and p.branch) or (not is_null(p.tag) and p.tag) or nil
+  local rev, ref
+  if not is_null(p.commit) then
+    rev = p.commit
+  elseif not is_null(p.resolvedRef) then
+    -- resolvedRef is either a frozen 40-hex rev (pin) or a symbolic ref such as refs/tags/v1.2.3
+    if p.resolvedRef:match("^%x+$") and #p.resolvedRef == 40 then
+      rev = p.resolvedRef
+    else
+      ref = p.resolvedRef
+    end
+  end
+  -- A tag has to be spelled out in full: nix expands a `ref` with no "refs/" prefix to
+  -- refs/heads/<ref>, so the short tag name would be looked for among the branches.
+  ref = ref or (not is_null(p.tag) and ("refs/tags/" .. p.tag)) or (not is_null(p.branch) and p.branch) or nil
+  local params = {}
   if ref then
-    url = url .. "?ref=" .. ref
+    params[#params + 1] = "ref=" .. ref
+  end
+  if rev then
+    params[#params + 1] = "rev=" .. rev
+  end
+  if #params > 0 then
+    url = url .. "?" .. table.concat(params, "&")
   end
   return url
 end

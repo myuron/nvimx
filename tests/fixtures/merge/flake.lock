@@ -1,0 +1,88 @@
+{
+  "_comment": [
+    "A hand-written stand-in for the flake.lock nvimx-lock produces, used by checks.resolve-merge.",
+    "Only the shape resolve.lua reads matters (root -> inputs.<inputName> -> nodes.<n>.locked.rev),",
+    "so the revs are obvious placeholders and are never fetched.",
+    "nvim-cmp -- the pinned plugin raw-spec-added.json introduces -- is deliberately absent: a pin",
+    "on its very first lock has no node here yet, and the freeze must cope with finding nothing.",
+    "plenary-nvim is absent for the same reason, minus the pin."
+  ],
+  "nodes": {
+    "custom-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA=",
+        "ref": "refs/heads/trunk",
+        "rev": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "type": "git",
+        "url": "https://git.example.com/custom.nvim.git"
+      },
+      "original": {
+        "ref": "trunk",
+        "type": "git",
+        "url": "https://git.example.com/custom.nvim.git"
+      }
+    },
+    "lazy-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEA=",
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "rev": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "type": "github"
+      },
+      "original": {
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "custom-nvim": "custom-nvim",
+        "lazy-nvim": "lazy-nvim",
+        "telescope-nvim": "telescope-nvim",
+        "tokyonight-nvim": "tokyonight-nvim"
+      }
+    },
+    "telescope-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA=",
+        "owner": "nvim-telescope",
+        "repo": "telescope.nvim",
+        "rev": "cccccccccccccccccccccccccccccccccccccccc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nvim-telescope",
+        "repo": "telescope.nvim",
+        "type": "github"
+      }
+    },
+    "tokyonight-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+        "owner": "folke",
+        "ref": "main",
+        "repo": "tokyonight.nvim",
+        "rev": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "type": "github"
+      },
+      "original": {
+        "owner": "folke",
+        "ref": "main",
+        "repo": "tokyonight.nvim",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

@@ -1,0 +1,12 @@
+{
+  "_comment": "A plugins.json from a future nvimx. Merging into it blindly would silently degrade it.",
+  "schemaVersion": 2,
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "synthetic": true,
+    "source": { "type": "github", "owner": "folke", "repo": "lazy.nvim" }
+  },
+  "plugins": {},
+  "localPlugins": {},
+  "warnings": []
+}

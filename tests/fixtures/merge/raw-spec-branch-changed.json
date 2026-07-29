@@ -1,0 +1,38 @@
+{
+  "_comment": [
+    "raw-spec-base.json with the pinned tokyonight.nvim moved to another branch, and the",
+    "metadata-only fields of the equally pinned custom.nvim (optional) and of telescope.nvim",
+    "(dependencies) edited. Editing the spec must beat the pin (resolvedRef drops back to null),",
+    "while editing metadata that cannot influence a ref must leave the frozen rev alone."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "tokyonight.nvim": {
+      "name": "tokyonight.nvim",
+      "short": "folke/tokyonight.nvim",
+      "url": "https://github.com/folke/tokyonight.nvim.git",
+      "branch": "master",
+      "pin": true
+    },
+    "telescope.nvim": {
+      "name": "telescope.nvim",
+      "short": "nvim-telescope/telescope.nvim",
+      "url": "https://github.com/nvim-telescope/telescope.nvim.git",
+      "version": "^0.1",
+      "dependencies": ["plenary.nvim"]
+    },
+    "plenary.nvim": {
+      "name": "plenary.nvim",
+      "short": "nvim-lua/plenary.nvim",
+      "url": "https://github.com/nvim-lua/plenary.nvim.git"
+    },
+    "custom.nvim": {
+      "name": "custom.nvim",
+      "url": "https://git.example.com/custom.nvim.git",
+      "branch": "trunk",
+      "pin": true,
+      "optional": true
+    }
+  }
+}

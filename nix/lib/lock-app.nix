@@ -9,6 +9,7 @@ pkgs.writeShellApplication {
   name = "nvimx-lock";
   runtimeInputs = [
     pkgs.coreutils
+    pkgs.diffutils # cmp, for the convergence pass below
     pkgs.neovim-unwrapped
     pkgs.nixfmt-rfc-style
   ];
@@ -74,12 +75,25 @@ pkgs.writeShellApplication {
       timeout 120 nvim --headless --cmd "luafile ${luaDir}/extract.lua" < /dev/null
 
     echo "nvimx-lock: resolving plugins" >&2
+    # Whatever the previous lock decided is an input to this one: resolve.lua carries already
+    # resolved refs forward and freezes `pin = true` plugins onto the rev in flake.lock. Deciding
+    # whether that state exists is this script's job, not resolve.lua's -- it only reads what it
+    # is handed. --prev may point at the output path because resolve.lua reads before it writes.
+    resolve_args=()
+    if [ -f "$out/plugins.json" ]; then
+      resolve_args+=(--prev "$out/plugins.json")
+    fi
+    if [ -f "$out/flake.lock" ]; then
+      resolve_args+=(--lock "$out/flake.lock")
+    fi
     # resolve.lua reports non-fatal problems (a build nvimx cannot run, an unresolved version
     # constraint) on stderr. They are held back and re-printed after `nix flake lock`, whose
     # output is long enough to scroll them out of sight otherwise (#22).
     # A Lua error must stay fatal, so surface the log and keep the exit code.
     rc=0
+    # ''${a[@]+"''${a[@]}"}: an empty array is an unset variable under `set -u`
     nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$out/plugins.json" \
+      ''${resolve_args[@]+"''${resolve_args[@]}"} \
       2> "$sandbox/resolve.log" || rc=$?
     if [ "$rc" -ne 0 ]; then
       cat "$sandbox/resolve.log" >&2
@@ -93,6 +107,32 @@ pkgs.writeShellApplication {
 
     echo "nvimx-lock: pinning with nix flake lock" >&2
     (cd "$out" && nix flake lock)
+
+    # A plugin pinned for the first time (or right after its spec changed) has no usable rev in
+    # flake.lock when the resolve above runs, so its freeze had to be deferred. Resolve once more
+    # now that flake.lock has caught up, and redo the flake only if that actually changed
+    # something. One retry is enough: the third resolve would read back the same flake.lock and
+    # produce the same file, so this is already the fixed point.
+    # The log is overwritten on purpose: only this run's warnings are shown. resolve.lua is
+    # written so that the two runs report the same set of problems -- in particular a `pin` that
+    # only freezes here still warns about an unvalidated `version` on the first run -- so nothing
+    # a user needs is lost with the log that gets replaced.
+    rc=0
+    nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$sandbox/plugins2.json" \
+      --prev "$out/plugins.json" --lock "$out/flake.lock" \
+      2> "$sandbox/resolve.log" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      cat "$sandbox/resolve.log" >&2
+      resolve_log_shown=1
+      exit "$rc"
+    fi
+    if ! cmp -s "$sandbox/plugins2.json" "$out/plugins.json"; then
+      echo "nvimx-lock: freezing pinned plugins" >&2
+      mv "$sandbox/plugins2.json" "$out/plugins.json"
+      nvim -l "${luaDir}/genflake.lua" "$out/plugins.json" "$out/flake.nix"
+      nixfmt "$out/flake.nix"
+      (cd "$out" && nix flake lock)
+    fi
 
     if [ -s "$sandbox/resolve.log" ]; then
       cat "$sandbox/resolve.log" >&2

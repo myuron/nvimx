@@ -135,15 +135,20 @@ flowchart LR
       - Config.setup (merging safe opts) → Spec.new(spec, {pkg=false}) to normalize
         (recursive import resolution, fragment merging, dependency expansion — all lazy's own logic)
       → raw-spec.json
-[3] Resolution: nvim -l resolve.lua
+[3] Resolution: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>] [--lock <flake.lock>]
       - resolve version (semver range) with git ls-remote --tags + lazy.manage.semver
-      - lock mode: keep existing pins, resolve new ones only / update mode: re-resolve everything
+      - merge with --prev: a ref already decided is kept while the spec identity is unchanged,
+        and pin = true freezes onto the rev --lock records (the lock app decides whether that
+        state exists and passes it in; resolve.lua only reads what it is handed)
+      - update mode: re-resolve everything
       → plugins.json
 [4] Generation: nvim -l genflake.lua
       → lockDir/flake.nix (inputs.<name> = { url = ...; flake = false; }, outputs = _: {})
       → formatted with nixfmt
 [5] Place it in lockDir and run (cd lockDir && nix flake lock)
       → generate/update flake.lock (in lock mode existing nodes stay untouched, only new ones are fetched)
+[6] Resolve once more against the fresh flake.lock, to freeze the pins that had no rev in [3].
+      Only if that changes plugins.json are [4] and [5] redone; the pass after it is a no-op.
 ```
 
 ### At build time (`home-manager switch`) — fully pure, no network required
@@ -179,7 +184,10 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
       "source": { "type": "github", "owner": "nvim-telescope", "repo": "telescope.nvim" },
       "branch": null, "tag": null, "commit": null,
       "version": "^0.1",                    // the original semver constraint (kept for reference)
-      "resolvedRef": "refs/tags/0.1.8",     // the ref resolved at lock time (null = default branch)
+      "pin": null,                          // lazy's `pin` (true | null; null = not set)
+      "optional": null,                     // lazy's `optional` (recorded only; does not affect the build)
+      "dependencies": [ "plenary.nvim" ],   // always an array, sorted by name (order carries no meaning)
+      "resolvedRef": "refs/tags/0.1.8",     // the ref decided at lock time (see below)
       "build": { "kind": "none" }           // "none" | "shell" | "excmd" | "function"
     }
   },
@@ -191,6 +199,16 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
 - Plugins with a literal `enabled = false` are excluded. Those with a function or `cond` are **included** (a superset of the machine-dependent branches is locked)
 - The `lazyNvim` entry is always present: extraction and runtime from the second run onward use the same locked lazy.nvim, preventing version skew in the name derivation rules
 
+`resolvedRef` is "the ref nvimx itself decided at lock time", and takes one of three forms:
+
+| value | written by | example |
+|---|---|---|
+| `null` | nothing to decide (follows a branch / the default HEAD, or `commit` already says it) | — |
+| a 40-hex rev | `pin = true`, frozen onto the rev in `flake.lock` | `"a1b2c3..."` |
+| `refs/tags/<tag>` | semver resolution of `version` | `"refs/tags/v0.1.8"` |
+
+**Merge contract.** `plugins.json` is read back at the start of the next lock and merged into, rather than regenerated. The *spec identity* of a plugin is `source` + `branch` + `tag` + `commit` + `version`; while it is unchanged, `resolvedRef` is carried over verbatim, and the moment it changes `resolvedRef` drops back to `null` and is decided again. Nothing else re-decides it: `pin`, `optional`, `dependencies` and `build` are refreshed from the spec on every run but never invalidate a decision. `warnings` is derived every run and is not lock state.
+
 ### lazy spec → flake input URL mapping
 
 | lazy spec | flake input URL | behavior of `nix flake update` |
@@ -200,16 +218,20 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
 | `tag = "t"` | `github:owner/repo/refs/tags/t` | frozen |
 | `commit = "sha"` | `github:owner/repo/<sha>` | frozen |
 | `version = "^1.2"` | `refs/tags/vX.Y.Z` for the resolved tag | frozen (re-resolved with `--update`) |
-| `pin = true` | freezes the current lock's rev | frozen |
-| explicit git URL | `git+https://...?ref=...` (github.com is normalized to the github type) | follows the ref |
+| `pin = true` | freezes the current lock's rev into `resolvedRef`, so the URL itself names the rev | frozen |
+| explicit git URL | `git+https://...?ref=...&rev=...` (github.com is normalized to the github type) | follows the ref unless a rev is pinned |
 
 **semver resolution**: the tag list is obtained with `git ls-remote --tags` (preferring peeled `^{}`) and lazy's bundled `lazy.manage.semver` is called from `nvim -l`. The GitHub API is not used (rate limits, and non-GitHub support).
 
 ### Update semantics
 
 - `nvimx-lock`: only adds new plugins and removes deleted ones. Existing pins stay untouched
+- Editing the spec beats `pin`. Changing the `branch` / `tag` / `commit` / `version` / source of a pinned plugin is an explicit request, so the frozen rev is dropped and the plugin is resolved again (lazy's own `pin` behaves the same way: it stops `:Lazy update`, not you). A `tag` that gets moved upstream is therefore *not* followed while pinned -- rename the tag in the spec, or use `--update <name>`
+- Removing `pin` thaws the plugin: the frozen rev is dropped and it goes back to following its branch/tag. It has to be, because the frozen rev is part of the input URL, so `nix flake update` cannot undo a freeze on its own
+- `pin` also beats a `version` constraint: the frozen rev is whatever the lock held, and it is never checked against the range. `nvimx-lock` warns about this on every run rather than freezing silently
+- `nvimx-lock` runs the resolver twice, on either side of `nix flake lock`. A plugin pinned for the first time has no rev in `flake.lock` yet, so the second pass is what freezes it; the flake is regenerated and re-locked only if that pass changed anything. One retry always suffices, because the third pass would read the same `flake.lock` back
 - `nvimx-lock --update [name...]`: re-resolves version constraints + `nix flake update [name...]`
-- Back door: plain `nix flake update <inputName>` in lockDir also works (same as twist)
+- Back door: plain `nix flake update <inputName>` in lockDir also works (same as twist), but it cannot move a pinned plugin -- a frozen rev is part of the input URL, not just of `flake.lock`
 - `nvimx-lock --import-lazy-lock <path>`: pins from an existing lazy-lock.json's `{branch, commit}` on the first run for a bit-identical migration. Returns to normal tracking at `--update` time
 
 ### Plugin derivations (1 plugin = 1 derivation)
