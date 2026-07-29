@@ -227,6 +227,8 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
 
 - `nvimx-lock`: only adds new plugins and removes deleted ones. Existing pins stay untouched
 - Editing the spec beats `pin`. Changing the `branch` / `tag` / `commit` / `version` / source of a pinned plugin is an explicit request, so the frozen rev is dropped and the plugin is resolved again (lazy's own `pin` behaves the same way: it stops `:Lazy update`, not you). A `tag` that gets moved upstream is therefore *not* followed while pinned -- rename the tag in the spec, or use `--update <name>`
+- Removing `pin` thaws the plugin: the frozen rev is dropped and it goes back to following its branch/tag. It has to be, because the frozen rev is part of the input URL, so `nix flake update` cannot undo a freeze on its own
+- `pin` also beats a `version` constraint: the frozen rev is whatever the lock held, and it is never checked against the range. `nvimx-lock` warns about this on every run rather than freezing silently
 - `nvimx-lock` runs the resolver twice, on either side of `nix flake lock`. A plugin pinned for the first time has no rev in `flake.lock` yet, so the second pass is what freezes it; the flake is regenerated and re-locked only if that pass changed anything. One retry always suffices, because the third pass would read the same `flake.lock` back
 - `nvimx-lock --update [name...]`: re-resolves version constraints + `nix flake update [name...]`
 - Back door: plain `nix flake update <inputName>` in lockDir also works (same as twist), but it cannot move a pinned plugin -- a frozen rev is part of the input URL, not just of `flake.lock`

@@ -113,7 +113,10 @@ pkgs.writeShellApplication {
     # now that flake.lock has caught up, and redo the flake only if that actually changed
     # something. One retry is enough: the third resolve would read back the same flake.lock and
     # produce the same file, so this is already the fixed point.
-    # The log is overwritten on purpose -- the second run repeats the same warnings verbatim.
+    # The log is overwritten on purpose: only this run's warnings are shown. resolve.lua is
+    # written so that the two runs report the same set of problems -- in particular a `pin` that
+    # only freezes here still warns about an unvalidated `version` on the first run -- so nothing
+    # a user needs is lost with the log that gets replaced.
     rc=0
     nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$sandbox/plugins2.json" \
       --prev "$out/plugins.json" --lock "$out/flake.lock" \

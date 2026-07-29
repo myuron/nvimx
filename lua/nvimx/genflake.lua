@@ -52,7 +52,9 @@ local function input_url(p)
       ref = p.resolvedRef
     end
   end
-  ref = ref or (not is_null(p.tag) and p.tag) or (not is_null(p.branch) and p.branch) or nil
+  -- A tag has to be spelled out in full: nix expands a `ref` with no "refs/" prefix to
+  -- refs/heads/<ref>, so the short tag name would be looked for among the branches.
+  ref = ref or (not is_null(p.tag) and ("refs/tags/" .. p.tag)) or (not is_null(p.branch) and p.branch) or nil
   local params = {}
   if ref then
     params[#params + 1] = "ref=" .. ref

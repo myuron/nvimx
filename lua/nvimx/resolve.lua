@@ -97,6 +97,18 @@ local function is_true(v)
   return not is_null(v) and v ~= false
 end
 
+-- A bare 40-hex ref in resolvedRef can only have got there by freezing a pin: the spec's own
+-- `commit` is kept in `commit`, and semver resolution writes "refs/tags/<tag>".
+local function is_frozen_rev(v)
+  return type(v) == "string" and #v == 40 and v:match("^%x+$") ~= nil
+end
+
+-- Conversely, a "refs/tags/..." ref is what semver resolution (#23) writes, so it is evidence
+-- that the version constraint was actually honored.
+local function is_tag_ref(v)
+  return type(v) == "string" and v:sub(1, 10) == "refs/tags/"
+end
+
 -- The previous lock, when one was passed. Nothing else in this file reads plugins.json.
 local prev_plugins = nil
 if prev_path then
@@ -297,7 +309,17 @@ for name, p in pairs(raw.plugins or {}) do
     local prev = (prev_plugins and not force[name]) and prev_plugins[name] or nil
     local unchanged = prev ~= nil and same_identity(prev, entry)
     if unchanged then
-      entry.resolvedRef = norm(prev.resolvedRef) or vim.NIL
+      local carried = norm(prev.resolvedRef)
+      -- Dropping `pin` has to drop the freeze with it. pin is not part of the spec identity
+      -- because it cannot *decide* a ref -- but a frozen rev exists only because pin put it
+      -- there, so carrying it past an unpin would make the freeze permanent: the URL names the
+      -- rev, so `nix flake update` cannot move it either, and a non-null resolvedRef would keep
+      -- the entry out of semver resolution (#23) forever. Only pin's own 40-hex freeze is
+      -- dropped; a "refs/tags/..." from semver did not come from pin and stays.
+      if is_frozen_rev(carried) and is_true(prev.pin) and not is_true(entry.pin) then
+        carried = nil
+      end
+      entry.resolvedRef = carried or vim.NIL
     end
 
     -- `pin = true`: freeze onto the rev the lock currently records, so that even a bare
@@ -309,11 +331,23 @@ for name, p in pairs(raw.plugins or {}) do
       entry.resolvedRef = locked_rev(input_name) or vim.NIL
     end
 
-    -- Warn only about what the merge left unresolved: a version constraint that was already
-    -- pinned down on an earlier run needs nothing from the user. This is also the exact set
-    -- #23 (semver resolution) has to resolve.
-    if p.version and is_null(entry.resolvedRef) then
-      warn_plugin(name, ("version constraint %q is not resolved yet (TODO: semver)"):format(tostring(p.version)))
+    -- What to say about a version constraint. Note this is decided from `pin` rather than from
+    -- whether the freeze happened on *this* run: a pin freezes on the second resolve of a lock
+    -- run, and nvimx-lock keeps only the second run's log, so a warning that appeared on the
+    -- first run alone would never reach the user. Deciding it from pin makes the two runs say
+    -- exactly the same thing.
+    if p.version then
+      if is_true(entry.pin) and not is_tag_ref(norm(entry.resolvedRef)) then
+        -- pin beats the constraint: the rev is whatever the lock happens to hold, and nothing
+        -- ever checks it against the range. Frozen silently, this is a trap.
+        warn_plugin(
+          name,
+          ("pinned; version constraint %q is not validated (pin wins)"):format(tostring(p.version))
+        )
+      elseif is_null(entry.resolvedRef) then
+        -- Still unresolved after the merge -- exactly the set #23 (semver) has to resolve.
+        warn_plugin(name, ("version constraint %q is not resolved yet (TODO: semver)"):format(tostring(p.version)))
+      end
     end
 
     plugins[name] = entry

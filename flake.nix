@@ -1024,6 +1024,14 @@
                 done
                 # a plugin with no previous decision starts out unresolved
                 jq -e '.plugins["nvim-cmp"].resolvedRef == null' out3.json > /dev/null
+                # ...and the newcomer is itself pinned, with no node in flake.lock -- the state
+                # every pin is in on its first lock. Even on the pass that would freeze it (it is
+                # in --prev now, and its spec has not moved) there is no rev to freeze onto, so
+                # the freeze must quietly leave it null instead of failing or inventing one.
+                nvim -l $lua/resolve.lua $fx/raw-spec-added.json out3b.json \
+                  --prev out3.json --lock $fx/flake.lock 2> /dev/null
+                jq -e '.plugins["nvim-cmp"].pin == true' out3b.json > /dev/null
+                jq -e '.plugins["nvim-cmp"].resolvedRef == null' out3b.json > /dev/null
 
                 # "Removing a plugin from the config removes it from plugins.json and the
                 # generated flake." Nothing else may move: back to base is back to out1 byte for byte.
@@ -1053,6 +1061,40 @@
                        == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' out5.json > /dev/null
                 jq -e '.plugins["custom.nvim"].optional == true' out5.json > /dev/null
                 jq -e '.plugins["telescope.nvim"].dependencies == ["plenary.nvim"]' out5.json > /dev/null
+
+                # Taking `pin` away must thaw the plugin. Nothing else in the spec changes here
+                # (jq deletes exactly the one key), so without this the frozen rev would ride
+                # along on the unchanged-identity path forever -- and since the rev is part of the
+                # input URL, not even `nix flake update` could break it out again.
+                jq 'del(.plugins["tokyonight.nvim"].pin)' $fx/raw-spec-base.json > raw-spec-unpinned.json
+                nvim -l $lua/resolve.lua raw-spec-unpinned.json out8.json \
+                  --prev out1.json --lock $fx/flake.lock 2> /dev/null
+                jq -e '.plugins["tokyonight.nvim"].pin == null' out8.json > /dev/null
+                jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' out8.json > /dev/null
+                # only the unpinned one thaws; the plugin that is still pinned keeps its rev
+                jq -e '.plugins["custom.nvim"].resolvedRef
+                       == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' out8.json > /dev/null
+
+                # `pin` + `version` is a trap: the pin freezes whatever rev the lock holds and
+                # nothing ever checks it against the range, so it has to say so -- and say it on
+                # both passes, because nvimx-lock keeps only the second one's log.
+                jq '.plugins["tokyonight.nvim"].version = "^1.0"' $fx/raw-spec-base.json > raw-spec-pinned-version.json
+                nvim -l $lua/resolve.lua raw-spec-pinned-version.json out9a.json \
+                  --lock $fx/flake.lock 2> out9a.log
+                nvim -l $lua/resolve.lua raw-spec-pinned-version.json out9b.json \
+                  --prev out9a.json --lock $fx/flake.lock 2> out9b.log
+                # the freeze really did happen between the two passes...
+                jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' out9a.json > /dev/null
+                jq -e '.plugins["tokyonight.nvim"].resolvedRef
+                       == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' out9b.json > /dev/null
+                # ...and it did not silence the constraint on the way through, on either stream
+                for f in out9a out9b; do
+                  grep -q '^\[nvimx\] warning: plugin "tokyonight.nvim": pinned; version constraint "\^1.0" is not validated (pin wins)$' $f.log
+                  jq -e '.warnings | any(. == "plugin \"tokyonight.nvim\": pinned; version constraint \"^1.0\" is not validated (pin wins)")' $f.json > /dev/null
+                done
+                # both passes say exactly the same thing, which is what makes overwriting the
+                # first pass's log in nvimx-lock safe
+                diff -u out9a.log out9b.log
 
                 # A plugins.json written before these fields existed must still be readable, and
                 # the decision it records must win over the rev in flake.lock (a resolvedRef that

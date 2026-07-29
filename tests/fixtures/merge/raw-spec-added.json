@@ -1,5 +1,9 @@
 {
-  "_comment": "raw-spec-base.json plus one unrelated plugin. Adding it must not disturb the pins.",
+  "_comment": [
+    "raw-spec-base.json plus one unrelated plugin. Adding it must not disturb the pins.",
+    "The newcomer is pinned and has no node in flake.lock, which is the state every pin starts",
+    "in: the freeze has nothing to freeze onto and must simply leave resolvedRef null."
+  ],
   "disabled": [],
   "notifs": [],
   "plugins": {
@@ -32,7 +36,8 @@
     "nvim-cmp": {
       "name": "nvim-cmp",
       "short": "hrsh7th/nvim-cmp",
-      "url": "https://github.com/hrsh7th/nvim-cmp.git"
+      "url": "https://github.com/hrsh7th/nvim-cmp.git",
+      "pin": true
     }
   }
 }

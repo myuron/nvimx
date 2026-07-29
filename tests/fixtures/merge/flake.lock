@@ -3,7 +3,9 @@
     "A hand-written stand-in for the flake.lock nvimx-lock produces, used by checks.resolve-merge.",
     "Only the shape resolve.lua reads matters (root -> inputs.<inputName> -> nodes.<n>.locked.rev),",
     "so the revs are obvious placeholders and are never fetched.",
-    "plenary-nvim is deliberately absent: an input with no node yet must not break the freeze pass."
+    "nvim-cmp -- the pinned plugin raw-spec-added.json introduces -- is deliberately absent: a pin",
+    "on its very first lock has no node here yet, and the freeze must cope with finding nothing.",
+    "plenary-nvim is absent for the same reason, minus the pin."
   ],
   "nodes": {
     "custom-nvim": {
