@@ -891,6 +891,88 @@
                 grep -q 'did not call require("lazy").setup' stderr.log
                 touch $out
               '';
+          # A build nvimx cannot run (:excmd / Lua callback / list of steps) must be reported at
+          # lock time, and must stay a warning: locking has to succeed anyway (#22).
+          # The real lock app ends in `nix flake lock`, which needs the network, so this exercises
+          # the two offline stages it chains -- extract then resolve -- which is the part under test.
+          resolve-build-warnings =
+            pkgs.runCommand "resolve-build-warnings"
+              {
+                nativeBuildInputs = [
+                  pkgs.neovim-unwrapped
+                  pkgs.jq
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                sb=$TMPDIR/sandbox
+                mkdir -p $sb/config $sb/data/nvim/lazy $sb/state $sb/cache
+                ln -s ${lazy-nvim} $sb/data/nvim/lazy/lazy.nvim
+
+                extract() { # <fixture> <raw-spec output>
+                  rm -f $sb/config/nvim
+                  ln -s "$1" $sb/config/nvim
+                  env \
+                    XDG_CONFIG_HOME=$sb/config \
+                    XDG_DATA_HOME=$sb/data \
+                    XDG_STATE_HOME=$sb/state \
+                    XDG_CACHE_HOME=$sb/cache \
+                    NVIMX_LAZY_SEED=${lazy-nvim} \
+                    NVIMX_OUT="$2" \
+                    nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
+                }
+
+                extract ${./tests/fixtures/unbuildable-config} $sb/unbuildable.json
+                rc=0
+                # the whole directory, not the single file: resolve.lua dofile()s json.lua next to it
+                nvim -l ${./lua/nvimx}/resolve.lua $sb/unbuildable.json plugins.json \
+                  2> stderr.log || rc=$?
+                cat stderr.log >&2
+                if [ "$rc" -ne 0 ]; then
+                  echo "resolve.lua must warn, not fail: got rc=$rc" >&2
+                  exit 1
+                fi
+
+                # one warning per plugin, each naming the shape of the build it cannot run
+                grep -q '^\[nvimx\] warning: plugin "nvim-treesitter": build is a neovim command (":TSUpdate")' stderr.log
+                grep -q '^\[nvimx\] warning: plugin "markdown-preview.nvim": build is a Lua function ("<function>")' stderr.log
+                # a list build is not a callback and must not be called one
+                grep -q '^\[nvimx\] warning: plugin "LuaSnip": build is a list of build steps ("<table>")' stderr.log
+                n=$(grep -c '^\[nvimx\] warning: plugin ' stderr.log)
+                if [ "$n" -ne 3 ]; then
+                  echo "expected exactly 3 plugin warnings, got $n" >&2
+                  exit 1
+                fi
+
+                # every escape hatch is named, plus the treesitter-specific pointer
+                grep -q 'plugins.overrides' stderr.log
+                grep -q 'plugins.nixpkgsFallback' stderr.log
+                grep -q 'nix/build-registry/' stderr.log
+                grep -q 'programs.nvimx.treesitter.grammars' stderr.log
+
+                # the same warnings are recorded in the lock, sorted by plugin name so that
+                # re-locking does not reshuffle the array
+                jq -e '.warnings | length == 3' plugins.json > /dev/null
+                jq -e '.warnings[0] | startswith("plugin \"LuaSnip\"")' plugins.json > /dev/null
+                jq -e '.warnings[1] | startswith("plugin \"markdown-preview.nvim\"")' plugins.json > /dev/null
+                jq -e '.warnings[2] | startswith("plugin \"nvim-treesitter\"")' plugins.json > /dev/null
+                # the "<function>" / "<table>" placeholder must not leak into build.cmd
+                jq -e '.plugins["markdown-preview.nvim"].build == { kind: "function" }' plugins.json > /dev/null
+                jq -e '.plugins["LuaSnip"].build == { kind: "function" }' plugins.json > /dev/null
+                jq -e '.plugins["nvim-treesitter"].build.cmd == ":TSUpdate"' plugins.json > /dev/null
+
+                # ...and the quiet path: a build nvimx *can* run must say nothing at all.
+                # Without this, warning about every build would pass every assertion above.
+                extract ${./tests/fixtures/build-plugins} $sb/buildable.json
+                nvim -l ${./lua/nvimx}/resolve.lua $sb/buildable.json quiet.json 2> quiet.log
+                if [ -s quiet.log ]; then
+                  echo "a shell build must not warn, got:" >&2
+                  cat quiet.log >&2
+                  exit 1
+                fi
+                jq -e '.warnings == []' quiet.json > /dev/null
+                touch $out
+              '';
         }
       );
 

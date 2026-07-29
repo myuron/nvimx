@@ -253,7 +253,11 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
      that need no network work this way). The tools available are whatever stdenv provides
      (cc, gnumake, coreutils, gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz, patch, diffutils, bash)
      plus `cmake` and `pkg-config`; anything beyond that needs 1–3.
-     For `excmd`/`function`, if none of 1–3 apply a warning is emitted at evaluation time (it continues with helptags only)
+     `excmd`/`function` cannot run in the sandbox at all (`function` is every non-string build, so lazy's
+     list-of-steps form lands there too), so `resolve.lua` warns about them **at lock time**
+     (naming the three hatches above, and `treesitter.grammars` for `nvim-treesitter`) and the plugin is
+     installed with helptags only. resolve.lua runs before any Nix evaluation, so it cannot know whether
+     1–3 already cover the plugin — the warning fires regardless
 
   1–3 only ever apply to plugins in the lock; the lazy.nvim seed is nvimx's own foundation and is
   not overridable. A name matching nothing in the lock is a typo that would silently do nothing, so
@@ -398,7 +402,7 @@ lua/nvimx/
   genflake.lua               # plugins.json → lock/flake.nix text generation
   bootstrap.lua.in           # runtime bootstrap template
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / registry-plugins / treesitter-config / local-plugin / golden/
+tests/fixtures/              # basic-config / build-plugins / registry-plugins / treesitter-config / unbuildable-config / local-plugin / golden/
 ```
 
 flake outputs:
@@ -407,7 +411,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, e2e-offline}`
+- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, e2e-offline}`
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
 

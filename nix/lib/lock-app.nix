@@ -45,7 +45,17 @@ pkgs.writeShellApplication {
     seed="${lazyNvimSeed}"
 
     sandbox=$(mktemp -d)
-    trap 'rm -rf "$sandbox"' EXIT
+    # resolve.lua's warnings are held back until the very end (see the resolve step below).
+    # Print them from the trap when a later step failed before we got there -- otherwise
+    # removing the sandbox would swallow them entirely (#22).
+    resolve_log_shown=0
+    cleanup() {
+      if [ "$resolve_log_shown" -eq 0 ] && [ -s "$sandbox/resolve.log" ]; then
+        cat "$sandbox/resolve.log" >&2
+      fi
+      rm -rf "$sandbox"
+    }
+    trap cleanup EXIT
     mkdir -p "$sandbox/config" "$sandbox/data/nvim/lazy" "$sandbox/state" "$sandbox/cache"
     ln -sfT "$config" "$sandbox/config/nvim"
     ln -sfT "$seed" "$sandbox/data/nvim/lazy/lazy.nvim"
@@ -64,7 +74,18 @@ pkgs.writeShellApplication {
       timeout 120 nvim --headless --cmd "luafile ${luaDir}/extract.lua" < /dev/null
 
     echo "nvimx-lock: resolving plugins" >&2
-    nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$out/plugins.json"
+    # resolve.lua reports non-fatal problems (a build nvimx cannot run, an unresolved version
+    # constraint) on stderr. They are held back and re-printed after `nix flake lock`, whose
+    # output is long enough to scroll them out of sight otherwise (#22).
+    # A Lua error must stay fatal, so surface the log and keep the exit code.
+    rc=0
+    nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$out/plugins.json" \
+      2> "$sandbox/resolve.log" || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      cat "$sandbox/resolve.log" >&2
+      resolve_log_shown=1
+      exit "$rc"
+    fi
 
     echo "nvimx-lock: generating lock flake" >&2
     nvim -l "${luaDir}/genflake.lua" "$out/plugins.json" "$out/flake.nix"
@@ -72,6 +93,11 @@ pkgs.writeShellApplication {
 
     echo "nvimx-lock: pinning with nix flake lock" >&2
     (cd "$out" && nix flake lock)
+
+    if [ -s "$sandbox/resolve.log" ]; then
+      cat "$sandbox/resolve.log" >&2
+    fi
+    resolve_log_shown=1
 
     echo "nvimx-lock: done. commit $out/{plugins.json,flake.nix,flake.lock}" >&2
   '';
