@@ -253,7 +253,8 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
      that need no network work this way). The tools available are whatever stdenv provides
      (cc, gnumake, coreutils, gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz, patch, diffutils, bash)
      plus `cmake` and `pkg-config`; anything beyond that needs 1–3.
-     `excmd`/`function` cannot run in the sandbox at all, so `resolve.lua` warns about them **at lock time**
+     `excmd`/`function` cannot run in the sandbox at all (`function` is every non-string build, so lazy's
+     list-of-steps form lands there too), so `resolve.lua` warns about them **at lock time**
      (naming the three hatches above, and `treesitter.grammars` for `nvim-treesitter`) and the plugin is
      installed with helptags only. resolve.lua runs before any Nix evaluation, so it cannot know whether
      1–3 already cover the plugin — the warning fires regardless

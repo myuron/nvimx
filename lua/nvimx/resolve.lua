@@ -65,6 +65,15 @@ local function warn_plugin(name, msg)
   plugin_warnings[#plugin_warnings + 1] = { name = name, msg = ("plugin %q: %s"):format(name, msg) }
 end
 
+-- How to name a build that is not a shell command. `kind` alone is too coarse: extract.lua
+-- records *any* non-string build as "<type>" and resolve.lua files them all under "function",
+-- but lazy accepts a list of build steps as well as a callback, and calling that a Lua function
+-- would be wrong. The recorded placeholder is the only thing left to go on.
+local build_phrasing = {
+  ["<function>"] = "a Lua function",
+  ["<table>"] = "a list of build steps",
+}
+
 for name, p in pairs(raw.plugins or {}) do
   if p.dev or p.dir then
     local_plugins[name] = { dir = p.dir }
@@ -96,7 +105,7 @@ for name, p in pairs(raw.plugins or {}) do
     -- build.cmd as a command to run, and "<function>" is a placeholder, not one.
     if build.kind == "excmd" or build.kind == "function" then
       unbuildable = true
-      local what = build.kind == "excmd" and "a neovim command" or "a Lua function"
+      local what = build.kind == "excmd" and "a neovim command" or (build_phrasing[p.build] or "not a shell command")
       local msg = ("build is %s (%q) and cannot be run at build time"):format(what, p.build)
       -- nvim-treesitter's `:TSUpdate` is by far the most common build of this shape, and nvimx
       -- already has a purpose-built answer for it, so point there instead of at the generic hatches.

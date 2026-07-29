@@ -192,9 +192,10 @@ A user's explicit opt-in outranks a shipped default, hence 1 and 2 above 3. Both
 plugins present in the lock; a name that matches nothing there is reported as a warning at
 activation time rather than silently doing nothing.
 
-Only a shell command can run inside the Nix build sandbox. A spec whose `build` is an ex command
-(`build = ":TSUpdate"`) or a Lua callback has nothing nvimx can execute, so the plugin is installed
-with helptags only — and `nvimx-lock` says so, listing every such plugin at the end of its output
+Only a single shell command can run inside the Nix build sandbox. A spec whose `build` is an ex
+command (`build = ":TSUpdate"`), a Lua callback, or a list of steps has nothing nvimx can execute
+directly, so the plugin is installed with helptags only — and `nvimx-lock` says so, listing every
+such plugin at the end of its output
 and pointing at the hatches above (at `treesitter.grammars` for `nvim-treesitter`). The same list is
 recorded in `plugins.json` under `warnings`. Locking still succeeds; this is a warning, not an
 error. It is emitted by the Lua resolver, which runs before any Nix evaluation and therefore cannot

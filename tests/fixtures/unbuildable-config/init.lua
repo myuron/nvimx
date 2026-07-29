@@ -1,6 +1,7 @@
--- A lazy.nvim-style config whose plugins declare builds nvimx cannot run: an ex command and a
--- Lua callback. Neither can execute inside the nix build sandbox, so `nvimx-lock` has to say so
--- rather than let the plugins misbehave at runtime (#22, checks.resolve-build-warnings).
+-- A lazy.nvim-style config declaring every build shape nvimx cannot run: an ex command, a Lua
+-- callback, and a list of steps. None of them can execute inside the nix build sandbox, so
+-- `nvimx-lock` has to say so rather than let the plugins misbehave at runtime
+-- (#22, checks.resolve-build-warnings).
 -- Never built, only extracted and resolved, so it ships no nvimx-lock/ directory.
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 if not (vim.uv or vim.loop).fs_stat(lazypath) then
@@ -19,5 +20,10 @@ require("lazy").setup({
     build = function()
       vim.fn["mkdp#util#install"]()
     end,
+  },
+  {
+    -- lazy also accepts a list of build steps; extract.lua records it as "<table>"
+    "L3MON4D3/LuaSnip",
+    build = { "make install_jsregexp" },
   },
 })
