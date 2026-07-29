@@ -162,8 +162,8 @@ in
       The escape hatches, in the order nvimx applies them:
         - programs.nvimx.plugins.overrides."${name}" = { pkgs, src, ... }: <your derivation>;
         - programs.nvimx.plugins.nixpkgsFallback = [ "${name}" ];
-        - a recipe under nix/build-registry/ (reuses a nixpkgs vimPlugins build with the
-          locked src) -- not implemented yet, nvimx issue #19
+        - a recipe under nix/build-registry/, if this plugin is common enough that nvimx
+          should ship one (it must build from the locked src, and offline)
 
       See docs/architecture.md ("Plugin derivations") for details.
     '';

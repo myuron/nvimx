@@ -100,8 +100,8 @@ flowchart LR
     B -- "builtins.fetchTree" --> C["plugin sources"]
     C --> D{"derivation resolution"}
     D -- "1. overrides" --> E["user-defined drv"]
-    D -- "2. build-registry" --> F["nixpkgs recipe<br/>with src replaced"]
-    D -- "3. nixpkgsFallback" --> G["nixpkgs version as-is"]
+    D -- "2. nixpkgsFallback" --> F["nixpkgs version as-is"]
+    D -- "3. build-registry" --> G["nvimx's shipped recipe<br/>(built from the locked src)"]
     D -- "4. default" --> H["cp + helptags<br/>(shell build runs buildPhase)"]
     E & F & G & H --> I["linkFarm<br/>nvimx-plugins"]
     I --> J["bootstrap.lua<br/>(farm path embedded)"]
@@ -152,7 +152,7 @@ flowchart LR
 [1] Read lockDir/plugins.json + flake.lock with builtins.fromJSON
       NOTE: the lock flake is never evaluated as a flake. flake.lock is just a pin DB
 [2] nodes.<inputName>.locked → builtins.fetchTree → src
-[3] Turn plugins into derivations: overrides > build-registry > default (cp + helptags)
+[3] Turn plugins into derivations: overrides > nixpkgsFallback > build-registry > default (cp + helptags)
 [4] linkFarm "nvimx-plugins" [ { name = <lazy-derived name>; path = drv; } ... ]
 [5] Generate bootstrap.lua (embedding the farm path and the forced opts)
       → wrapProgram neovim (the user-selected package) with --cmd 'luafile <bootstrap.lua>'
@@ -237,8 +237,18 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
      (`LazyVim`), then `.` replaced by `-` (`CopilotChat.nvim` → `CopilotChat-nvim`), then lowercased on
      top of that (`telescope.nvim` → `telescope-nvim`).
      A name that resolves to none of the three **throws at evaluation time** and points at `plugins.overrides`
-  3. Built-in registry (`nix/build-registry/`, not implemented yet — #19): **replace the src of a nixpkgs vimPlugins recipe**
-     (`overrideAttrs (o: { src = <locked src>; })`), reusing nixpkgs' build know-how while preserving the pin semantics
+  3. Built-in registry (`nix/build-registry/`): nvimx's own build recipes for plugins whose declared build
+     is wrong, absent, or impossible in the sandbox — so that they work with no user configuration.
+     One file per plugin, keyed by the lazy name, and each entry is a function of exactly the same shape as
+     an override plus one extra argument, `mkPluginDrv` (the generic builder), so a recipe can move between
+     the registry and a user's `plugins.overrides` unchanged. Entries build from the **locked src**:
+     substituting a `pkgs.vimPlugins` attribute wholesale would detach the plugin from its pin, which is what
+     the opt-in 2 above is for (borrowing a *companion binary* that cannot be produced offline from the locked
+     src either — `fzf` — is the one carve-out). Because an entry applies to everyone, it must also hold for
+     any rev the user may have pinned — version-sensitive patching belongs in `plugins.overrides`.
+     Shipped today: `telescope-fzf-native.nvim` (always the Makefile, whatever the spec declared) and
+     `fzf` (`bin/fzf` from nixpkgs instead of the release binary `./install --bin` downloads; keyed by a
+     name generic enough to collide, so the build asserts the tree really is junegunn/fzf)
   4. `build.kind == "shell"` runs in `buildPhase`, in the unpacked source directory (make/cmake-style builds
      that need no network work this way). The tools available are whatever stdenv provides
      (cc, gnumake, coreutils, gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz, patch, diffutils, bash)
@@ -358,14 +368,17 @@ nix/
     default.nix              # lib entry point (makeEnv, mkLockApp)
     make-env.nix             # the core of env assembly
     sources.nix              # flake.lock JSON → name → fetchTree src
-    plugin-drv.nix           # turning 1 plugin into a derivation (helptags / build / override resolution)
+    plugin-drv.nix           # turning 1 plugin into a derivation (the generic path: helptags / shell build)
+    resolve-plugin.nix       # picking the derivation: overrides / nixpkgsFallback / registry / generic
     build-network.nix        # detecting build commands that cannot run in the sandbox
     farm.nix                 # linkFarm construction
     bootstrap.nix            # bootstrap.lua generation
     wrapper.nix              # wrapProgram for neovim
     treesitter.nix           # nvim-treesitter + grammar merge derivation
     lock-app.nix             # lock script (writeShellApplication)
-  build-registry/            # name → build recipe (telescope-fzf-native.nvim, etc.)
+  build-registry/            # name → build recipe (default.nix = the index + how to add an entry)
+    telescope-fzf-native.nvim.nix
+    fzf.nix
   home-manager/default.nix   # the programs.nvimx module
 lua/nvimx/
   extract.lua                # preload shim + spec capture + normalization + JSON dump
@@ -373,7 +386,7 @@ lua/nvimx/
   genflake.lua               # plugins.json → lock/flake.nix text generation
   bootstrap.lua.in           # runtime bootstrap template
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / local-plugin / golden/
+tests/fixtures/              # basic-config / build-plugins / registry-plugins / local-plugin / golden/
 ```
 
 flake outputs:
@@ -382,7 +395,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, build-shell, plugin-drv-phases, build-network-detect, e2e-offline}`
+- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, build-shell, plugin-drv-phases, build-network-detect, build-registry, e2e-offline}`
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
 

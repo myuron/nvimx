@@ -156,10 +156,24 @@ programs.nvimx.plugins = {
 };
 ```
 
-An override function receives `{ pkgs, name, src, build, defaultDrv }` and returns a derivation.
-Always accept `...` too — more arguments may be added later. `src` is the locked source tree, and
-`defaultDrv` is the derivation that would have been used without the override, so patching and
-replacing are both one-liners.
+An override function receives `{ pkgs, name, src, build, defaultDrv, mkPluginDrv }` and returns a
+derivation. Always accept `...` too — more arguments may be added later. `src` is the locked source
+tree, and `defaultDrv` is the derivation that would have been used without the override, so patching
+and replacing are both one-liners. `mkPluginDrv` is nvimx's generic builder
+(`{ name, src, build } -> drv`), which is the shortest way to say "the usual treatment, but with the
+build command corrected":
+
+```nix
+programs.nvimx.plugins.overrides."some.nvim" =
+  { name, src, mkPluginDrv, ... }:
+  mkPluginDrv {
+    inherit name src;
+    build = {
+      kind = "shell";
+      cmd = "make PREFIX=$out";
+    };
+  };
+```
 
 One caveat on `defaultDrv`: for a plugin whose declared build needs the network, `defaultDrv` is
 the very derivation nvimx refuses to evaluate, so touching it re-raises that error. Such a plugin
@@ -170,12 +184,30 @@ Resolution order, highest first:
 
 1. `plugins.overrides."<name>"`
 2. `plugins.nixpkgsFallback`
-3. `nix/build-registry/` — nvimx's shipped build recipes (not implemented yet)
+3. `nix/build-registry/` — nvimx's shipped build recipes
 4. The generic build: run `build.kind == "shell"` if the spec declared one, otherwise a plain copy
 
 A user's explicit opt-in outranks a shipped default, hence 1 and 2 above 3. Both apply only to
 plugins present in the lock; a name that matches nothing there is reported as a warning at
 activation time rather than silently doing nothing.
+
+### The build registry
+
+Some plugins are known to need more than what their spec declares — a build command that is simply
+missing, or one that downloads something the Nix sandbox can never reach. `nix/build-registry/`
+holds nvimx's own recipes for those, so they build correctly with nothing configured on your side.
+It currently covers `telescope-fzf-native.nvim` and `fzf`.
+
+Registry entries are ordinary override functions that nvimx happens to ship, and they build your
+locked source rather than silently swapping in a nixpkgs package. The `fzf` entry borrows only the
+*binary* from nixpkgs, because the release binary its build downloads cannot be produced offline
+from the locked source either; the plugin files still come from your lock. Since both hatches above
+outrank the registry, you can replace an entry (`plugins.overrides`), take nixpkgs' package instead
+(`plugins.nixpkgsFallback`), or go back to the generic treatment with `mkPluginDrv` as shown above.
+
+Contributions are welcome: add `nix/build-registry/<plugin name>.nix`, list it in that directory's
+`default.nix` (its header documents the criteria an entry has to meet), and extend
+`checks.build-registry`.
 
 ## How it works
 
