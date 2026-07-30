@@ -48,9 +48,14 @@ local safe_opts = {
 -- :141: recording a constraint that can never decide a ref would only mislead the lock and make
 -- resolve.lua warn about a constraint the user never wrote.
 -- `p.version == false` is lazy's per-plugin "do not use tags" and must beat the config-wide
--- default, so this tests for nil, not for falsy.
--- dev plugins are excluded by lazy too (git.lua:119-123); resolve.lua already routes them to
--- localPlugins, so no guard is needed here.
+-- default, so this tests for nil, not for falsy. `tag` and `commit` are typed string?, so a falsy
+-- value there is a type error rather than an idiom -- treating it as unset is deliberately not
+-- symmetric with lazy, whose early returns test for truthiness.
+-- Local plugins are excluded by lazy first of all (git.lua:119-123). `dev` ones need no guard here
+-- because resolve.lua routes them to localPlugins, but a plugin with an explicit `dir` and no
+-- `dev` is a different story: dump_plugin only records `dir` for dev plugins, so resolve treats it
+-- as remote and this constraint reaches plugins.json even though lazy would never consult it.
+-- Routing those to localPlugins is a pre-existing gap, tracked separately.
 ---@param p table the plugin object normalized by lazy
 ---@param default_version string|nil Config.options.defaults.version, false normalized to nil
 local function effective_version(p, default_version)
