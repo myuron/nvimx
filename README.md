@@ -198,8 +198,9 @@ activation time rather than silently doing nothing.
 Only shell commands can run inside the Nix build sandbox. A spec whose `build` is a list of steps
 (`build = { "make", ":TSUpdate" }`) has each element classified individually and runs its shell
 steps, in declared order, each in its own subshell — so a mix of runnable and unrunnable steps
-still gets as much done as it can, and a list of shell commands works exactly as if it were one
-long build. A spec whose `build` is an ex command (`build = ":TSUpdate"`), a Lua callback, a
+still gets as much done as it can. Each step starts from the plugin root with nothing carried over
+from the one before, the same way lazy runs them, so `{ "cd deps", "make" }` is not the same as
+`cd deps && make`. A spec whose `build` is an ex command (`build = ":TSUpdate"`), a Lua callback, a
 luarocks build (`build = "rockspec"`), or a `*.lua` file has nothing nvimx can execute directly
 (and neither do the non-shell elements of a list build), so that part is skipped and the plugin is
 installed with helptags only, plus whatever shell steps did run — and `nvimx-lock` says so, listing

@@ -295,8 +295,8 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
   4. `build.kind == "shell"` runs `build.cmd` in `buildPhase`, in the unpacked source directory
      (make/cmake-style builds that need no network work this way). `build.kind == "steps"` is the
      same thing applied to a table-form spec build (`build = { "make", ":TSUpdate" }`): its `shell`
-     elements run **in declared order**, each in its own subshell (`( cmd )`, one per shell step,
-     with `cwd` reset to the plugin root for every one) so that a `cd` in one step cannot leak into
+     elements run **in declared order**, each in its own subshell (one per shell step, with `cwd`
+     reset to the plugin root for every one) so that a `cd` in one step cannot leak into
      the next step or into `installPhase` — this also fixed a pre-existing bug where a scalar
      `build.cmd` that itself `cd`'d could leak into `installPhase` and corrupt `$out`. Elements that
      are not `shell` (`excmd` / `function` / `rockspec` / `luafile`) are simply skipped, in place,

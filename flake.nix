@@ -262,9 +262,11 @@
                 cmd = ":TSUpdate";
               };
               none = mkLocal { kind = "none"; };
-              # Two shell steps, ordered: step 2 only succeeds if step 1's file is already there,
-              # so a mis-ordered or dropped step fails the build outright rather than just
-              # producing a wrong file (#36 goal 2).
+              # Two shell steps, ordered: step 2 only appends if step 1's file is already there, so
+              # a mis-ordered or dropped step fails the build (its `&&` list ends non-zero, which
+              # the subshell propagates), and the assert below pins the contents either way.
+              # The `&&` shape is deliberate -- it is exactly what a trailing no-op inside the
+              # subshell would swallow, so this case also guards how that subshell is written.
               orderedSteps = mkLocal {
                 kind = "steps";
                 steps = [
@@ -1252,6 +1254,15 @@
                   steps-plugins.json > /dev/null
                 grep -q 'plugin "rockspec-build.nvim"' steps.log
                 grep -q 'plugin "luafile-build.nvim"' steps.log
+
+                # The warnings also have to reach plugins.json, one per plugin and sorted by name,
+                # or the committed lock would churn on every run. `false` and the all-shell LuaSnip
+                # are the quiet paths and must not appear.
+                jq -e '.warnings | length == 4' steps-plugins.json > /dev/null
+                jq -e '.warnings[0] | startswith("plugin \"all-unbuildable.nvim\"")' steps-plugins.json > /dev/null
+                jq -e '.warnings[1] | startswith("plugin \"luafile-build.nvim\"")' steps-plugins.json > /dev/null
+                jq -e '.warnings[2] | startswith("plugin \"nvim-treesitter\"")' steps-plugins.json > /dev/null
+                jq -e '.warnings[3] | startswith("plugin \"rockspec-build.nvim\"")' steps-plugins.json > /dev/null
 
                 touch $out
               '';

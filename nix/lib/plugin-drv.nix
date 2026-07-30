@@ -14,9 +14,11 @@
 #
 # Every shell step -- scalar or from a "steps" list -- runs in its own `( ... )` subshell, one
 # per line inside the parens rather than `( cmd )` on a single line: a trailing `#` comment in
-# `cmd` would otherwise swallow the closing paren and fail to parse. The trailing `:` keeps an
-# empty or comment-only cmd from becoming an empty subshell, which is also a parse error; under
-# `set -e` a failing step exits before reaching it, so it cannot mask a failure. This matches lazy's own
+# `cmd` would otherwise swallow the closing paren and fail to parse. The leading `:` keeps an
+# empty or comment-only cmd from becoming an empty subshell, which is also a parse error. It has
+# to lead rather than trail: a trailing one would become the subshell's exit status and hide a
+# failing step whose cmd is an AND-OR list (`set -e` does not fire on `a && b` when `a` fails, so
+# `( false && x` / `: )` exits 0). This matches lazy's own
 # per-step semantics (lua/lazy/manage/task/plugin.lua:32-40 spawns a fresh shell per step with
 # cwd fixed to the plugin dir) and keeps a `cd` inside one step from leaking into the next step
 # or into installPhase (#45).
@@ -98,7 +100,7 @@ else
     dontBuild = !anyShell;
     buildPhase = lib.optionalString anyShell ''
       runHook preBuild
-      ${lib.concatMapStringsSep "\n" (s: "(\n${s.cmd or ""}\n:\n)") shellSteps}
+      ${lib.concatMapStringsSep "\n" (s: "(\n:\n${s.cmd or ""}\n)") shellSteps}
       runHook postBuild
     '';
 
