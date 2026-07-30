@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "Every plugin here has a `version`, but none of them may reach ls-remote at all -- the gate",
+    "in resolve.lua's plugin loop must exclude all three, for three different reasons (`tag`,",
+    "`commit`, and `version = false`). The url is a fixed, nonexistent path rather than a",
+    "placeholder: if the gate regressed and let one of these through, ls-remote would fail against",
+    "it and the check would fail with classification C instead of silently doing the wrong thing."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "tag-and-version.nvim": {
+      "name": "tag-and-version.nvim",
+      "short": "o/tag-and-version.nvim",
+      "url": "file:///nvimx-nonexistent/gate",
+      "tag": "v1.0.0",
+      "version": "^1.2"
+    },
+    "commit-and-version.nvim": {
+      "name": "commit-and-version.nvim",
+      "short": "o/commit-and-version.nvim",
+      "url": "file:///nvimx-nonexistent/gate",
+      "commit": "cbf1cb041a0e806c9f70e5b0b13d68f4dc26cfe8",
+      "version": "^1.2"
+    },
+    "version-false.nvim": {
+      "name": "version-false.nvim",
+      "short": "o/version-false.nvim",
+      "url": "file:///nvimx-nonexistent/gate",
+      "version": false
+    }
+  }
+}

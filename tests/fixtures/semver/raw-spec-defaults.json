@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "defaults.version-derived constraints (versionFromDefaults: true) on the same two remotes used",
+    "by raw-spec-explicit.json / raw-spec-explicit-untagged.json, but here the whole resolve is",
+    "expected to succeed regardless of which one has tags -- that asymmetry with the explicit",
+    "fixtures is the point of this one (§3.4 of the plan). Both @TAGGED@ and @UNTAGGED@ must be",
+    "replaced for this fixture, unlike the explicit ones, since success is expected either way."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "tagged.nvim": {
+      "name": "tagged.nvim",
+      "short": "o/tagged.nvim",
+      "url": "@TAGGED@",
+      "version": "*",
+      "versionFromDefaults": true
+    },
+    "untagged.nvim": {
+      "name": "untagged.nvim",
+      "short": "o/untagged.nvim",
+      "url": "@UNTAGGED@",
+      "version": "*",
+      "versionFromDefaults": true
+    }
+  }
+}

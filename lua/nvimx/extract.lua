@@ -11,7 +11,8 @@
 --
 -- lazy only applies opts-level defaults (e.g. `defaults.version`) at git-operation time,
 -- so they are never written into the plugin object; anything applied that way is
--- materialized per plugin here (#42).
+-- materialized per plugin here (#42), alongside a `versionFromDefaults` flag recording that the
+-- constraint did not come from the plugin's own spec (#23; see effective_version below).
 --
 -- `build` is dumped as string | string[] | false | nil: a scalar or list of steps is kept
 -- verbatim (an element that is not a string becomes a "<type>" placeholder), `false` is kept as
@@ -62,6 +63,14 @@ local safe_opts = {
 -- `dev` is a different story: dump_plugin only records `dir` for dev plugins, so resolve treats it
 -- as remote and this constraint reaches plugins.json even though lazy would never consult it.
 -- Routing those to localPlugins is a pre-existing gap, tracked separately.
+--
+-- dump_plugin records whether the returned version came from here (defaults.version) rather than
+-- from p.version itself, in a `versionFromDefaults` flag on the raw-spec only (#23). resolve.lua's
+-- severity for an unsatisfiable constraint depends on that distinction: one the user actually wrote
+-- for this plugin is a mistake worth stopping the lock over, one materialized config-wide is a
+-- best-effort lazy itself would silently give up on too. The flag is not part of the plugins.json
+-- schema -- it is fully determined by `version` and `defaults.version`, so recording it there would
+-- just be a derived field someone could edit into inconsistency.
 ---@param p table the plugin object normalized by lazy
 ---@param default_version string|nil Config.options.defaults.version, false normalized to nil
 local function effective_version(p, default_version)
@@ -97,6 +106,7 @@ local function dump_plugin(p, default_version)
   elseif p.build ~= nil then
     build = dump_build_step(p.build)
   end
+  local version = effective_version(p, default_version)
   return {
     name = p.name,
     short = p[1],
@@ -106,7 +116,10 @@ local function dump_plugin(p, default_version)
     branch = p.branch,
     tag = p.tag,
     commit = p.commit,
-    version = effective_version(p, default_version),
+    version = version,
+    -- `or nil`: a config that never uses `defaults.version` must not gain this key at all, so its
+    -- raw-spec (and extractor-snapshot's golden) stays byte-for-byte unchanged.
+    versionFromDefaults = (version ~= nil and p.version == nil) or nil,
     pin = p.pin,
     build = build,
     dependencies = p.dependencies,

@@ -2,13 +2,15 @@
 --
 -- Usage:
 --   nvim -l resolve.lua <raw-spec.json> <where to write plugins.json> \
---     [--prev <existing plugins.json>] [--lock <existing flake.lock>]
+--     [--prev <existing plugins.json>] [--lock <existing flake.lock>] [--lazy <lazy.nvim path>]
 --
 -- Converts raw-spec.json into the plugins.json schema, merging with the previous lock so that
 -- refs already decided stay decided (--prev) and `pin = true` plugins get frozen onto the rev
 -- the lock currently records (--lock). Both are read up front and the output is written last,
 -- so --prev may safely point at the very path being written.
--- TODO: resolve version (semver) via git ls-remote
+-- --lazy points at a checkout of lazy.nvim (the store path nvimx-lock uses as its seed) and is
+-- required whenever a version constraint needs resolving (#23): it is where lazy's own
+-- lua/lazy/manage/semver.lua is dofile()d from, so matching stays bit-exact with lazy itself.
 
 local function fail(msg)
   io.stderr:write("[nvimx] resolve failed: " .. tostring(msg) .. "\n")
@@ -17,20 +19,21 @@ end
 
 local function usage()
   io.stderr:write(
-    "usage: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>] [--lock <flake.lock>]\n"
+    "usage: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>] "
+      .. "[--lock <flake.lock>] [--lazy <lazy.nvim path>]\n"
   )
   os.exit(2)
 end
 
 -- A flag loop rather than fixed positions: #24 (--update [name...]) and #25 (--import-lazy-lock)
 -- add themselves here without disturbing the callers that only pass the two positional paths.
-local raw_path, out_path, prev_path, lock_path
+local raw_path, out_path, prev_path, lock_path, lazy_path
 do
   local positional = {}
   local i = 1
   while i <= #arg do
     local a = arg[i]
-    if a == "--prev" or a == "--lock" then
+    if a == "--prev" or a == "--lock" or a == "--lazy" then
       local value = arg[i + 1]
       if not value then
         io.stderr:write(("[nvimx] resolve: %s needs a path\n"):format(a))
@@ -38,8 +41,10 @@ do
       end
       if a == "--prev" then
         prev_path = value
-      else
+      elseif a == "--lock" then
         lock_path = value
+      else
+        lazy_path = value
       end
       i = i + 2
     elseif a:sub(1, 2) == "--" then
@@ -57,6 +62,7 @@ do
 end
 
 local json = dofile(arg[0]:gsub("resolve%.lua$", "json.lua"))
+local ver = dofile(arg[0]:gsub("resolve%.lua$", "version.lua"))
 
 local function read_json(path, what)
   local f = io.open(path, "r")
@@ -164,7 +170,10 @@ local function to_input_name(name)
 end
 
 -- Convert the git URL normalized by lazy into a source struct (github gets its own type)
-local function parse_source(url)
+local function parse_source(name, url)
+  if type(url) ~= "string" then
+    fail(("plugin %q has no url. lazy derives one from the spec, so a raw spec without it is malformed"):format(name))
+  end
   local owner, repo = url:match("^https://github%.com/([^/]+)/(.+)$")
   if owner then
     repo = repo:gsub("%.git$", "")
@@ -227,6 +236,28 @@ local function note(line)
   io.stderr:write("[nvimx] " .. line .. "\n")
 end
 
+-- Fatal, per-plugin problems (§3.4 of #23's plan): unlike `warn`, these do not let the lock
+-- succeed. Collected rather than raised immediately, and printed together right before exiting,
+-- so a single lock run surfaces every problem at once instead of dying on the first one pairs()
+-- happens to visit.
+local resolve_errors = {}
+local function fail_plugin(name, msg)
+  resolve_errors[#resolve_errors + 1] = { name = name, msg = ("plugin %q: %s"):format(name, msg) }
+end
+
+-- The first `n` lines of `s`, joined for a one-line stderr message (git's own stderr can be
+-- several lines; the whole thing would be noisy next to a per-plugin fatal error).
+local function first_lines(s, n)
+  local out = {}
+  for line in (s or ""):gmatch("[^\n]+") do
+    out[#out + 1] = line
+    if #out >= n then
+      break
+    end
+  end
+  return table.concat(out, " / ")
+end
+
 for _, n in ipairs(raw.notifs or {}) do
   warn(n.msg)
 end
@@ -239,6 +270,12 @@ local seen_inputs = {}
 -- churn the user's committed plugins.json. Sorted by plugin name below.
 local plugin_warnings = {}
 local unbuildable = false
+
+-- Plugins whose `version` still needs a decision, and every plugin that has a `version` at all
+-- (the latter for the pin+version warning below, which must fire independent of whether this run
+-- is the one that resolves it). Filled in the loop below, resolved in a batch after it (#23).
+local pending = {}
+local versioned = {}
 
 local function warn_plugin(name, msg)
   plugin_warnings[#plugin_warnings + 1] = { name = name, msg = ("plugin %q: %s"):format(name, msg) }
@@ -396,7 +433,7 @@ for name, p in pairs(raw.plugins or {}) do
 
     local entry = {
       inputName = input_name,
-      source = parse_source(p.url),
+      source = parse_source(name, p.url),
       branch = p.branch or vim.NIL,
       tag = p.tag or vim.NIL,
       commit = p.commit or vim.NIL,
@@ -419,6 +456,12 @@ for name, p in pairs(raw.plugins or {}) do
       -- rev, so `nix flake update` cannot move it either, and a non-null resolvedRef would keep
       -- the entry out of semver resolution (#23) forever. Only pin's own 40-hex freeze is
       -- dropped; a "refs/tags/..." from semver did not come from pin and stays.
+      -- Caveat (#23): a `pin = true` plugin that also carries `version` and gets resolved on its
+      -- very first lock (no rev in flake.lock yet to freeze onto) ends up with a "refs/tags/..."
+      -- resolvedRef instead of a 40-hex one -- and unlike a 40-hex freeze, that URL can move if
+      -- the upstream repo moves the tag, since resolving a tag ref to a commit is nix's fetcher's
+      -- job, done fresh on every `nix flake lock`. It is not the same guarantee as the 40-hex
+      -- case above, and is accepted as such (docs/architecture.md's pin row has the same note).
       if is_frozen_rev(carried) and is_true(prev.pin) and not is_true(entry.pin) then
         carried = nil
       end
@@ -434,23 +477,206 @@ for name, p in pairs(raw.plugins or {}) do
       entry.resolvedRef = locked_rev(input_name) or vim.NIL
     end
 
-    -- What to say about a version constraint. Note this is decided from `pin` rather than from
-    -- whether the freeze happened on *this* run: a pin freezes on the second resolve of a lock
-    -- run, and nvimx-lock keeps only the second run's log, so a warning that appeared on the
-    -- first run alone would never reach the user. Deciding it from pin makes the two runs say
-    -- exactly the same thing.
+    -- Gate for semver resolution (#23): every plugin with a version constraint still needing a
+    -- decision is queued rather than resolved right here, so that ls-remote can be batched and
+    -- parallelized across all of them once the whole spec has been walked (§3.2 of the plan).
+    --
+    -- The condition's subject is the raw `p.version`, not `entry.version`, and that is not
+    -- interchangeable: entry.version = p.version or vim.NIL, and vim.NIL is a userdata, which is
+    -- truthy in Lua. So `entry.version` reads as truthy for *every* plugin, including ones with no
+    -- version at all or with `version = false` -- gating on it would send every unresolved plugin
+    -- into ls-remote and then crash on Semver.range(nil). `p.version` is nil/false exactly when
+    -- there is no constraint to honor, so it is what has to be tested.
+    -- `commit` / `tag` win over `version` (matching lazy's own get_target dispatch order), so a
+    -- plugin that also names one of those is left out of the gate even though it has a version.
+    if p.version and is_null(entry.resolvedRef) and is_null(entry.commit) and is_null(entry.tag) then
+      pending[#pending + 1] = {
+        name = name,
+        entry = entry,
+        url = p.url,
+        constraint = p.version,
+        from_defaults = p.versionFromDefaults,
+      }
+    end
+    -- Every plugin with a version constraint needs the pin+version warning check below, whether
+    -- or not this run is the one resolving it (a pin-frozen entry never enters `pending` at all).
     if p.version then
-      if is_true(entry.pin) and not is_tag_ref(norm(entry.resolvedRef)) then
-        -- pin beats the constraint: the rev is whatever the lock happens to hold, and nothing
-        -- ever checks it against the range. Frozen silently, this is a trap.
-        warn_plugin(name, ("pinned; version constraint %q is not validated (pin wins)"):format(tostring(p.version)))
-      elseif is_null(entry.resolvedRef) then
-        -- Still unresolved after the merge -- exactly the set #23 (semver) has to resolve.
-        warn_plugin(name, ("version constraint %q is not resolved yet (TODO: semver)"):format(tostring(p.version)))
-      end
+      versioned[#versioned + 1] =
+        { name = name, entry = entry, constraint = p.version, from_defaults = p.versionFromDefaults }
     end
 
     plugins[name] = entry
+  end
+end
+
+-- Semver resolution (#23). Everything above only *queued* the plugins that need it; the actual
+-- git ls-remote traffic happens here, once, so it can be parallelized across all of them rather
+-- than one plugin at a time.
+--
+-- fallbacks[constraint] collects the names of plugins whose `defaults.version`-derived constraint
+-- matched nothing (§3.4.5): reported as one aggregated stderr line per distinct constraint string,
+-- never as a per-plugin warning (that would make plugins.json unreadable for a config using
+-- `defaults = { version = "*" }`, since it would list every tagless plugin every single lock).
+local fallbacks = {}
+local function add_fallback(constraint, name)
+  fallbacks[constraint] = fallbacks[constraint] or {}
+  fallbacks[constraint][#fallbacks[constraint] + 1] = name
+end
+
+if #pending > 0 then
+  -- Loading lazy's semver module is deferred to exactly here (not done unconditionally at the
+  -- top of the file) so that a raw-spec with no version constraints at all never requires --lazy.
+  if not lazy_path or lazy_path == "" then
+    fail("a version constraint needs --lazy <lazy.nvim path>")
+  end
+  local semver_path = lazy_path:gsub("/+$", "") .. "/lua/lazy/manage/semver.lua"
+  local ok, mod = pcall(dofile, semver_path)
+  if not ok or type(mod) ~= "table" then
+    fail(
+      ("cannot load lazy.nvim's semver module from --lazy %s (tried %s): %s"):format(
+        lazy_path,
+        semver_path,
+        tostring(mod)
+      )
+    )
+  end
+  local Semver = mod
+
+  -- Classify grammar errors (classification D) before any network access, for every pending
+  -- constraint at once. This has to happen strictly before ls-remote: doing it lazily (only
+  -- inside select_tag, after the fetch) would make a bad constraint on an unreachable URL report
+  -- as a ls-remote failure instead, so the same config could be classified D or C depending on
+  -- whether the network happens to be up -- exactly the non-determinism §3.4.4 rules out.
+  local syntax_ok = {}
+  for _, item in ipairs(pending) do
+    if Semver.range(item.constraint) == nil then
+      fail_plugin(
+        item.name,
+        ('version constraint %q is not valid lazy.nvim semver syntax (supported: *, 1.2.3, =1.2.3, >1.2.3, >=1.2.3, ^1.2, ~1.2, 1.x, "1.2 - 2.0"). %q is not supported.'):format(
+          tostring(item.constraint),
+          tostring(item.constraint)
+        )
+      )
+    else
+      syntax_ok[#syntax_ok + 1] = item
+    end
+  end
+  pending = syntax_ok
+
+  table.sort(pending, function(a, b)
+    return a.name < b.name
+  end)
+
+  if #pending > 0 then
+    -- stdout, not stderr: nvimx-lock holds resolve.lua's stderr back until the very end (#22), so
+    -- a progress line belongs on stdout to actually be seen while ls-remote is in flight.
+    io.stdout:write(("nvimx-lock: resolving version constraints for %d plugin(s)\n"):format(#pending))
+  end
+
+  local BATCH_SIZE = 8
+  local i = 1
+  while i <= #pending do
+    local last = math.min(i + BATCH_SIZE - 1, #pending)
+    for j = i, last do
+      local item = pending[j]
+      if type(item.url) ~= "string" or item.url == "" then
+        item.url_missing = true
+      else
+        item.proc = vim.system(
+          { "git", "ls-remote", "--tags", "--refs", item.url },
+          { text = true, env = { GIT_TERMINAL_PROMPT = "0" }, timeout = 60000 }
+        )
+      end
+    end
+    for j = i, last do
+      local item = pending[j]
+      if item.url_missing then
+        fail_plugin(item.name, ("has no usable url to resolve version constraint %q"):format(tostring(item.constraint)))
+      else
+        local res = item.proc:wait()
+        -- wait() returns nil when the pipes never reach EOF, which happens if the killed git left
+        -- a grandchild (ssh, a credential helper) holding them. Treat it as the timeout it is,
+        -- rather than letting the next line raise and throw away every other plugin's error.
+        if not res then
+          fail_plugin(item.name, ("git ls-remote timed out for %s"):format(item.url))
+        elseif res.code ~= 0 or (res.signal and res.signal ~= 0) then
+          fail_plugin(
+            item.name,
+            ("git ls-remote failed for %s (exit %d): %s"):format(item.url, res.code, first_lines(res.stderr, 3))
+          )
+        else
+          local tags = ver.parse_ls_remote(res.stdout)
+          local tag, detail = ver.select_tag(Semver, tags, item.constraint)
+          if tag then
+            item.entry.resolvedRef = "refs/tags/" .. tag
+          elseif detail.kind == "no-tags" then
+            if item.from_defaults then
+              add_fallback(item.constraint, item.name)
+            else
+              fail_plugin(
+                item.name,
+                ("version constraint %q cannot be satisfied: the remote has no tags (%s)."):format(
+                  tostring(item.constraint),
+                  item.url
+                )
+              )
+            end
+          else -- "no-match"
+            if item.from_defaults then
+              add_fallback(item.constraint, item.name)
+            else
+              local newest = #detail.newest > 0 and table.concat(detail.newest, ", ") or "(none)"
+              fail_plugin(
+                item.name,
+                ("no tag matches version constraint %q (%s). %d tags parsed; newest: %s. "):format(
+                  tostring(item.constraint),
+                  item.url,
+                  detail.parsed,
+                  newest
+                )
+                  .. "If this plugin does not use semver tags, drop `version` or set `version = false`."
+              )
+            end
+          end
+        end
+      end
+    end
+    i = last + 1
+  end
+end
+
+-- Fallbacks are grouped by constraint string (in practice always one, since `defaults.version` is
+-- a single config-wide value) and reported as one aggregated line each, sorted so the message is
+-- deterministic across runs with the same set of tagless plugins.
+do
+  local constraints = {}
+  for c in pairs(fallbacks) do
+    constraints[#constraints + 1] = c
+  end
+  table.sort(constraints)
+  for _, c in ipairs(constraints) do
+    local names = fallbacks[c]
+    table.sort(names)
+    note(
+      ("no tag matches the config-wide version constraint %q for %d plugin(s), so they follow the "):format(c, #names)
+        .. ("default branch instead (lazy.nvim does the same): %s"):format(table.concat(names, ", "))
+    )
+  end
+end
+
+-- The pin+version warning (§3.4.6): decided last, once every constraint has actually been
+-- resolved (or has fallen back), so that a plugin resolving for the first time on this very run
+-- is not warned about as if it were still unresolved. Sorted by name for the same reason
+-- plugin_warnings is: deterministic output regardless of pairs() traversal order.
+table.sort(versioned, function(a, b)
+  return a.name < b.name
+end)
+for _, item in ipairs(versioned) do
+  if is_true(item.entry.pin) and not is_tag_ref(norm(item.entry.resolvedRef)) then
+    -- pin beats the constraint: the rev is whatever the lock happens to hold, and nothing ever
+    -- checks it against the range. Frozen silently, this is a trap.
+    local subject = item.from_defaults and "the config-wide version constraint %q" or "version constraint %q"
+    warn_plugin(item.name, ("pinned; " .. subject .. " is not validated (pin wins)"):format(tostring(item.constraint)))
   end
 end
 
@@ -465,6 +691,23 @@ table.sort(plugin_warnings, function(a, b)
 end)
 for _, w in ipairs(plugin_warnings) do
   warn(w.msg)
+end
+
+-- Fatal version-resolution problems (§3.4): reported together, sorted the same way
+-- plugin_warnings is, and only after every warning and note above so the user sees the full
+-- picture before the run dies. No output file is written past this point (#18 §3.4's ordering
+-- requirement: a failed resolve must not overwrite plugins.json with a partial result).
+if #resolve_errors > 0 then
+  table.sort(resolve_errors, function(a, b)
+    if a.name ~= b.name then
+      return a.name < b.name
+    end
+    return a.msg < b.msg
+  end)
+  for _, e in ipairs(resolve_errors) do
+    io.stderr:write("[nvimx] resolve failed: " .. e.msg .. "\n")
+  end
+  os.exit(1)
 end
 
 -- The escape hatches, in the order resolve-plugin.nix applies them. Emitted once, and to stderr

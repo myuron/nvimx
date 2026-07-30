@@ -10,6 +10,11 @@ pkgs.writeShellApplication {
   runtimeInputs = [
     pkgs.coreutils
     pkgs.diffutils # cmp, for the convergence pass below
+    # git ls-remote is how resolve.lua resolves a `version` constraint (#23): it is an external
+    # git invocation, not nix's built-in fetcher, so nvimx-lock has to guarantee it is on PATH
+    # itself rather than betting on the user's environment happening to have one (and one new
+    # enough to support `git ls-remote --refs`).
+    pkgs.git
     pkgs.neovim-unwrapped
     pkgs.nixfmt-rfc-style
   ];
@@ -86,13 +91,15 @@ pkgs.writeShellApplication {
     if [ -f "$out/flake.lock" ]; then
       resolve_args+=(--lock "$out/flake.lock")
     fi
-    # resolve.lua reports non-fatal problems (a build nvimx cannot run, an unresolved version
-    # constraint) on stderr. They are held back and re-printed after `nix flake lock`, whose
-    # output is long enough to scroll them out of sight otherwise (#22).
+    # resolve.lua reports non-fatal problems (a build nvimx cannot run, a `defaults.version`
+    # constraint no tag on some plugin's remote could satisfy) on stderr. They are held back and
+    # re-printed after `nix flake lock`, whose output is long enough to scroll them out of sight
+    # otherwise (#22). An explicit `version` that cannot be satisfied is fatal instead (#23).
     # A Lua error must stay fatal, so surface the log and keep the exit code.
     rc=0
     # ''${a[@]+"''${a[@]}"}: an empty array is an unset variable under `set -u`
     nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$out/plugins.json" \
+      --lazy "$seed" \
       ''${resolve_args[@]+"''${resolve_args[@]}"} \
       2> "$sandbox/resolve.log" || rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -115,11 +122,18 @@ pkgs.writeShellApplication {
     # produce the same file, so this is already the fixed point.
     # The log is overwritten on purpose: only this run's warnings are shown. resolve.lua is
     # written so that the two runs report the same set of problems -- in particular a `pin` that
-    # only freezes here still warns about an unvalidated `version` on the first run -- so nothing
-    # a user needs is lost with the log that gets replaced.
+    # only freezes here still warns about an unvalidated `version` on the first run, and a
+    # `defaults.version` fallback still has nothing to freeze onto and so is re-queried and
+    # re-reported here too (#23) -- so nothing a user needs is lost with the log that gets
+    # replaced. A fallback's resolvedRef stays null rather than recording that it fell back, which
+    # is exactly what makes the second run's report line up with the first one.
+    # One exception: a fallback on a `pin = true` plugin does get something to freeze onto here,
+    # so its resolvedRef stops being null and the fallback line drops out of the second run. The
+    # "pinned; version constraint is not validated" warning takes its place and still says the
+    # constraint did not decide the rev, so the user is not left thinking it did.
     rc=0
     nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$sandbox/plugins2.json" \
-      --prev "$out/plugins.json" --lock "$out/flake.lock" \
+      --prev "$out/plugins.json" --lock "$out/flake.lock" --lazy "$seed" \
       2> "$sandbox/resolve.log" || rc=$?
     if [ "$rc" -ne 0 ]; then
       cat "$sandbox/resolve.log" >&2

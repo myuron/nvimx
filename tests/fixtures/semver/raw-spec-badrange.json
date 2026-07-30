@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "Classification D: a version constraint that lazy.manage.semver's Semver.range cannot parse at",
+    "all. The url is a fixed, nonexistent path, not a placeholder -- D has to be detected and",
+    "reported before any ls-remote is attempted (§5.3 step 2 of the plan), so an unreachable url",
+    "must still produce D's message rather than classification C's."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "badrange.nvim": {
+      "name": "badrange.nvim",
+      "short": "o/badrange.nvim",
+      "url": "file:///nvimx-nonexistent/badrange",
+      "version": "<1.0"
+    }
+  }
+}

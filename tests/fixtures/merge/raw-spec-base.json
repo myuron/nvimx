@@ -3,7 +3,12 @@
     "Hand-written raw-spec.json (the shape extract.lua dumps), used by checks.resolve-merge.",
     "Hand-written rather than extracted so that the merge cases below are exactly the ones the",
     "test means to cover, independent of how a given lazy.nvim happens to normalize a spec.",
-    "The extract -> resolve path is covered separately by tests/fixtures/merge-config."
+    "The extract -> resolve path is covered separately by tests/fixtures/merge-config.",
+    "telescope.nvim has no `version` here: a version constraint needs a real (or locally faked)",
+    "git remote to resolve against, so that whole path -- explicit vs. defaults-derived severity,",
+    "the pin+version interaction, the grammar/network/no-match/no-tags split -- lives in",
+    "checks.resolve-semver instead, which is offline via local git repos rather than needing one",
+    "hard-coded into this fixture."
   ],
   "disabled": [],
   "notifs": [],
@@ -19,7 +24,6 @@
       "name": "telescope.nvim",
       "short": "nvim-telescope/telescope.nvim",
       "url": "https://github.com/nvim-telescope/telescope.nvim.git",
-      "version": "^0.1",
       "dependencies": ["plenary.nvim", "nui.nvim"]
     },
     "plenary.nvim": {
