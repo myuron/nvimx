@@ -8,6 +8,10 @@
 -- require("lazy").setup(spec, opts) is intercepted. The real setup is never called;
 -- instead lazy's own Config.setup + Spec.new normalize the spec (recursive import
 -- resolution, fragment merging, dependency expansion) and it is dumped to raw-spec.json.
+--
+-- lazy only applies opts-level defaults (e.g. `defaults.version`) at git-operation time,
+-- so they are never written into the plugin object; anything applied that way is
+-- materialized per plugin here (#42).
 
 local seed = vim.env.NVIMX_LAZY_SEED
 local out = vim.env.NVIMX_OUT
@@ -26,7 +30,9 @@ if seed and seed ~= "" then
   vim.opt.rtp:prepend(seed)
 end
 
--- Disable the opts passed to setup that could cause side effects during extraction
+-- Disable the opts passed to setup that could cause side effects during extraction.
+-- Do not add `defaults` here: `defaults.version` is the user's intent and must reach
+-- Config.options unmodified so effective_version() below can materialize it (#42).
 local safe_opts = {
   install = { missing = false },
   checker = { enabled = false },
@@ -36,8 +42,30 @@ local safe_opts = {
   readme = { enabled = false },
 }
 
+-- lazy applies `defaults.version` only when it checks out (lua/lazy/manage/git.lua:141), so it is
+-- never written into the plugin object -- and by the time :141 runs, `commit` (:127) and `tag`
+-- (:133) have already returned. Reproduce that *effective* rule, not the literal condition on
+-- :141: recording a constraint that can never decide a ref would only mislead the lock and make
+-- resolve.lua warn about a constraint the user never wrote.
+-- `p.version == false` is lazy's per-plugin "do not use tags" and must beat the config-wide
+-- default, so this tests for nil, not for falsy.
+-- dev plugins are excluded by lazy too (git.lua:119-123); resolve.lua already routes them to
+-- localPlugins, so no guard is needed here.
 ---@param p table the plugin object normalized by lazy
-local function dump_plugin(p)
+---@param default_version string|nil Config.options.defaults.version, false normalized to nil
+local function effective_version(p, default_version)
+  if p.version ~= nil then
+    return p.version
+  end
+  if default_version == nil or p.branch ~= nil or p.tag ~= nil or p.commit ~= nil then
+    return nil
+  end
+  return default_version
+end
+
+---@param p table the plugin object normalized by lazy
+---@param default_version string|nil Config.options.defaults.version, false normalized to nil
+local function dump_plugin(p, default_version)
   local build = nil
   if p.build ~= nil then
     build = type(p.build) == "string" and p.build or ("<" .. type(p.build) .. ">")
@@ -51,7 +79,7 @@ local function dump_plugin(p)
     branch = p.branch,
     tag = p.tag,
     commit = p.commit,
-    version = p.version,
+    version = effective_version(p, default_version),
     pin = p.pin,
     build = build,
     dependencies = p.dependencies,
@@ -72,13 +100,15 @@ local function capture(spec, opts)
 
   local Config = require("lazy.core.config")
   Config.setup(vim.tbl_deep_extend("force", {}, opts, safe_opts))
+  -- false means "do not use tags", which git.lua:141 folds into the same nil as "unset"
+  local default_version = Config.options.defaults.version or nil
 
   local Plugin = require("lazy.core.plugin")
   local s = Plugin.Spec.new(spec, { pkg = false })
 
   local plugins = {}
   for name, p in pairs(s.plugins) do
-    plugins[name] = dump_plugin(p)
+    plugins[name] = dump_plugin(p, default_version)
   end
 
   local notifs = {}

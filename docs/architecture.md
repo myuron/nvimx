@@ -134,6 +134,9 @@ flowchart LR
       - intercept setup(spec, opts) via package.preload["lazy"] (the real setup is never called)
       - Config.setup (merging safe opts) → Spec.new(spec, {pkg=false}) to normalize
         (recursive import resolution, fragment merging, dependency expansion — all lazy's own logic)
+      - defaults.version (an opts key lazy only ever applies at git-operation time) is materialized
+        into each eligible plugin's version here, so it is not lost (#42); a plugin with its own
+        version / branch / tag / commit is left untouched
       → raw-spec.json
 [3] Resolution: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>] [--lock <flake.lock>]
       - resolve version (semver range) with git ls-remote --tags + lazy.manage.semver
@@ -183,7 +186,8 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
       "inputName": "telescope-nvim",        // flake input name ([^A-Za-z0-9_-] → "-")
       "source": { "type": "github", "owner": "nvim-telescope", "repo": "telescope.nvim" },
       "branch": null, "tag": null, "commit": null,
-      "version": "^0.1",                    // the original semver constraint (kept for reference)
+      "version": "^0.1",                    // the effective semver constraint: the plugin's own
+                                            // "version", or defaults.version materialized for it (#42)
       "pin": null,                          // lazy's `pin` (true | null; null = not set)
       "dependencies": [ "plenary.nvim" ],   // always an array, sorted by name (order carries no meaning)
       "resolvedRef": "refs/tags/0.1.8",     // the ref decided at lock time (see below)
@@ -226,6 +230,7 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
 
 - `nvimx-lock`: only adds new plugins and removes deleted ones. Existing pins stay untouched
 - Editing the spec beats `pin`. Changing the `branch` / `tag` / `commit` / `version` / source of a pinned plugin is an explicit request, so the frozen rev is dropped and the plugin is resolved again (lazy's own `pin` behaves the same way: it stops `:Lazy update`, not you). A `tag` that gets moved upstream is therefore *not* followed while pinned -- rename the tag in the spec, or use `--update <name>`
+- Editing `defaults.version` counts as editing the `version` of every plugin it materializes into (#42): each such plugin's spec identity changes and its `resolvedRef` is decided again, same as if that plugin's own `version` had been edited by hand
 - Removing `pin` thaws the plugin: the frozen rev is dropped and it goes back to following its branch/tag. It has to be, because the frozen rev is part of the input URL, so `nix flake update` cannot undo a freeze on its own
 - `pin` also beats a `version` constraint: the frozen rev is whatever the lock held, and it is never checked against the range. `nvimx-lock` warns about this on every run rather than freezing silently
 - `nvimx-lock` runs the resolver twice, on either side of `nix flake lock`. A plugin pinned for the first time has no rev in `flake.lock` yet, so the second pass is what freezes it; the flake is regenerated and re-locked only if that pass changed anything. One retry always suffices, because the third pass would read the same `flake.lock` back
@@ -423,7 +428,7 @@ lua/nvimx/
   genflake.lua               # plugins.json → lock/flake.nix text generation
   bootstrap.lua.in           # runtime bootstrap template
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / registry-plugins / treesitter-config / unbuildable-config / local-plugin / golden/
+tests/fixtures/              # basic-config / build-plugins / registry-plugins / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / golden/
 ```
 
 flake outputs:
@@ -432,7 +437,8 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.x86_64-linux.{extractor-snapshot, genflake-golden, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, e2e-offline}`
+- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, resolve-merge, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
+  - planned, not yet implemented: `genflake-golden` (#29), `e2e-offline` (#30)
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
 
