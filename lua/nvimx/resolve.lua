@@ -339,10 +339,7 @@ for name, p in pairs(raw.plugins or {}) do
       if is_true(entry.pin) and not is_tag_ref(norm(entry.resolvedRef)) then
         -- pin beats the constraint: the rev is whatever the lock happens to hold, and nothing
         -- ever checks it against the range. Frozen silently, this is a trap.
-        warn_plugin(
-          name,
-          ("pinned; version constraint %q is not validated (pin wins)"):format(tostring(p.version))
-        )
+        warn_plugin(name, ("pinned; version constraint %q is not validated (pin wins)"):format(tostring(p.version)))
       elseif is_null(entry.resolvedRef) then
         -- Still unresolved after the merge -- exactly the set #23 (semver) has to resolve.
         warn_plugin(name, ("version constraint %q is not resolved yet (TODO: semver)"):format(tostring(p.version)))
@@ -369,7 +366,7 @@ end
 -- The escape hatches, in the order resolve-plugin.nix applies them. Emitted once, and to stderr
 -- only: repeating this block inside plugins.json on every lock would be noise.
 if unbuildable then
-  note('these plugins are installed with helptags only. To give them a real build:')
+  note("these plugins are installed with helptags only. To give them a real build:")
   note('  - programs.nvimx.plugins.overrides."<name>" = { pkgs, src, ... }: <your derivation>;')
   note('  - programs.nvimx.plugins.nixpkgsFallback = [ "<name>" ];')
   note("  - a recipe under nix/build-registry/, if this plugin is common enough that nvimx")
