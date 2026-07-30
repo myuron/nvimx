@@ -117,10 +117,36 @@
 
       formatter = forAllSystems (
         system:
-        treefmt-nix.lib.mkWrapper (pkgsFor system) {
+        let
+          pkgs = pkgsFor system;
+        in
+        treefmt-nix.lib.mkWrapper pkgs {
           projectRootFile = "flake.nix";
           programs = {
             nixfmt.enable = true;
+            # stylua picks up the repo-root stylua.toml because treefmt runs from the tree root and
+            # stylua reads its cwd -- it does not search upwards unless asked (see stylua.toml).
+            # Deliberately not setting programs.stylua.settings: doing so would make treefmt-nix
+            # generate a
+            # store-path stylua.toml and pass it via --config-path, which wins over (and
+            # silently ignores) the repo's stylua.toml -- editors and CI would then disagree.
+            # The cost of that choice: treefmt caches on the file plus the command, so editing
+            # stylua.toml or .luacheckrc does not invalidate anything. Use `nix fmt --
+            # --clear-cache` after changing them. CI passes --ci, which implies --no-cache.
+            stylua.enable = true;
+            # stylua rewrites files, luacheck only reads them. treefmt applies formatters
+            # matching the same file in ascending priority order, so pin the order explicitly
+            # (omitting it falls back to name order, which runs luacheck before stylua).
+            stylua.priority = 1;
+          };
+          # luacheck is a linter, not a formatter, so treefmt-nix has no programs.luacheck.
+          # treefmt only requires a formatter to accept paths and exit non-zero on failure;
+          # luacheck never rewrites files, so it fits as-is (upstream does the same for
+          # shellcheck / statix / yamllint, etc.). Configuration comes from .luacheckrc.
+          settings.formatter.luacheck = {
+            command = pkgs.luaPackages.luacheck;
+            includes = [ "*.lua" ];
+            priority = 2;
           };
         }
       );

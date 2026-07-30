@@ -405,6 +405,8 @@ Since the lock command itself is a product of the hm build, failing evaluation w
 
 ```
 flake.nix                    # adds the lazy-nvim input, extends outputs
+stylua.toml                  # lua formatting, read by `nix fmt` (treefmt -> stylua) and editors/LSP
+.luacheckrc                  # lua linting config for `nix fmt` (treefmt -> luacheck) and editors/LSP
 nix/
   lib/
     default.nix              # lib entry point (makeEnv, mkLockApp)
@@ -426,7 +428,7 @@ lua/nvimx/
   extract.lua                # preload shim + spec capture + normalization + JSON dump
   resolve.lua                # semver resolution + merge with the previous plugins.json
   genflake.lua               # plugins.json → lock/flake.nix text generation
-  bootstrap.lua.in           # runtime bootstrap template
+  bootstrap.lua.in           # runtime bootstrap template (not `*.lua`, so stylua/luacheck skip it)
 templates/default/           # template for embedding into dotfiles
 tests/fixtures/              # basic-config / build-plugins / registry-plugins / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / golden/
 ```
@@ -476,7 +478,11 @@ Each phase ends with an artifact you can actually try out:
 - Phase 1-2: run `nvim --headless --cmd "luafile extract.lua"` against the fixture config → inspect the JSON → turn it into a snapshot check. After `nix run .#lock`, `cd lockDir && nix flake lock` must succeed
 - Phase 3 onward: `nix build .#demo && ./result/bin/nvim`, open `:Lazy` and confirm every plugin is loaded/local (no git operations) and that `:h telescope` works
 - Phase 4: against real dotfiles, `nvimx-lock` → commit → `home-manager switch` → switching again with flake.lock unchanged must give the same result
-- CI: `nix flake check` (offline checks) + confirming `nix fmt` has been applied
+- CI: `nix flake check` (offline checks) + confirming `nix fmt` has been applied.
+  `nix fmt` covers both nix (nixfmt) and lua (stylua for formatting, luacheck for linting via
+  `settings.formatter.luacheck`, since treefmt-nix has no `programs.luacheck`); `nix fmt -- --ci`
+  fails on unformatted or lint-failing lua the same way it fails on unformatted nix.
+  `lua/nvimx/bootstrap.lua.in` does not match `*.lua` and is excluded from both of them.
 
 ## Appendix: main divergences from twist.nix
 

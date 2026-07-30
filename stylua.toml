@@ -1,0 +1,12 @@
+# Matches the style lua/nvimx/*.lua is already written in (2-space, double quotes, <=120 cols).
+# Read by both `nix fmt` (treefmt -> stylua) and editors/LSP running stylua directly.
+# stylua does not search upwards by default, so an editor that runs it with the file's own
+# directory as cwd needs --search-parent-directories or it will silently reformat to tabs.
+# treefmt is unaffected -- it runs from the tree root.
+column_width = 120
+line_endings = "Unix"
+indent_type = "Spaces"
+indent_width = 2
+quote_style = "AutoPreferDouble"
+call_parentheses = "Always"
+collapse_simple_statement = "Never"
