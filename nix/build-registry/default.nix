@@ -51,4 +51,5 @@
   "telescope-fzf-native.nvim" = import ./telescope-fzf-native.nvim.nix;
   "fzf" = import ./fzf.nix;
   "nvim-treesitter" = import ./nvim-treesitter.nix;
+  "blink.cmp" = import ./blink.cmp.nix;
 }

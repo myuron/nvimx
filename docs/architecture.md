@@ -297,10 +297,15 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
      any rev the user may have pinned — version-sensitive patching belongs in `plugins.overrides`.
      Shipped today: `telescope-fzf-native.nvim` (always the Makefile, whatever the spec declared),
      `fzf` (`bin/fzf` from nixpkgs instead of the release binary `./install --bin` downloads; keyed by a
-     name generic enough to collide, so the build asserts the tree really is junegunn/fzf), and
+     name generic enough to collide, so the build asserts the tree really is junegunn/fzf),
      `nvim-treesitter` (always copy + helptags, ignoring whatever build the spec declared — on the
      `main` branch layout its Makefile fetches dependencies over the network for every target, so it
-     can never succeed in the sandbox; parsers come from `treesitter.grammars` below instead)
+     can never succeed in the sandbox; parsers come from `treesitter.grammars` below instead), and
+     `blink.cmp` (builds the Rust fuzzy matching cdylib from the locked src, hashing its dependencies
+     out of the plugin's own `Cargo.lock` so that the recipe stays rev-agnostic, and links **only the
+     library** into `target/release/` — shipping the `version` file `build.rs` writes alongside it
+     would put blink into its "locally built library is out of date" path at every startup, since a
+     store path has no `.git` for it to compare against)
   4. `build.kind == "shell"` runs `build.cmd` in `buildPhase`, in the unpacked source directory
      (make/cmake-style builds that need no network work this way). `build.kind == "steps"` is the
      same thing applied to a table-form spec build (`build = { "make", ":TSUpdate" }`): its `shell`
@@ -470,7 +475,7 @@ lua/nvimx/
   update-summary.lua         # --update's before/after summary (plugin, old ref, new ref)
   bootstrap.lua.in           # runtime bootstrap template (not `*.lua`, so stylua/luacheck skip it)
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / semver / update / golden/
+tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / cargo-git-lock / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / semver / update / golden/
 ```
 
 flake outputs:

@@ -1,0 +1,20 @@
+# A Cargo.lock with a dependency vendored straight from git, which is how early blink.cmp
+# carried frizbee. nix/build-registry/blink.cmp.nix has to refuse such a rev with its own
+# message: importCargoLock cannot hash a git source without an `outputHashes` entry, and
+# nvimx has no way to supply one for a rev it does not control.
+#
+# Deliberately minimal but real TOML -- the entry parses this with builtins.fromTOML rather
+# than grepping it, so a fixture that only *looks* like a lock file would not exercise it.
+version = 4
+
+[[package]]
+name = "blink-cmp-fuzzy"
+version = "0.1.0"
+dependencies = [
+ "frizbee",
+]
+
+[[package]]
+name = "frizbee"
+version = "0.9.0"
+source = "git+https://github.com/saghen/frizbee?branch=main#0000000000000000000000000000000000000000"
