@@ -1,0 +1,9 @@
+nvimx-lock: update summary
+  added: new.nvim -> 7e7e7e7
+  removed: old.nvim (was 4d4d4d4)
+  updated: plenary.nvim f1f1f1f -> f2f2f2f
+  updated: telescope.nvim c0c0c0c -> e0e0e0e (version constraint resolved: refs/tags/0.2.0)
+  updated: tokyonight.nvim a1a1a1a -> b2b2b2b
+  updated: lazy.nvim (seed) 9c9c9c9 -> 3f3f3f3
+nvimx-lock: warning: 1 input(s) moved without being named: plenary.nvim
+  4 updated, 1 added, 1 removed

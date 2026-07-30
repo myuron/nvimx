@@ -1,0 +1,43 @@
+{
+  "_comment": [
+    "tests/fixtures/merge/raw-spec-base.json plus one plugin with `commit` written directly in",
+    "the spec, for checks.resolve-update: naming vim-fugitive in --update must not error and must",
+    "not change its `commit` (the URL is fixed either way), but its inputName still belongs in the",
+    "update-plan (harmlessly -- `nix flake update` cannot move a commit-pinned URL, see §3.2 of",
+    "the #24 plan)."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "tokyonight.nvim": {
+      "name": "tokyonight.nvim",
+      "short": "folke/tokyonight.nvim",
+      "url": "https://github.com/folke/tokyonight.nvim.git",
+      "branch": "main",
+      "pin": true
+    },
+    "telescope.nvim": {
+      "name": "telescope.nvim",
+      "short": "nvim-telescope/telescope.nvim",
+      "url": "https://github.com/nvim-telescope/telescope.nvim.git",
+      "dependencies": ["plenary.nvim", "nui.nvim"]
+    },
+    "plenary.nvim": {
+      "name": "plenary.nvim",
+      "short": "nvim-lua/plenary.nvim",
+      "url": "https://github.com/nvim-lua/plenary.nvim.git"
+    },
+    "custom.nvim": {
+      "name": "custom.nvim",
+      "url": "https://git.example.com/custom.nvim.git",
+      "branch": "trunk",
+      "pin": true
+    },
+    "vim-fugitive": {
+      "name": "vim-fugitive",
+      "short": "tpope/vim-fugitive",
+      "url": "https://github.com/tpope/vim-fugitive.git",
+      "commit": "dddddddddddddddddddddddddddddddddddddddd"
+    }
+  }
+}
