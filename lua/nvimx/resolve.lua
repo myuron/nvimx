@@ -244,14 +244,132 @@ local function warn_plugin(name, msg)
   plugin_warnings[#plugin_warnings + 1] = { name = name, msg = ("plugin %q: %s"):format(name, msg) }
 end
 
--- How to name a build that is not a shell command. `kind` alone is too coarse: extract.lua
--- records *any* non-string build as "<type>" and resolve.lua files them all under "function",
--- but lazy accepts a list of build steps as well as a callback, and calling that a Lua function
--- would be wrong. The recorded placeholder is the only thing left to go on.
+-- Classify a single build element/scalar using lazy's own dispatch order
+-- (lua/lazy/manage/task/plugin.lua:67-81): function → rockspec → excmd → *.lua → shell.
+-- extract.lua turns any non-string element into a "<type>" placeholder, so a leading "<" is the
+-- only way a function (or other non-string) can show up here.
+---@param v string one build element/scalar, as dumped by extract.lua
+---@return table { kind, cmd? }
+local function classify_step(v)
+  if type(v) ~= "string" or v:sub(1, 1) == "<" then
+    return { kind = "function" }
+  elseif v == "rockspec" then
+    return { kind = "rockspec" }
+  elseif v:sub(1, 1) == ":" then
+    return { kind = "excmd", cmd = v }
+  elseif v:match("%.lua$") then
+    return { kind = "luafile", cmd = v }
+  else
+    return { kind = "shell", cmd = v }
+  end
+end
+
+-- `false` and unset both mean "no build" (task/plugin.lua:57); a table is expanded into `steps`
+-- (an empty table collapses to `none` -- there is nothing to run either way); anything else is a
+-- single-element `steps` list once classified. Nesting never occurs: `steps[].kind` is never
+-- itself "none" or "steps".
+---@param b string|string[]|false|nil the raw build field, as dumped by extract.lua
+---@return table { kind, cmd? } | { kind = "steps", steps }
+local function classify_build(b)
+  if b == false or b == nil then
+    return { kind = "none" }
+  elseif type(b) == "table" then
+    local steps = {}
+    for _, v in ipairs(b) do
+      steps[#steps + 1] = classify_step(v)
+    end
+    if #steps == 0 then
+      return { kind = "none" }
+    end
+    return { kind = "steps", steps = json.array(steps) }
+  else
+    return classify_step(b)
+  end
+end
+
+-- How to name a build step that is not a shell command, keyed by `kind` rather than by the
+-- extract.lua placeholder: a table build's elements are classified individually now, and
+-- "<table>" itself never reaches here (it is expanded into steps before classification).
 local build_phrasing = {
-  ["<function>"] = "a Lua function",
-  ["<table>"] = "a list of build steps",
+  ["function"] = "a Lua function",
+  ["excmd"] = "a neovim command",
+  ["rockspec"] = "a luarocks build",
+  ["luafile"] = "a Lua file",
 }
+
+-- Steps of a "steps" build that cannot run at build time, in declared order.
+---@param build table the classified build ({ kind = "steps", steps } or a scalar shape)
+---@return table[] { index, kind, cmd? }[]
+local function unrunnable_steps(build)
+  local out = {}
+  if build.kind ~= "steps" then
+    return out
+  end
+  for i, s in ipairs(build.steps) do
+    if s.kind ~= "shell" then
+      out[#out + 1] = { index = i, kind = s.kind, cmd = s.cmd }
+    end
+  end
+  return out
+end
+
+-- One clause describing a single unrunnable step, e.g. `step 2 is a neovim command (":TSUpdate")`.
+---@param s table one element of unrunnable_steps' result
+---@return string
+local function step_clause(s)
+  local what = build_phrasing[s.kind] or "not a shell command"
+  if s.cmd then
+    return ("step %d is %s (%q)"):format(s.index, what, s.cmd)
+  end
+  return ("step %d is %s"):format(s.index, what)
+end
+
+-- The full message for a plugin whose build cannot run entirely (scalar excmd/function/rockspec/
+-- luafile) or only partially (some steps of a "steps" build). Scalar wording is kept byte-for-byte
+-- identical to before this file grew `steps` support (checks.resolve-build-warnings pins it).
+---@param name string
+---@param build table the classified build
+---@return string
+local function build_warning(name, build)
+  if build.kind ~= "steps" then
+    local what = build_phrasing[build.kind] or "not a shell command"
+    -- "rockspec" carries no cmd because the spec's whole build *is* that word, so quote it as
+    -- written. The "<...>" form means "the spec had something that is not a string" and would be
+    -- a lie here; `function` keeps it because that is what the spec did have.
+    local cmd = build.cmd or (build.kind == "rockspec" and "rockspec") or ("<" .. build.kind .. ">")
+    local msg = ("build is %s (%q) and cannot be run at build time"):format(what, cmd)
+    if name == "nvim-treesitter" then
+      msg = msg .. ". nvimx merges parsers from nixpkgs instead -- set programs.nvimx.treesitter.grammars"
+    end
+    return msg
+  end
+
+  local unrunnable = unrunnable_steps(build)
+  local total = #build.steps
+  local shell_count = total - #unrunnable
+  local clauses = {}
+  for _, s in ipairs(unrunnable) do
+    clauses[#clauses + 1] = step_clause(s)
+  end
+  local remaining
+  if shell_count == 0 then
+    remaining = "none of them run"
+  elseif shell_count == 1 then
+    remaining = "the remaining shell step still runs"
+  else
+    remaining = ("the remaining %d shell steps still run"):format(shell_count)
+  end
+  local msg = ("build is a list of %d steps and %d of them cannot be run at build time: %s; %s"):format(
+    total,
+    #unrunnable,
+    table.concat(clauses, "; "),
+    remaining
+  )
+  if name == "nvim-treesitter" then
+    msg = msg .. ". nvimx merges parsers from nixpkgs instead -- set programs.nvimx.treesitter.grammars"
+  end
+  return msg
+end
 
 for name, p in pairs(raw.plugins or {}) do
   if p.dev or p.dir then
@@ -263,31 +381,17 @@ for name, p in pairs(raw.plugins or {}) do
     end
     seen_inputs[input_name] = name
 
-    local build = { kind = "none" }
-    if type(p.build) == "string" then
-      if p.build:sub(1, 1) == "<" then
-        build = { kind = "function" }
-      elseif p.build:sub(1, 1) == ":" then
-        build = { kind = "excmd", cmd = p.build }
-      else
-        build = { kind = "shell", cmd = p.build }
-      end
-    end
+    local build = classify_build(p.build)
 
-    -- Only "shell" can run inside the nix build sandbox; plugin-drv.nix installs the rest with
-    -- helptags only. Say so here rather than letting the plugin misbehave at runtime (#22).
-    -- p.build is kept out of plugins.json for the function case on purpose: the schema documents
-    -- build.cmd as a command to run, and "<function>" is a placeholder, not one.
-    if build.kind == "excmd" or build.kind == "function" then
+    -- Only "shell" steps can run inside the nix build sandbox; plugin-drv.nix installs the rest
+    -- with helptags only. Say so here rather than letting the plugin misbehave at runtime (#22).
+    -- A build entirely made of shell steps (scalar "shell" or an all-shell "steps") warns about
+    -- nothing at all.
+    local has_unrunnable = (build.kind ~= "none" and build.kind ~= "shell" and build.kind ~= "steps")
+      or (build.kind == "steps" and #unrunnable_steps(build) > 0)
+    if has_unrunnable then
       unbuildable = true
-      local what = build.kind == "excmd" and "a neovim command" or (build_phrasing[p.build] or "not a shell command")
-      local msg = ("build is %s (%q) and cannot be run at build time"):format(what, p.build)
-      -- nvim-treesitter's `:TSUpdate` is by far the most common build of this shape, and nvimx
-      -- already has a purpose-built answer for it, so point there instead of at the generic hatches.
-      if name == "nvim-treesitter" then
-        msg = msg .. ". nvimx merges parsers from nixpkgs instead -- set programs.nvimx.treesitter.grammars"
-      end
-      warn_plugin(name, msg)
+      warn_plugin(name, build_warning(name, build))
     end
 
     local entry = {
@@ -366,7 +470,7 @@ end
 -- The escape hatches, in the order resolve-plugin.nix applies them. Emitted once, and to stderr
 -- only: repeating this block inside plugins.json on every lock would be noise.
 if unbuildable then
-  note("these plugins are installed with helptags only. To give them a real build:")
+  note("these plugins are installed with helptags only, or with some build steps skipped. To give them a real build:")
   note('  - programs.nvimx.plugins.overrides."<name>" = { pkgs, src, ... }: <your derivation>;')
   note('  - programs.nvimx.plugins.nixpkgsFallback = [ "<name>" ];')
   note("  - a recipe under nix/build-registry/, if this plugin is common enough that nvimx")

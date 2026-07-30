@@ -262,14 +262,69 @@
                 cmd = ":TSUpdate";
               };
               none = mkLocal { kind = "none"; };
+              # Two shell steps, ordered: step 2 only succeeds if step 1's file is already there,
+              # so a mis-ordered or dropped step fails the build outright rather than just
+              # producing a wrong file (#36 goal 2).
+              orderedSteps = mkLocal {
+                kind = "steps";
+                steps = [
+                  {
+                    kind = "shell";
+                    cmd = "mkdir -p build && echo one > build/order.txt";
+                  }
+                  {
+                    kind = "shell";
+                    cmd = "test -f build/order.txt && echo two >> build/order.txt";
+                  }
+                ];
+              };
+              # A mix of runnable and unrunnable steps. Step 1's `cd lua` must not leak into step
+              # 3's `make` (which needs to run at the plugin root to find the Makefile) or into
+              # installPhase (#45) -- and the skipped excmd step must not break the steps after it.
+              mixedSteps = mkLocal {
+                kind = "steps";
+                steps = [
+                  {
+                    kind = "shell";
+                    cmd = "cd lua && touch inner";
+                  }
+                  {
+                    kind = "excmd";
+                    cmd = ":TSUpdate";
+                  }
+                  {
+                    kind = "shell";
+                    cmd = "make";
+                  }
+                ];
+              };
+              # No step in this list can run at build time, so this must behave exactly like
+              # kind = "none": no build/ directory, helptags only.
+              allUnrunnableSteps = mkLocal {
+                kind = "steps";
+                steps = [
+                  {
+                    kind = "excmd";
+                    cmd = ":Foo";
+                  }
+                  { kind = "function"; }
+                ];
+              };
+              # The #45 regression: a scalar build that `cd`s must not leak that directory into
+              # installPhase. Before the fix this produced a $out containing only lua/'s contents
+              # (Makefile, doc/ and the marker's siblings all gone).
+              cwdLeak = mkLocal {
+                kind = "shell";
+                cmd = "cd lua && touch marker";
+              };
             in
             pkgs.runCommand "plugin-drv-phases" { } ''
-              # only kind == "shell" runs a build
+              # only kind == "shell" / "steps" (with a shell step in it) runs a build
               test -f ${shell}/build/artifact.txt
               test ! -e ${excmd}/build
               test ! -e ${none}/build
 
-              for p in ${shell} ${excmd} ${none}; do
+              for p in ${shell} ${excmd} ${none} ${orderedSteps} ${mixedSteps} ${allUnrunnableSteps} ${cwdLeak}; do
                 # helptags are generated for every kind
                 test -f "$p/doc/tags"
                 # doc/ must stay at the plugin root: stdenv's move-docs hook would relocate it
@@ -279,6 +334,24 @@
                 # `env -S  -l`, dropping the interpreter
                 grep -qF '#!/usr/bin/env -S nvim -l' "$p/scripts/run"
               done
+
+              # steps run in declared order: step 2 could only have appended if step 1 already ran
+              test "$(cat ${orderedSteps}/build/order.txt)" = "$(printf 'one\ntwo\n')"
+
+              # mixed: the shell steps ran (at the plugin root, not inside lua/) and the excmd
+              # step in between was skipped without breaking the shell step after it
+              test -f ${mixedSteps}/lua/inner
+              test -f ${mixedSteps}/build/artifact.txt
+
+              # all steps unrunnable: no build ran at all
+              test ! -e ${allUnrunnableSteps}/build
+
+              # #45: a `cd` inside one build step/subshell must not survive into installPhase --
+              # the whole tree (not just lua/) must still reach $out
+              test -f ${cwdLeak}/lua/marker
+              test -f ${cwdLeak}/Makefile
+              test -f ${cwdLeak}/doc/tags
+
               touch $out
             '';
           # Builds that need the network must be rejected at evaluation time, with a message
@@ -382,6 +455,23 @@
                     }).drvPath
                     null
                 )).success;
+              # Detection has to apply to every shell step of a "steps" build, not just a scalar
+              # one (#36): a network step anywhere in the list must throw, and an all-offline
+              # "steps" build must not be caught by mistake.
+              evaluatesSteps =
+                steps:
+                (builtins.tryEval (
+                  builtins.seq
+                    (mkPluginDrv {
+                      name = "demo.nvim";
+                      src = ./tests/fixtures/empty-config;
+                      build = {
+                        kind = "steps";
+                        inherit steps;
+                      };
+                    }).drvPath
+                    null
+                )).success;
               failures =
                 map (
                   c: "misclassified ${builtins.toJSON c.cmd}: got ${builtins.toJSON (buildNetwork.detect c.cmd)}"
@@ -390,7 +480,29 @@
                   builtins.filter (h: !lib.hasInfix h message) hatches
                 )
                 ++ lib.optional (evaluates "cargo build --release") "mkPluginDrv did not throw for a network build"
-                ++ lib.optional (!evaluates "make") "mkPluginDrv threw for an offline build";
+                ++ lib.optional (!evaluates "make") "mkPluginDrv threw for an offline build"
+                ++ lib.optional (evaluatesSteps [
+                  {
+                    kind = "shell";
+                    cmd = "make";
+                  }
+                  {
+                    kind = "shell";
+                    cmd = "cargo build --release";
+                  }
+                ]) "mkPluginDrv did not throw for a network step inside a \"steps\" build"
+                ++ lib.optional (
+                  !evaluatesSteps [
+                    {
+                      kind = "shell";
+                      cmd = "make";
+                    }
+                    {
+                      kind = "excmd";
+                      cmd = ":TSUpdate";
+                    }
+                  ]
+                ) "mkPluginDrv threw for an all-offline \"steps\" build";
             in
             pkgs.runCommand "build-network-detect" { } (
               if failures == [ ] then
@@ -562,6 +674,18 @@
                   cmd = "./install --bin";
                 };
               };
+              # nvim-treesitter: the entry must ignore whatever build the spec declared, even one
+              # that would fail if it ran -- proof that this plugin never reaches the generic
+              # build's buildPhase at all (#36's decision on nvim-treesitter's own `make`, which
+              # is unrunnable in the sandbox on the `main` branch layout).
+              treesitterEntry = nvimxLib.resolvePlugin {
+                name = "nvim-treesitter";
+                src = ./tests/fixtures/local-plugin;
+                build = {
+                  kind = "shell";
+                  cmd = "exit 1";
+                };
+              };
               # The mechanism itself, checked against a stub registry so that it does not depend
               # on which plugins happen to be shipped today. Compared by outPath: nothing below
               # has to be built.
@@ -649,6 +773,10 @@
                   test -x ${fzf}/bin/fzf
                   test -f ${fzf}/bin/fzf-tmux
                   test -f ${fzf}/plugin/fzf.vim
+                  # the declared build ("exit 1") never ran -- the entry replaced it with copy +
+                  # helptags, so this only exists if the fixture's src reached $out untouched
+                  test -f ${treesitterEntry}/lua/local-plugin.lua
+                  test -f ${treesitterEntry}/doc/tags
                   touch $out
                 ''
               else
@@ -1029,14 +1157,15 @@
                   exit 1
                 fi
 
-                # one warning per plugin, each naming the shape of the build it cannot run
+                # one warning per plugin, each naming the shape of the build it cannot run.
+                # LuaSnip's list build moved to build-steps-config (#36): it is now all-shell and
+                # builds silently, so this fixture only covers the two shapes nothing can run at
+                # all (verbatim strings, pinned so a rewording of the scalar path is noticed).
                 grep -q '^\[nvimx\] warning: plugin "nvim-treesitter": build is a neovim command (":TSUpdate")' stderr.log
                 grep -q '^\[nvimx\] warning: plugin "markdown-preview.nvim": build is a Lua function ("<function>")' stderr.log
-                # a list build is not a callback and must not be called one
-                grep -q '^\[nvimx\] warning: plugin "LuaSnip": build is a list of build steps ("<table>")' stderr.log
                 n=$(grep -c '^\[nvimx\] warning: plugin ' stderr.log)
-                if [ "$n" -ne 3 ]; then
-                  echo "expected exactly 3 plugin warnings, got $n" >&2
+                if [ "$n" -ne 2 ]; then
+                  echo "expected exactly 2 plugin warnings, got $n" >&2
                   exit 1
                 fi
 
@@ -1048,13 +1177,11 @@
 
                 # the same warnings are recorded in the lock, sorted by plugin name so that
                 # re-locking does not reshuffle the array
-                jq -e '.warnings | length == 3' plugins.json > /dev/null
-                jq -e '.warnings[0] | startswith("plugin \"LuaSnip\"")' plugins.json > /dev/null
-                jq -e '.warnings[1] | startswith("plugin \"markdown-preview.nvim\"")' plugins.json > /dev/null
-                jq -e '.warnings[2] | startswith("plugin \"nvim-treesitter\"")' plugins.json > /dev/null
-                # the "<function>" / "<table>" placeholder must not leak into build.cmd
+                jq -e '.warnings | length == 2' plugins.json > /dev/null
+                jq -e '.warnings[0] | startswith("plugin \"markdown-preview.nvim\"")' plugins.json > /dev/null
+                jq -e '.warnings[1] | startswith("plugin \"nvim-treesitter\"")' plugins.json > /dev/null
+                # the "<function>" placeholder must not leak into build.cmd
                 jq -e '.plugins["markdown-preview.nvim"].build == { kind: "function" }' plugins.json > /dev/null
-                jq -e '.plugins["LuaSnip"].build == { kind: "function" }' plugins.json > /dev/null
                 jq -e '.plugins["nvim-treesitter"].build.cmd == ":TSUpdate"' plugins.json > /dev/null
 
                 # ...and the quiet path: a build nvimx *can* run must say nothing at all.
@@ -1067,6 +1194,65 @@
                   exit 1
                 fi
                 jq -e '.warnings == []' quiet.json > /dev/null
+
+                # Table-form build (#36): every element is classified and none are lost, the
+                # mixed case warns with the step index and the treesitter pointer, the all-shell
+                # case is silent, and rockspec/luafile/false get their own kind rather than being
+                # run as shell commands (the regression #36's classifier could introduce, #3.4).
+                extract ${./tests/fixtures/build-steps-config} $sb/steps.json
+                rc=0
+                nvim -l ${./lua/nvimx}/resolve.lua $sb/steps.json steps-plugins.json \
+                  2> steps.log || rc=$?
+                cat steps.log >&2
+                if [ "$rc" -ne 0 ]; then
+                  echo "resolve.lua must warn, not fail, on table-form builds: got rc=$rc" >&2
+                  exit 1
+                fi
+
+                # mixed table: no step lost, order preserved, and it counts as unbuildable
+                jq -e '.plugins["nvim-treesitter"].build.kind == "steps"' steps-plugins.json > /dev/null
+                jq -e '.plugins["nvim-treesitter"].build.steps | length == 2' steps-plugins.json > /dev/null
+                jq -e '.plugins["nvim-treesitter"].build.steps[0] == { kind: "shell", cmd: "make" }' \
+                  steps-plugins.json > /dev/null
+                jq -e '.plugins["nvim-treesitter"].build.steps[1] == { kind: "excmd", cmd: ":TSUpdate" }' \
+                  steps-plugins.json > /dev/null
+                grep -q 'plugin "nvim-treesitter": build is a list of 2 steps and 1 of them cannot be run at build time' \
+                  steps.log
+                grep -q 'step 2 is a neovim command (":TSUpdate")' steps.log
+                grep -q 'the remaining shell step still runs' steps.log
+                grep -q 'programs.nvimx.treesitter.grammars' steps.log
+
+                # all-shell table: silent, and not folded into a scalar shell build
+                jq -e '.plugins["LuaSnip"].build.kind == "steps"' steps-plugins.json > /dev/null
+                jq -e '.plugins["LuaSnip"].build.steps[0] == { kind: "shell", cmd: "make install_jsregexp" }' \
+                  steps-plugins.json > /dev/null
+                if grep -q 'plugin "LuaSnip"' steps.log; then
+                  echo "an all-shell table build must not warn" >&2
+                  exit 1
+                fi
+
+                # all-unrunnable table: 2 of 2, both clauses present
+                jq -e '.plugins["all-unbuildable.nvim"].build.kind == "steps"' steps-plugins.json > /dev/null
+                grep -q 'plugin "all-unbuildable.nvim": build is a list of 2 steps and 2 of them cannot be run at build time' \
+                  steps.log
+                grep -q 'step 1 is a Lua function' steps.log
+                grep -q 'step 2 is a neovim command (":Foo")' steps.log
+
+                # false: no false-positive warning (pre-#36 regression: "<boolean>" used to warn)
+                jq -e '.plugins["no-build.nvim"].build == { kind: "none" }' steps-plugins.json > /dev/null
+                if grep -q 'plugin "no-build.nvim"' steps.log; then
+                  echo "build = false must not warn" >&2
+                  exit 1
+                fi
+
+                # rockspec / luafile: their own kind, never "shell" (pre-#36 regression: these
+                # used to be recorded as shell.cmd and executed as such)
+                jq -e '.plugins["rockspec-build.nvim"].build == { kind: "rockspec" }' steps-plugins.json > /dev/null
+                jq -e '.plugins["luafile-build.nvim"].build == { kind: "luafile", cmd: "install.lua" }' \
+                  steps-plugins.json > /dev/null
+                grep -q 'plugin "rockspec-build.nvim"' steps.log
+                grep -q 'plugin "luafile-build.nvim"' steps.log
+
                 touch $out
               '';
           # Merging with the previous lock is what makes plugins.json a lock rather than a report:
