@@ -2,7 +2,8 @@
 --
 -- Usage:
 --   nvim -l resolve.lua <raw-spec.json> <where to write plugins.json> \
---     [--prev <existing plugins.json>] [--lock <existing flake.lock>] [--lazy <lazy.nvim path>]
+--     [--prev <existing plugins.json>] [--lock <existing flake.lock>] [--lazy <lazy.nvim path>] \
+--     [--update [<name>]]... [--update-plan <path>]
 --
 -- Converts raw-spec.json into the plugins.json schema, merging with the previous lock so that
 -- refs already decided stay decided (--prev) and `pin = true` plugins get frozen onto the rev
@@ -20,20 +21,26 @@ end
 local function usage()
   io.stderr:write(
     "usage: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>] "
-      .. "[--lock <flake.lock>] [--lazy <lazy.nvim path>]\n"
+      .. "[--lock <flake.lock>] [--lazy <lazy.nvim path>] [--update [<name>]]... "
+      .. "[--update-plan <path>]\n"
   )
   os.exit(2)
 end
 
--- A flag loop rather than fixed positions: #24 (--update [name...]) and #25 (--import-lazy-lock)
--- add themselves here without disturbing the callers that only pass the two positional paths.
-local raw_path, out_path, prev_path, lock_path, lazy_path
+-- A flag loop rather than fixed positions: #24 added --update / --update-plan here, and #25
+-- (--import-lazy-lock) can add itself the same way without disturbing the callers that only pass
+-- the two positional paths.
+local raw_path, out_path, prev_path, lock_path, lazy_path, update_plan_path
+local update_all = false
+local update_names = {}
 do
+  local saw_bare_update = false
+  local saw_named_update = false
   local positional = {}
   local i = 1
   while i <= #arg do
     local a = arg[i]
-    if a == "--prev" or a == "--lock" or a == "--lazy" then
+    if a == "--prev" or a == "--lock" or a == "--lazy" or a == "--update-plan" then
       local value = arg[i + 1]
       if not value then
         io.stderr:write(("[nvimx] resolve: %s needs a path\n"):format(a))
@@ -43,10 +50,26 @@ do
         prev_path = value
       elseif a == "--lock" then
         lock_path = value
-      else
+      elseif a == "--lazy" then
         lazy_path = value
+      else
+        update_plan_path = value
       end
       i = i + 2
+    elseif a == "--update" then
+      -- One-token lookahead, repeatable (#24): a following argument that does not itself start
+      -- with "--" is a name to update, consumed right here; anything else (another flag, or the
+      -- end of argv) means this occurrence is the "update everything" marker.
+      local value = arg[i + 1]
+      if value and value:sub(1, 2) ~= "--" then
+        update_names[#update_names + 1] = value
+        saw_named_update = true
+        i = i + 2
+      else
+        update_all = true
+        saw_bare_update = true
+        i = i + 1
+      end
     elseif a:sub(1, 2) == "--" then
       io.stderr:write(("[nvimx] resolve: unknown option %s\n"):format(a))
       usage()
@@ -57,6 +80,14 @@ do
   end
   raw_path, out_path = positional[1], positional[2]
   if not raw_path or not out_path or positional[3] then
+    usage()
+  end
+  -- lock-app.nix rejects this same combination itself, before resolve.lua is ever invoked (its
+  -- own bare `--update` and named `--update <name>` cannot both survive its parser -- see its
+  -- comment for why letting it reach here would silently collapse into "just the names"). This
+  -- copy only matters for someone driving resolve.lua by hand.
+  if saw_bare_update and saw_named_update then
+    io.stderr:write("[nvimx] resolve: --update takes either no names (update everything) or names, not both\n")
     usage()
   end
 end
@@ -160,8 +191,10 @@ do
   end
 end
 
--- Plugins whose previous decision must be thrown away and re-resolved. Always empty today;
--- #24 (`nvimx-lock --update [name...]`) fills it from the command line.
+-- Plugins whose previous decision must be thrown away and re-resolved. Populated below, once
+-- --update's name validation has run (#24): an explicit name forces just that plugin (even if
+-- pinned or commit-fixed); a bare --update forces everything that is not `pin = true`. Empty,
+-- and never touched, on a plain lock.
 local force = {}
 
 -- Normalize into a form usable as a flake input name ([^A-Za-z0-9_-] → "-")
@@ -243,6 +276,27 @@ end
 local resolve_errors = {}
 local function fail_plugin(name, msg)
   resolve_errors[#resolve_errors + 1] = { name = name, msg = ("plugin %q: %s"):format(name, msg) }
+end
+
+-- Sorts and prints every fatal problem collected in resolve_errors so far (if any), then exits 1.
+-- Split out of the version-resolution failure block near the end of this file (#24) so that
+-- --update's name validation -- which has to run before the main loop below, so an unknown name
+-- never survives long enough to spend a git ls-remote on it -- can call it too, giving both kinds
+-- of fatal problem the same "collect everything, then report once" behavior #23 established.
+local function report_resolve_errors()
+  if #resolve_errors == 0 then
+    return
+  end
+  table.sort(resolve_errors, function(a, b)
+    if a.name ~= b.name then
+      return a.name < b.name
+    end
+    return a.msg < b.msg
+  end)
+  for _, e in ipairs(resolve_errors) do
+    io.stderr:write("[nvimx] resolve failed: " .. e.msg .. "\n")
+  end
+  os.exit(1)
 end
 
 -- The first `n` lines of `s`, joined for a one-line stderr message (git's own stderr can be
@@ -406,6 +460,55 @@ local function build_warning(name, build)
     msg = msg .. ". nvimx merges parsers from nixpkgs instead -- set programs.nvimx.treesitter.grammars"
   end
   return msg
+end
+
+-- #24: `--update [name...]`'s name validation and force-set construction. Every requested name
+-- is checked, and any problem is collected via fail_plugin, *before* the main loop below ever
+-- gets a chance to run -- an unknown name must not survive long enough to spend a git ls-remote
+-- on it. report_resolve_errors() prints everything collected so far and exits if any name was
+-- bad, so nothing past this point (including plugins.json) is ever written for a failed --update.
+local lazy_requested = false
+if update_all or #update_names > 0 then
+  -- Display name -> inputName, for a "did you mean" hint when someone types the inputName
+  -- (e.g. "tokyonight-nvim") instead of the display name resolve.lua and --update both key on.
+  local input_name_lookup = {}
+  for rn in pairs(raw.plugins or {}) do
+    input_name_lookup[to_input_name(rn)] = rn
+  end
+
+  for _, name in ipairs(update_names) do
+    if name == "lazy.nvim" then
+      -- Accepted, but it is not a spec plugin: it becomes an update-plan entry for the synthetic
+      -- lazy-nvim input directly (below), never a `force` entry.
+      lazy_requested = true
+    else
+      local p = (raw.plugins or {})[name]
+      if p == nil then
+        local hint = input_name_lookup[name]
+        local msg = "unknown plugin"
+        if hint then
+          msg = msg .. (" (did you mean %q?)"):format(hint)
+        end
+        fail_plugin(name, msg)
+      elseif p.dev or p.dir then
+        fail_plugin(name, "is a local plugin (dev/dir); nothing to lock or update")
+      else
+        -- Named, even if `pin` or `commit` is set: naming a plugin explicitly is what overrides
+        -- both (§3.2 of the plan). A `commit`-fixed plugin still ends up here and in the
+        -- update-plan -- harmlessly, since its URL cannot move either way.
+        force[name] = true
+      end
+    end
+  end
+  report_resolve_errors()
+
+  if update_all then
+    for rn, p in pairs(raw.plugins or {}) do
+      if not (p.dev or p.dir) and not is_true(p.pin) then
+        force[rn] = true
+      end
+    end
+  end
 end
 
 for name, p in pairs(raw.plugins or {}) do
@@ -732,18 +835,7 @@ end
 -- plugin_warnings is, and only after every warning and note above so the user sees the full
 -- picture before the run dies. No output file is written past this point (#18 §3.4's ordering
 -- requirement: a failed resolve must not overwrite plugins.json with a partial result).
-if #resolve_errors > 0 then
-  table.sort(resolve_errors, function(a, b)
-    if a.name ~= b.name then
-      return a.name < b.name
-    end
-    return a.msg < b.msg
-  end)
-  for _, e in ipairs(resolve_errors) do
-    io.stderr:write("[nvimx] resolve failed: " .. e.msg .. "\n")
-  end
-  os.exit(1)
-end
+report_resolve_errors()
 
 -- The escape hatches, in the order resolve-plugin.nix applies them. Emitted once, and to stderr
 -- only: repeating this block inside plugins.json on every lock would be noise.
@@ -771,3 +863,26 @@ local result = {
 local f = assert(io.open(out_path, "w"))
 f:write(json.encode(result))
 f:close()
+
+-- --update-plan (#24, lock-app's own internal flag): the inputNames lock-app should hand to
+-- `nix flake update`, one per line, sorted so the file is deterministic. This is exactly the
+-- force set that passed name validation above -- lock-app never recomputes it -- plus the
+-- synthetic lazy-nvim input whenever a full update or an explicit `--update lazy.nvim` asked
+-- for it (§3.3 / §3.6 of the plan).
+if update_plan_path then
+  local plan_names = {}
+  for name, entry in pairs(plugins) do
+    if force[name] then
+      plan_names[#plan_names + 1] = entry.inputName
+    end
+  end
+  if update_all or lazy_requested then
+    plan_names[#plan_names + 1] = result.lazyNvim.inputName
+  end
+  table.sort(plan_names)
+  local pf = assert(io.open(update_plan_path, "w"))
+  for _, n in ipairs(plan_names) do
+    pf:write(n .. "\n")
+  end
+  pf:close()
+end

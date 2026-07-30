@@ -257,7 +257,7 @@ so a list of shell commands can still run even when it is mixed with steps that 
 - Removing `pin` thaws the plugin: the frozen rev is dropped and it goes back to following its branch/tag. It has to be, because the frozen rev is part of the input URL, so `nix flake update` cannot undo a freeze on its own
 - `pin` also beats a `version` constraint: the frozen rev is whatever the lock held, and it is never checked against the range. `nvimx-lock` warns about this on every run rather than freezing silently
 - `nvimx-lock` runs the resolver twice, on either side of `nix flake lock`. A plugin pinned for the first time has no rev in `flake.lock` yet, so the second pass is what freezes it; the flake is regenerated and re-locked only if that pass changed anything. One retry always suffices, because the third pass would read the same `flake.lock` back
-- `nvimx-lock --update [name...]`: re-resolves version constraints + `nix flake update [name...]`
+- `nvimx-lock --update [name...]` (#24): no names re-resolves every plugin that is not `pin = true` (pinned ones are skipped, and say so in the summary); one or more names re-resolves only those, pinned or not -- naming a plugin explicitly is what overrides `pin` and a `commit`-fixed spec is named harmlessly, since its URL cannot move either way. Either form discards the named plugins' `resolvedRef` (the same `force` mechanism #18 built in), then runs `nix flake lock` (which moves anything whose URL changed, e.g. a freshly-thawed pin) followed by `nix flake update <inputName...>` for exactly those plugins (which moves anything whose URL did not change, e.g. a branch/tag tracker). `lazy.nvim` is a valid name too: it moves the synthetic `lazy-nvim` seed input, and is included automatically by a no-names update. Needs Nix ≥ 2.19 for `nix flake update <input>`'s positional-argument form. A summary of what moved, what was skipped, and what was added/removed is printed at the end (`nvimx-lock: update summary`); in named mode it also warns if an unnamed input moved for no reason the summary can account for (a version constraint resolving for the first time, or an edited spec, do not count -- both are normal lock behavior). A no-names update is the most expensive thing nvimx does: every plugin's version constraint is re-resolved, which means one `git ls-remote` per constrained plugin, twice over because of the two resolver passes
 - Back door: plain `nix flake update <inputName>` in lockDir also works (same as twist), but it cannot move a pinned plugin -- a frozen rev is part of the input URL, not just of `flake.lock`
 - `nvimx-lock --import-lazy-lock <path>`: pins from an existing lazy-lock.json's `{branch, commit}` on the first run for a bit-identical migration. Returns to normal tracking at `--update` time
 
@@ -467,9 +467,10 @@ lua/nvimx/
   resolve.lua                # semver resolution (git ls-remote) + merge with the previous plugins.json
   version.lua                # pure: parse ls-remote output, pick the winning tag for a constraint
   genflake.lua               # plugins.json → lock/flake.nix text generation
+  update-summary.lua         # --update's before/after summary (plugin, old ref, new ref)
   bootstrap.lua.in           # runtime bootstrap template (not `*.lua`, so stylua/luacheck skip it)
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / semver / golden/
+tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / semver / update / golden/
 ```
 
 flake outputs:
@@ -478,7 +479,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, semver-select, resolve-merge, resolve-semver, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
+- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, semver-select, resolve-merge, resolve-semver, resolve-update, update-summary, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
   - planned, not yet implemented: `genflake-golden` (#29), `e2e-offline` (#30)
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
@@ -510,7 +511,7 @@ Each phase ends with an artifact you can actually try out:
 3. **Build path**: sources / plugin-drv / farm / bootstrap / wrapper → verify with `packages.demo` that `:Lazy` shows everything loaded/local. Start dogfooding
 4. **hm module + template**: `programs.nvimx.*`, degraded mode, `nvimx-lock`, E2E against real dotfiles
 5. **Full build-plugin support**: build-registry, shell builds, the treesitter merge drv, nixpkgsFallback, warnings at lock time
-6. **Version/update features**: `resolve.lua` (semver), `--update [name]`, pin-preserving merge, `--import-lazy-lock`
+6. **Version/update features**: `resolve.lua` (semver), pin-preserving merge, `--update [name]` (#24), `--import-lazy-lock`
 7. **Finishing touches**: devPlugins, extraLuaPackages, non-GitHub validation, `checks.e2e-offline`, README
 
 ## How to verify

@@ -1,0 +1,91 @@
+{
+  "_comment": [
+    "Hand-written 'before' snapshot for checks.update-summary. Not produced by resolve.lua --",
+    "written directly so every category update-summary.lua classifies (added/removed/pinned/",
+    "commit-pinned/updated with each reason/unchanged) is exercised from one small fixture.",
+    "Paired with plugins.json.after and flake.lock.summary-{before,after}.json. All revs are",
+    "placeholders and nothing here is ever fetched."
+  ],
+  "schemaVersion": 1,
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "synthetic": true,
+    "source": { "type": "github", "owner": "folke", "repo": "lazy.nvim" }
+  },
+  "localPlugins": {},
+  "warnings": [],
+  "plugins": {
+    "tokyonight.nvim": {
+      "inputName": "tokyonight-nvim",
+      "pin": true,
+      "commit": null,
+      "resolvedRef": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "branch": "main",
+      "tag": null,
+      "version": null,
+      "dependencies": [],
+      "build": { "kind": "none" },
+      "source": { "type": "github", "owner": "folke", "repo": "tokyonight.nvim" }
+    },
+    "telescope.nvim": {
+      "inputName": "telescope-nvim",
+      "pin": null,
+      "commit": null,
+      "resolvedRef": null,
+      "branch": null,
+      "tag": null,
+      "version": "^0.1",
+      "dependencies": ["plenary.nvim"],
+      "build": { "kind": "none" },
+      "source": { "type": "github", "owner": "nvim-telescope", "repo": "telescope.nvim" }
+    },
+    "plenary.nvim": {
+      "inputName": "plenary-nvim",
+      "pin": null,
+      "commit": null,
+      "resolvedRef": null,
+      "branch": null,
+      "tag": null,
+      "version": null,
+      "dependencies": [],
+      "build": { "kind": "none" },
+      "source": { "type": "github", "owner": "nvim-lua", "repo": "plenary.nvim" }
+    },
+    "vim-fugitive": {
+      "inputName": "vim-fugitive",
+      "pin": null,
+      "commit": "dddddddddddddddddddddddddddddddddddddddd",
+      "resolvedRef": null,
+      "branch": null,
+      "tag": null,
+      "version": null,
+      "dependencies": [],
+      "build": { "kind": "none" },
+      "source": { "type": "github", "owner": "tpope", "repo": "vim-fugitive" }
+    },
+    "nui.nvim": {
+      "inputName": "nui-nvim",
+      "pin": true,
+      "commit": null,
+      "resolvedRef": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+      "branch": "main",
+      "tag": null,
+      "version": null,
+      "dependencies": [],
+      "build": { "kind": "none" },
+      "source": { "type": "github", "owner": "MunifTanjim", "repo": "nui.nvim" }
+    },
+    "old.nvim": {
+      "inputName": "old-nvim",
+      "pin": null,
+      "commit": null,
+      "resolvedRef": null,
+      "branch": "main",
+      "tag": null,
+      "version": null,
+      "dependencies": [],
+      "build": { "kind": "none" },
+      "source": { "type": "github", "owner": "example", "repo": "old.nvim" }
+    }
+  }
+}

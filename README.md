@@ -101,6 +101,16 @@ lazy.nvim-only Neovim and warns you, while still installing the `nvimx-lock` com
 Adding a plugin later is the same loop: write the spec → `git add` → `nvimx-lock` → commit → switch.
 Existing pins stay untouched; only the new plugin is fetched.
 
+Updating is `nvimx-lock --update` (moves every plugin that is not `pin = true`) or
+`nvimx-lock --update <name>...` (moves only the named plugins, pinned or not) → commit → switch.
+Either form prints a summary of what moved, what was skipped because it is pinned, and what was
+added or removed. `--update` with no names is the most expensive form: it re-resolves every
+plugin's version constraint, so it is worth reserving for when you actually mean "update
+everything" rather than running it out of habit. `--update <name>...` moves the named inputs with
+`nix flake update <inputName>...` — the input name derived from the plugin's, not the name you
+type — whose positional-argument form needs Nix ≥ 2.19; older Nix would need
+`nix flake lock --update-input <name>` by hand instead.
+
 ## Options
 
 All options live under `programs.nvimx`.

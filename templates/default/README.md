@@ -22,4 +22,8 @@ lock → commit → switch again.
 ## Adding and updating plugins
 
 - Add: write the spec in lua → `git add` → `nvimx-lock` → commit → switch
-- Update: `nvimx-lock --update` (planned for Phase 6) → switch
+- Update everything: `nvimx-lock --update` → commit → switch. Plugins with `pin = true` are
+  skipped (say so in the output) -- name them explicitly to move them anyway
+- Update one plugin: `nvimx-lock --update tokyonight.nvim` (any number of names) → commit → switch.
+  Every other plugin's lock entry is left untouched
+- Either form prints a summary of what moved (and what was skipped) before exiting

@@ -1,0 +1,1 @@
+nvimx-lock: no plugins updated (all up to date)

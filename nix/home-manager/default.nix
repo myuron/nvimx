@@ -12,20 +12,23 @@ let
   cfg = config.programs.nvimx;
   nvimxLib = import ../lib { inherit pkgs lazyNvimSeed; };
 
-  # When projectDir is set, wrap the command so that running it without arguments has defaults
+  # When projectDir is set, wrap the command so that configDir/lockDir default to it. The
+  # defaults are prepended unconditionally rather than only when "$@" is empty (#24): lock-app's
+  # own parser lets the same flag win on its last occurrence (its case loop just keeps
+  # overwriting config=/out= as it sees them), so an explicit --config/--out later in "$@" still
+  # overrides these -- and --update's name-collecting loop stops at the first "--" it sees, so it
+  # can never absorb a flag that was prepended ahead of it.
   lockCommand =
     if cfg.lock.projectDir == null then
       nvimxLib.lockApp
     else
       pkgs.writeShellScriptBin "nvimx-lock" ''
-        if [ "$#" -eq 0 ]; then
-          project=${lib.escapeShellArg cfg.lock.projectDir}
-          project=''${project/#\~/$HOME}
-          exec ${nvimxLib.lockApp}/bin/nvimx-lock \
-            --config "$project/"${lib.escapeShellArg cfg.lock.configDirRelative} \
-            --out "$project/"${lib.escapeShellArg cfg.lock.lockDirRelative}
-        fi
-        exec ${nvimxLib.lockApp}/bin/nvimx-lock "$@"
+        project=${lib.escapeShellArg cfg.lock.projectDir}
+        project=''${project/#\~/$HOME}
+        exec ${nvimxLib.lockApp}/bin/nvimx-lock \
+          --config "$project/"${lib.escapeShellArg cfg.lock.configDirRelative} \
+          --out "$project/"${lib.escapeShellArg cfg.lock.lockDirRelative} \
+          "$@"
       '';
 in
 {
@@ -173,8 +176,9 @@ in
         default = null;
         example = "~/dotfiles";
         description = ''
-          The working tree of your dotfiles repository. When set, running
-          `nvimx-lock` without arguments targets configDirRelative / lockDirRelative.
+          The working tree of your dotfiles repository. When set, `nvimx-lock` --
+          with or without extra arguments, e.g. `nvimx-lock --update <name>` -- targets
+          configDirRelative / lockDirRelative by default; an explicit --config / --out still wins.
         '';
       };
 

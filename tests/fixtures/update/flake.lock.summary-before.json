@@ -1,0 +1,111 @@
+{
+  "_comment": [
+    "A hand-written stand-in for the flake.lock nvimx-lock produces, paired with",
+    "plugins.json.before for checks.update-summary. Only the shape update-summary.lua reads",
+    "matters (root -> inputs.<inputName> -> nodes.<n>.locked.rev), so the revs are obvious",
+    "placeholders and are never fetched. old-nvim has a node here and none in",
+    "flake.lock.summary-after.json (removed); new-nvim is the reverse (added)."
+  ],
+  "nodes": {
+    "lazy-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c0=",
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "rev": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c",
+        "type": "github"
+      },
+      "original": { "owner": "folke", "repo": "lazy.nvim", "type": "github" }
+    },
+    "nui-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c30=",
+        "owner": "MunifTanjim",
+        "ref": "main",
+        "repo": "nui.nvim",
+        "rev": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+        "type": "github"
+      },
+      "original": { "owner": "MunifTanjim", "ref": "main", "repo": "nui.nvim", "type": "github" }
+    },
+    "old-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d0=",
+        "owner": "example",
+        "ref": "main",
+        "repo": "old.nvim",
+        "rev": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
+        "type": "github"
+      },
+      "original": { "owner": "example", "ref": "main", "repo": "old.nvim", "type": "github" }
+    },
+    "plenary-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f10=",
+        "owner": "nvim-lua",
+        "repo": "plenary.nvim",
+        "rev": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+        "type": "github"
+      },
+      "original": { "owner": "nvim-lua", "repo": "plenary.nvim", "type": "github" }
+    },
+    "root": {
+      "inputs": {
+        "lazy-nvim": "lazy-nvim",
+        "nui-nvim": "nui-nvim",
+        "old-nvim": "old-nvim",
+        "plenary-nvim": "plenary-nvim",
+        "telescope-nvim": "telescope-nvim",
+        "tokyonight-nvim": "tokyonight-nvim",
+        "vim-fugitive": "vim-fugitive"
+      }
+    },
+    "telescope-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c00=",
+        "owner": "nvim-telescope",
+        "repo": "telescope.nvim",
+        "rev": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+        "type": "github"
+      },
+      "original": { "owner": "nvim-telescope", "repo": "telescope.nvim", "type": "github" }
+    },
+    "tokyonight-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a10=",
+        "owner": "folke",
+        "ref": "main",
+        "repo": "tokyonight.nvim",
+        "rev": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+        "type": "github"
+      },
+      "original": { "owner": "folke", "ref": "main", "repo": "tokyonight.nvim", "type": "github" }
+    },
+    "vim-fugitive": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-dddddddddddddddddddddddddddddddddddddddd0=",
+        "owner": "tpope",
+        "repo": "vim-fugitive",
+        "rev": "dddddddddddddddddddddddddddddddddddddddd",
+        "type": "github"
+      },
+      "original": { "owner": "tpope", "repo": "vim-fugitive", "rev": "dddddddddddddddddddddddddddddddddddddddd", "type": "github" }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

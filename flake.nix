@@ -1798,6 +1798,285 @@
                   touch $out
                 ''
               );
+          # Offline coverage of `--update [name...]` (#24): resolve.lua's name validation,
+          # force-set construction, and update-plan output, driven the same way
+          # checks.resolve-merge drives the plain merge path. `nix flake lock` / `nix flake
+          # update` themselves cannot run inside a nix build (recursive nix), so the actual CLI
+          # wiring in lock-app.nix is only exercised here for its argument parser (step 10, which
+          # never calls `nix`); the rest is covered by the plan's §6.4 manual verification.
+          resolve-update =
+            pkgs.runCommand "resolve-update"
+              {
+                nativeBuildInputs = [
+                  pkgs.neovim-unwrapped
+                  pkgs.jq
+                  pkgs.git
+                  nvimxLib.lockApp
+                ];
+              }
+              (
+                mkTagRepoSh
+                + ''
+                  export HOME=$TMPDIR
+                  lua=${./lua/nvimx}
+                  fx=${./tests/fixtures/update}
+                  mfx=${./tests/fixtures/merge}
+                  lazy=${lazy-nvim}
+
+                  # 1. Steady state, exactly checks.resolve-merge's own pass1 -> out1 (the golden
+                  # comparison for this is resolve-merge's job, not repeated here). This is only
+                  # the starting point every --update case below forces a plugin away from.
+                  nvim -l $lua/resolve.lua $mfx/raw-spec-base.json pass1.json --lock $mfx/flake.lock \
+                    --lazy $lazy 2> /dev/null
+                  nvim -l $lua/resolve.lua $mfx/raw-spec-base.json out1.json \
+                    --prev pass1.json --lock $mfx/flake.lock --lazy $lazy 2> /dev/null
+
+                  # 2. Naming a pinned plugin thaws just that plugin: the rest of plugins.json is
+                  # byte-for-byte the steady state, and the plan names only the one plugin.
+                  nvim -l $lua/resolve.lua $mfx/raw-spec-base.json out2.json \
+                    --prev out1.json --lock $mfx/flake.lock --lazy $lazy \
+                    --update tokyonight.nvim --update-plan plan2.txt 2> /dev/null
+                  diff -u $fx/golden/update-pinned.plugins.json out2.json
+                  for other in telescope.nvim plenary.nvim custom.nvim; do
+                    diff -u \
+                      <(jq -S --arg n "$other" '.plugins[$n]' out1.json) \
+                      <(jq -S --arg n "$other" '.plugins[$n]' out2.json)
+                  done
+                  [ "$(cat plan2.txt)" = "tokyonight-nvim" ]
+
+                  # 3. A bare --update thaws everything not pinned: both pinned plugins keep out1's
+                  # frozen rev, and the plan is exactly the pinned exclusion made explicit -- the
+                  # two unpinned plugins' inputNames plus the synthetic lazy-nvim seed, sorted.
+                  nvim -l $lua/resolve.lua $mfx/raw-spec-base.json out3.json \
+                    --prev out1.json --lock $mfx/flake.lock --lazy $lazy \
+                    --update --update-plan plan3.txt 2> /dev/null
+                  jq -e '.plugins["tokyonight.nvim"].resolvedRef
+                         == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' out3.json > /dev/null
+                  jq -e '.plugins["custom.nvim"].resolvedRef
+                         == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' out3.json > /dev/null
+                  printf 'lazy-nvim\nplenary-nvim\ntelescope-nvim\n' > plan3-expected.txt
+                  diff -u plan3-expected.txt plan3.txt
+
+                  # 4. --update lazy.nvim moves only the synthetic seed input: plugins.json is
+                  # untouched and the plan names only lazy-nvim.
+                  nvim -l $lua/resolve.lua $mfx/raw-spec-base.json out4.json \
+                    --prev out1.json --lock $mfx/flake.lock --lazy $lazy \
+                    --update lazy.nvim --update-plan plan4.txt 2> /dev/null
+                  cmp out1.json out4.json
+                  [ "$(cat plan4.txt)" = "lazy-nvim" ]
+
+                  # 5. Unknown names are collected and reported together, not one at a time (#23's
+                  # convention), and nothing is written -- resolve.lua's "no partial plugins.json on
+                  # failure" contract (#18 §3.4) extends to a failed --update. The third name is
+                  # spelled as an inputName rather than the display name, to prove the did-you-mean
+                  # hint fires without treating it as accepted.
+                  rc=0
+                  nvim -l $lua/resolve.lua $mfx/raw-spec-base.json out5.json \
+                    --prev out1.json --lock $mfx/flake.lock --lazy $lazy \
+                    --update no-such-plugin --update also-missing --update tokyonight-nvim \
+                    2> out5.log || rc=$?
+                  [ "$rc" -ne 0 ]
+                  grep -q 'plugin "no-such-plugin": unknown plugin' out5.log
+                  grep -q 'plugin "also-missing": unknown plugin' out5.log
+                  grep -q 'plugin "tokyonight-nvim": unknown plugin (did you mean "tokyonight.nvim"?)' out5.log
+                  [ ! -f out5.json ]
+
+                  # 6. A local (dev/dir) plugin and an unknown name in the same run are reported
+                  # together too, not just multiple unknown names.
+                  jq '.plugins["local.nvim"] = { "name": "local.nvim", "dev": true, "dir": "/some/path" }' \
+                    $mfx/raw-spec-base.json > raw-spec-with-local.json
+                  rc=0
+                  nvim -l $lua/resolve.lua raw-spec-with-local.json out6.json \
+                    --prev out1.json --lock $mfx/flake.lock --lazy $lazy \
+                    --update local.nvim --update no-such-plugin 2> out6.log || rc=$?
+                  [ "$rc" -ne 0 ]
+                  grep -q 'plugin "local.nvim": is a local plugin' out6.log
+                  grep -q 'plugin "no-such-plugin": unknown plugin' out6.log
+                  [ ! -f out6.json ]
+
+                  # 7. resolve.lua's own defense against mixing a bare --update with a named one
+                  # (for anyone driving it by hand -- the CLI itself never reaches this, since
+                  # lock-app rejects the same combination first; step 10 below is what proves the
+                  # CLI path actually does).
+                  rc=0
+                  nvim -l $lua/resolve.lua $mfx/raw-spec-base.json out7.json \
+                    --prev out1.json --lock $mfx/flake.lock --lazy $lazy \
+                    --update --update foo 2> out7.log || rc=$?
+                  [ "$rc" -eq 2 ]
+                  grep -q -- '--update takes either no names' out7.log
+
+                  # 8. A plugin whose spec fixes `commit` is a no-op when named explicitly (the URL
+                  # cannot move either way) but still lands in the update-plan -- harmlessly, since
+                  # `nix flake update` cannot move it either. This is the golden fixture for that
+                  # decision (§3.2 of the plan).
+                  nvim -l $lua/resolve.lua $fx/raw-spec-commit.json out8base.json \
+                    --lock $mfx/flake.lock --lazy $lazy 2> /dev/null
+                  nvim -l $lua/resolve.lua $fx/raw-spec-commit.json out8.json \
+                    --prev out8base.json --lock $mfx/flake.lock --lazy $lazy \
+                    --update vim-fugitive --update-plan plan8.txt 2> /dev/null
+                  jq -e '.plugins["vim-fugitive"].commit
+                         == "dddddddddddddddddddddddddddddddddddddddd"' out8.json > /dev/null
+                  [ "$(cat plan8.txt)" = "vim-fugitive" ]
+
+                  # 9. The convergence pass' own re-resolve (no --update, exactly what lock-app.nix
+                  # runs after `nix flake update`) is what actually refreezes a thawed pin once
+                  # flake.lock has caught up with the new rev, and running it once more from there
+                  # must be a fixed point -- the second nvimx-lock pass never needs a third.
+                  nvim -l $lua/resolve.lua $mfx/raw-spec-base.json out9a.json \
+                    --prev out2.json --lock $fx/flake.lock.after --lazy $lazy 2> /dev/null
+                  jq -e '.plugins["tokyonight.nvim"].resolvedRef
+                         == "5555555555555555555555555555555555555555"' out9a.json > /dev/null
+                  nvim -l $lua/resolve.lua $mfx/raw-spec-base.json out9b.json \
+                    --prev out9a.json --lock $fx/flake.lock.after --lazy $lazy 2> /dev/null
+                  cmp out9a.json out9b.json
+
+                  # 10. lock-app's own parser rejects the same bare+named mix (§3.1 of the plan):
+                  # this is the one place the rejection is provable without ever calling `nix`, and
+                  # the exact case the plan review found the previous draft could not actually
+                  # reach from the CLI. No real config/out is needed -- the rejection happens before
+                  # either is even realpath'd.
+                  rc=0
+                  nvimx-lock --config /nonexistent-config --out /nonexistent-out \
+                    --update --update foo 2> out10.log || rc=$?
+                  [ "$rc" -eq 2 ]
+                  grep -q 'usage: nvimx-lock' out10.log
+
+                  # 11. A version constraint on a named plugin resolves against a real (if local
+                  # and offline) remote exactly as a normal lock would: force only discards the
+                  # previous decision, it does not change how the constraint itself is honored.
+                  mkrepo $TMPDIR/tagged v1.0.0 v1.2.0 v1.2.5
+                  jq --arg u "file://$TMPDIR/tagged" \
+                    '.plugins["tagged.nvim"] = { "name": "tagged.nvim", "url": $u, "version": "^1.0" }' \
+                    $mfx/raw-spec-base.json > raw-spec-tagged.json
+                  jq --arg u "file://$TMPDIR/tagged" \
+                    '.plugins["tagged.nvim"] = { "inputName": "tagged-nvim", "resolvedRef": "refs/tags/v1.0.0",
+                                                  "branch": null, "tag": null, "commit": null, "version": "^1.0",
+                                                  "pin": null, "dependencies": [], "build": { "kind": "none" },
+                                                  "source": { "type": "git", "url": $u } }' \
+                    out1.json > prev-tagged.json
+                  nvim -l $lua/resolve.lua raw-spec-tagged.json out11.json \
+                    --prev prev-tagged.json --lazy $lazy \
+                    --update tagged.nvim 2> /dev/null
+                  jq -e '.plugins["tagged.nvim"].resolvedRef == "refs/tags/v1.2.5"' out11.json > /dev/null
+
+                  touch $out
+                ''
+              );
+          # Offline coverage of update-summary.lua (#24): a pure text transform over four JSON
+          # snapshots, so this needs nothing beyond neovim-unwrapped -- no git, no `nix flake *`.
+          update-summary =
+            pkgs.runCommand "update-summary"
+              {
+                # jq is only for this check's own fixture tweaking (the tag-pairing case below);
+                # update-summary.lua itself needs nothing beyond neovim-unwrapped.
+                nativeBuildInputs = [
+                  pkgs.neovim-unwrapped
+                  pkgs.jq
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                lua=${./lua/nvimx}
+                fx=${./tests/fixtures/update}
+
+                # Named mode: tokyonight.nvim and lazy.nvim were asked for; plenary.nvim moved
+                # without being named and without an explanation on offer, so it is both listed
+                # and counted in the warning. telescope.nvim's version constraint resolving for the
+                # first time, and old.nvim/new.nvim being removed/added, are never warned about.
+                nvim -l $lua/update-summary.lua \
+                  $fx/plugins.json.before $fx/plugins.json.after \
+                  $fx/flake.lock.summary-before.json $fx/flake.lock.summary-after.json \
+                  tokyonight.nvim lazy.nvim 2> summary-named.txt
+                diff -u $fx/golden/summary-named.txt summary-named.txt
+
+                # Full-update mode: every plugin is listed, including the ones that did not move
+                # (nui.nvim's pinned-skip, vim-fugitive's commit-pinned) -- there is no
+                # "unrequested" concept here, so no warning line is ever printed. tokyonight.nvim
+                # is also `pin = true`, but its rev genuinely differs between the two snapshots, so
+                # it is reported as `updated` rather than swallowed as a skip -- the fixture doubles
+                # as coverage for classify()'s pin/commit branches being gated on rb == ra (the
+                # dedicated regression cases below test the same gate in named mode, where a
+                # swallowed move would otherwise be silent rather than just misclassified).
+                nvim -l $lua/update-summary.lua \
+                  $fx/plugins.json.before $fx/plugins.json.after \
+                  $fx/flake.lock.summary-before.json $fx/flake.lock.summary-after.json \
+                  2> summary-all.txt
+                diff -u $fx/golden/summary-all.txt summary-all.txt
+                if grep -q '^nvimx-lock: warning:' summary-all.txt; then
+                  echo "a full update must never print the unnamed-input warning" >&2
+                  exit 1
+                fi
+
+                # Nothing moved (the same snapshot fed in as both before and after): a single line
+                # rather than an empty or misleading "0 updated" summary.
+                nvim -l $lua/update-summary.lua \
+                  $fx/plugins.json.before $fx/plugins.json.before \
+                  $fx/flake.lock.summary-before.json $fx/flake.lock.summary-before.json \
+                  tokyonight.nvim 2> summary-none.txt
+                diff -u $fx/golden/summary-none.txt summary-none.txt
+
+                # A full update where every unpinned plugin was already at rest must still report
+                # its pinned-skips (§3.4 of the plan says so explicitly: "must always" be shown) --
+                # the "no plugins updated" shortcut above must not swallow that just because
+                # nothing counted as updated/added/removed.
+                nvim -l $lua/update-summary.lua \
+                  $fx/plugins.json.before $fx/plugins.json.before \
+                  $fx/flake.lock.summary-before.json $fx/flake.lock.summary-before.json \
+                  2> summary-all-at-rest.txt
+                grep -q 'pinned: tokyonight.nvim' summary-all-at-rest.txt
+                grep -q 'pinned: nui.nvim' summary-all-at-rest.txt
+                if grep -q '^nvimx-lock: no plugins updated' summary-all-at-rest.txt; then
+                  echo "a pinned-skip must not be swallowed by the 'no plugins updated' shortcut" >&2
+                  exit 1
+                fi
+
+                # The ref-pairing rule is limited to tag-ref-vs-tag-ref (§3.4 of the plan): a pin's
+                # thaw-then-refreeze is 40-hex on both sides, and must not double up as
+                # "aaaa... -> bbbb... (aaaa... -> bbbb...)" -- tokyonight.nvim's line above already
+                # pins that it does not. This checks the positive case: when both sides really are
+                # refs/tags/..., they are shown paired, with the rev move alongside in parens.
+                jq '.plugins["telescope.nvim"].resolvedRef = "refs/tags/0.1.7"' \
+                  $fx/plugins.json.before > plugins-tagpair-before.json
+                jq '.plugins["telescope.nvim"].resolvedRef = "refs/tags/0.1.8"' \
+                  $fx/plugins.json.after > plugins-tagpair-after.json
+                nvim -l $lua/update-summary.lua \
+                  plugins-tagpair-before.json plugins-tagpair-after.json \
+                  $fx/flake.lock.summary-before.json $fx/flake.lock.summary-after.json \
+                  2> summary-tagpair.txt
+                grep -q 'updated: telescope.nvim refs/tags/0.1.7 -> refs/tags/0.1.8 (c0c0c0c -> e0e0e0e)' \
+                  summary-tagpair.txt
+
+                # A `commit`-pinned plugin is only "cannot have moved" while its rev actually did
+                # not move: if the spec's `commit` itself was edited (and the rev moved with it),
+                # named mode must still report it -- as an ordinary "(spec changed)" line, not
+                # silence -- rather than falling into "unchanged (commit-pinned in spec)" as if
+                # nothing happened. This is the regression case for classify()'s pin/commit
+                # branches being gated on rb == ra.
+                jq '.plugins["vim-fugitive"].commit = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"' \
+                  $fx/plugins.json.after > plugins-commitmove-after.json
+                jq '.nodes["vim-fugitive"].locked.rev = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"' \
+                  $fx/flake.lock.summary-after.json > lock-commitmove-after.json
+                nvim -l $lua/update-summary.lua \
+                  $fx/plugins.json.before plugins-commitmove-after.json \
+                  $fx/flake.lock.summary-before.json lock-commitmove-after.json \
+                  tokyonight.nvim 2> summary-commitmove.txt
+                grep -q 'updated: vim-fugitive ddddddd -> eeeeeee (spec changed)' summary-commitmove.txt
+
+                # Symmetrically, a pinned (but unnamed) input whose rev moved anyway -- some
+                # anomaly, not a `--update` this run even asked for -- must be caught by the
+                # unnamed-move warning, not hidden behind "pinned (skipped)" as if it were still
+                # frozen. This is Done when 4's safety net; silence here is exactly the bug.
+                jq '.nodes["nui-nvim"].locked.rev = "9999999999999999999999999999999999999999"' \
+                  $fx/flake.lock.summary-after.json > lock-pinmove-after.json
+                nvim -l $lua/update-summary.lua \
+                  $fx/plugins.json.before $fx/plugins.json.after \
+                  $fx/flake.lock.summary-before.json lock-pinmove-after.json \
+                  tokyonight.nvim 2> summary-pinmove.txt
+                grep -q 'updated: nui.nvim c3c3c3c -> 9999999' summary-pinmove.txt
+                grep -q '^nvimx-lock: warning:.*nui.nvim' summary-pinmove.txt
+
+                touch $out
+              '';
         }
       );
 
