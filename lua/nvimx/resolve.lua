@@ -549,7 +549,17 @@ if #pending > 0 then
   -- whether the network happens to be up -- exactly the non-determinism §3.4.4 rules out.
   local syntax_ok = {}
   for _, item in ipairs(pending) do
-    if Semver.range(item.constraint) == nil then
+    if type(item.constraint) ~= "string" then
+      -- Semver.range indexes its argument, so a non-string raises rather than returning nil --
+      -- which would abort the whole run and discard every other plugin's error. `version = 1.2`
+      -- with the quotes forgotten is an easy Lua typo and lazy passes it through unvalidated.
+      fail_plugin(
+        item.name,
+        ('version constraint %s is not a string. lazy version constraints are strings, like "^1.2".'):format(
+          tostring(item.constraint)
+        )
+      )
+    elseif Semver.range(item.constraint) == nil then
       fail_plugin(
         item.name,
         ('version constraint %q is not valid lazy.nvim semver syntax (supported: *, 1.2.3, =1.2.3, >1.2.3, >=1.2.3, ^1.2, ~1.2, 1.x, "1.2 - 2.0"). %q is not supported.'):format(
@@ -574,6 +584,7 @@ if #pending > 0 then
   end
 
   local BATCH_SIZE = 8
+  local LS_REMOTE_TIMEOUT_S = 60
   local i = 1
   while i <= #pending do
     local last = math.min(i + BATCH_SIZE - 1, #pending)
@@ -582,16 +593,27 @@ if #pending > 0 then
       if type(item.url) ~= "string" or item.url == "" then
         item.url_missing = true
       else
-        item.proc = vim.system(
+        -- vim.system raises rather than returning an error when git is not on PATH. lock-app.nix
+        -- puts it there, but a hand-run resolve.lua should say which tool is missing instead of
+        -- producing a traceback and discarding every other plugin's error.
+        local spawned, proc = pcall(
+          vim.system,
           { "git", "ls-remote", "--tags", "--refs", item.url },
-          { text = true, env = { GIT_TERMINAL_PROMPT = "0" }, timeout = 60000 }
+          { text = true, env = { GIT_TERMINAL_PROMPT = "0" }, timeout = LS_REMOTE_TIMEOUT_S * 1000 }
         )
+        if spawned then
+          item.proc = proc
+        else
+          item.spawn_error = tostring(proc)
+        end
       end
     end
     for j = i, last do
       local item = pending[j]
       if item.url_missing then
         fail_plugin(item.name, ("has no usable url to resolve version constraint %q"):format(tostring(item.constraint)))
+      elseif item.spawn_error then
+        fail_plugin(item.name, ("could not run git ls-remote (is git on PATH?): %s"):format(item.spawn_error))
       else
         local res = item.proc:wait()
         -- wait() returns nil when the pipes never reach EOF, which happens if the killed git left
@@ -599,7 +621,19 @@ if #pending > 0 then
         -- rather than letting the next line raise and throw away every other plugin's error.
         if not res then
           fail_plugin(item.name, ("git ls-remote timed out for %s"):format(item.url))
-        elseif res.code ~= 0 or (res.signal and res.signal ~= 0) then
+        elseif res.code == 124 or (res.signal and res.signal ~= 0) then
+          -- vim.system reports a timeout as exit 124 plus the signal it killed git with. Saying
+          -- "exit 124" instead would make the reader look up a convention to learn they waited too
+          -- long.
+          fail_plugin(
+            item.name,
+            ("git ls-remote timed out for %s after %ds: %s"):format(
+              item.url,
+              LS_REMOTE_TIMEOUT_S,
+              first_lines(res.stderr, 3)
+            )
+          )
+        elseif res.code ~= 0 then
           fail_plugin(
             item.name,
             ("git ls-remote failed for %s (exit %d): %s"):format(item.url, res.code, first_lines(res.stderr, 3))
@@ -615,10 +649,11 @@ if #pending > 0 then
             else
               fail_plugin(
                 item.name,
-                ("version constraint %q cannot be satisfied: the remote has no tags (%s)."):format(
-                  tostring(item.constraint),
-                  item.url
-                )
+                (
+                  "version constraint %q cannot be satisfied: the remote has no tags (%s). "
+                  .. "Drop the constraint, set version = false, or move it to defaults = { version = ... } "
+                  .. "so that a plugin without tags falls back to its branch instead of failing the lock."
+                ):format(tostring(item.constraint), item.url)
               )
             end
           else -- "no-match"

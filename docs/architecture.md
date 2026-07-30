@@ -225,7 +225,7 @@ so a list of shell commands can still run even when it is mixed with steps that 
 
 | value | written by | example |
 |---|---|---|
-| `null` | nothing to decide (follows a branch / the default HEAD, or `commit` already says it) | — |
+| `null` | nothing to decide (follows a branch / the default HEAD, or `commit` already says it). With a non-null `version`, it also means a `defaults`-derived constraint fell back to the branch at the last lock | — |
 | a 40-hex rev | `pin = true`, frozen onto the rev in `flake.lock` | `"a1b2c3..."` |
 | `refs/tags/<tag>` | semver resolution of `version` | `"refs/tags/v0.1.8"` |
 
