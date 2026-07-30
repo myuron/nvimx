@@ -1001,7 +1001,7 @@
 
                 # The second one -- the pass nvimx-lock runs once `nix flake lock` has caught up --
                 # is what freezes them, and is the steady state. golden/base.plugins.json is that
-                # state written out for review: the new schema fields plus both frozen revs.
+                # state written out for review: pin / dependencies plus both frozen revs.
                 nvim -l $lua/resolve.lua $fx/raw-spec-base.json out1.json \
                   --prev pass1.json --lock $fx/flake.lock 2> out1.log
                 diff -u $fx/golden/base.plugins.json out1.json
@@ -1051,15 +1051,15 @@
                 grep -q 'url = "git+https://git.example.com/custom.nvim.git?ref=trunk&rev=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";' flake-base.nix
 
                 # Editing the spec beats the pin: the user asked for another branch, so the frozen
-                # rev is dropped. Editing metadata that cannot influence a ref (optional /
-                # dependencies) does not, or every such edit would silently unpin a plugin.
+                # rev is dropped. Editing metadata that cannot influence a ref (dependencies) does
+                # not, or every such edit would silently unpin a plugin.
                 nvim -l $lua/resolve.lua $fx/raw-spec-branch-changed.json out5.json \
                   --prev out1.json --lock $fx/flake.lock 2> /dev/null
                 jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' out5.json > /dev/null
                 jq -e '.plugins["tokyonight.nvim"].branch == "master"' out5.json > /dev/null
                 jq -e '.plugins["custom.nvim"].resolvedRef
                        == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"' out5.json > /dev/null
-                jq -e '.plugins["custom.nvim"].optional == true' out5.json > /dev/null
+                jq -e '.plugins["custom.nvim"].dependencies == ["plenary.nvim"]' out5.json > /dev/null
                 jq -e '.plugins["telescope.nvim"].dependencies == ["plenary.nvim"]' out5.json > /dev/null
 
                 # Taking `pin` away must thaw the plugin. Nothing else in the spec changes here
@@ -1140,7 +1140,8 @@
                 grep -q 'schemaVersion 2' prev-future.log
 
                 # Everything above starts from a hand-written raw-spec, so one case goes through
-                # the real extractor to prove the three fields survive lazy's normalization too.
+                # the real extractor to prove pin / dependencies / version survive lazy's
+                # normalization too.
                 sb=$TMPDIR/sandbox
                 mkdir -p $sb/config $sb/data/nvim/lazy $sb/state $sb/cache
                 ln -s ${./tests/fixtures/merge-config} $sb/config/nvim
@@ -1153,14 +1154,27 @@
                   NVIMX_LAZY_SEED=${lazy-nvim} \
                   NVIMX_OUT=$sb/raw-spec.json \
                   nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
+                # guards against dump_plugin in extract.lua reintroducing `optional`: a plugins.json
+                # regression alone would not catch this, since resolve.lua's entry construction does
+                # not propagate unlisted raw-spec keys.
+                # This is vacuous unless merge-config keeps a plugin whose `optional` folds to false
+                # rather than nil -- lazy's own encoder drops nil keys, so a spec without the
+                # plenary optional fragment would leave nothing for this to find.
+                jq -e 'all(.plugins[]; has("optional") | not)' $sb/raw-spec.json > /dev/null
                 nvim -l $lua/resolve.lua $sb/raw-spec.json extracted.json 2> /dev/null
                 jq -e '.plugins["tokyonight.nvim"].pin == true' extracted.json > /dev/null
                 jq -e '.plugins["telescope.nvim"].version == "^0.1"' extracted.json > /dev/null
                 jq -e '.plugins["telescope.nvim"].dependencies == ["plenary.nvim"]' extracted.json > /dev/null
-                # ...and stay absent when the spec does not set them
+                # ...and stay absent when the spec does not set them. `optional` is not among
+                # them: it is not a field that stays absent, it never exists in the schema at all.
                 jq -e '.plugins["plenary.nvim"].pin == null' extracted.json > /dev/null
-                jq -e '.plugins["plenary.nvim"].optional == null' extracted.json > /dev/null
                 jq -e '.plugins["plenary.nvim"].dependencies == []' extracted.json > /dev/null
+                # guards against resolve.lua's entry construction reintroducing `optional`
+                jq -e 'all(.plugins[]; has("optional") | not)' extracted.json > /dev/null
+                # optional-only: lazy's Meta:fix_optional drops it, so nvimx must not lock it either
+                jq -e '.plugins | has("which-key.nvim") | not' extracted.json > /dev/null
+                # an optional fragment mixed with a non-optional one still gets locked
+                jq -e '.plugins | has("plenary.nvim")' extracted.json > /dev/null
                 touch $out
               '';
         }

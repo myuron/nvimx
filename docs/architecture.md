@@ -185,7 +185,6 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
       "branch": null, "tag": null, "commit": null,
       "version": "^0.1",                    // the original semver constraint (kept for reference)
       "pin": null,                          // lazy's `pin` (true | null; null = not set)
-      "optional": null,                     // lazy's `optional` (recorded only; does not affect the build)
       "dependencies": [ "plenary.nvim" ],   // always an array, sorted by name (order carries no meaning)
       "resolvedRef": "refs/tags/0.1.8",     // the ref decided at lock time (see below)
       "build": { "kind": "none" }           // "none" | "shell" | "excmd" | "function"
@@ -196,7 +195,7 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
 }
 ```
 
-- Plugins with a literal `enabled = false` are excluded. Those with a function or `cond` are **included** (a superset of the machine-dependent branches is locked)
+- Plugins with a literal `enabled = false` are excluded. Those with a function or `cond` are **included** (a superset of the machine-dependent branches is locked). A plugin whose fragments are *all* `optional = true` is excluded too: lazy's own `Meta:fix_optional` drops it from the spec before nvimx ever sees it, so nothing is left to lock
 - The `lazyNvim` entry is always present: extraction and runtime from the second run onward use the same locked lazy.nvim, preventing version skew in the name derivation rules
 
 `resolvedRef` is "the ref nvimx itself decided at lock time", and takes one of three forms:
@@ -207,7 +206,7 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
 | a 40-hex rev | `pin = true`, frozen onto the rev in `flake.lock` | `"a1b2c3..."` |
 | `refs/tags/<tag>` | semver resolution of `version` | `"refs/tags/v0.1.8"` |
 
-**Merge contract.** `plugins.json` is read back at the start of the next lock and merged into, rather than regenerated. The *spec identity* of a plugin is `source` + `branch` + `tag` + `commit` + `version`; while it is unchanged, `resolvedRef` is carried over verbatim, and the moment it changes `resolvedRef` drops back to `null` and is decided again. Nothing else re-decides it: `pin`, `optional`, `dependencies` and `build` are refreshed from the spec on every run but never invalidate a decision. `warnings` is derived every run and is not lock state.
+**Merge contract.** `plugins.json` is read back at the start of the next lock and merged into, rather than regenerated. The *spec identity* of a plugin is `source` + `branch` + `tag` + `commit` + `version`; while it is unchanged, `resolvedRef` is carried over verbatim, and the moment it changes `resolvedRef` drops back to `null` and is decided again. Nothing else re-decides it: `pin`, `dependencies` and `build` are refreshed from the spec on every run but never invalidate a decision. `warnings` is derived every run and is not lock state.
 
 ### lazy spec → flake input URL mapping
 

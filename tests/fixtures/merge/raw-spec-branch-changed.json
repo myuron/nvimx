@@ -1,8 +1,8 @@
 {
   "_comment": [
     "raw-spec-base.json with the pinned tokyonight.nvim moved to another branch, and the",
-    "metadata-only fields of the equally pinned custom.nvim (optional) and of telescope.nvim",
-    "(dependencies) edited. Editing the spec must beat the pin (resolvedRef drops back to null),",
+    "metadata-only dependencies fields of the equally pinned custom.nvim and of telescope.nvim",
+    "edited. Editing the spec must beat the pin (resolvedRef drops back to null),",
     "while editing metadata that cannot influence a ref must leave the frozen rev alone."
   ],
   "disabled": [],
@@ -32,7 +32,7 @@
       "url": "https://git.example.com/custom.nvim.git",
       "branch": "trunk",
       "pin": true,
-      "optional": true
+      "dependencies": ["plenary.nvim"]
     }
   }
 }

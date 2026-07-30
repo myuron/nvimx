@@ -19,7 +19,6 @@
       "commit": null,
       "dependencies": [],
       "inputName": "telescope-fzf-native-nvim",
-      "optional": null,
       "pin": null,
       "resolvedRef": null,
       "source": {
