@@ -2075,6 +2075,42 @@
                 grep -q 'updated: nui.nvim c3c3c3c -> 9999999' summary-pinmove.txt
                 grep -q '^nvimx-lock: warning:.*nui.nvim' summary-pinmove.txt
 
+                # Dropping `pin` from an unnamed plugin's spec thaws it (resolve.lua's merge sets
+                # resolvedRef back to null) and a plain `nix flake lock` then moves its URL to
+                # HEAD -- a legitimate move docs/architecture.md itself documents ("Removing pin
+                # thaws the plugin"), not an anomaly. `pin` is not one of identity_fields, so
+                # same_identity alone cannot catch this: it must be its own reason, reported as
+                # `updated ... (unpinned)` and excluded from the unnamed-move warning.
+                jq '.plugins["nui.nvim"].pin = true
+                    | .plugins["nui.nvim"].resolvedRef = "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"' \
+                  $fx/plugins.json.before > plugins-unpin-before.json
+                jq '.plugins["nui.nvim"].pin = null | .plugins["nui.nvim"].resolvedRef = null' \
+                  $fx/plugins.json.after > plugins-unpin-after.json
+                jq '.nodes["nui-nvim"].locked.rev = "8888888888888888888888888888888888888888"' \
+                  $fx/flake.lock.summary-after.json > lock-unpin-after.json
+                nvim -l $lua/update-summary.lua \
+                  plugins-unpin-before.json plugins-unpin-after.json \
+                  $fx/flake.lock.summary-before.json lock-unpin-after.json \
+                  tokyonight.nvim 2> summary-unpin.txt
+                grep -q 'updated: nui.nvim c3c3c3c -> 8888888 (unpinned)' summary-unpin.txt
+                if grep -q '^nvimx-lock: warning:.*nui.nvim' summary-unpin.txt; then
+                  echo "an unpin is a legitimate, self-explaining move and must not be warned about" >&2
+                  exit 1
+                fi
+
+                # The synthetic lazy-nvim seed is an input like any other for the safety net
+                # (docs/architecture.md: "warns if an unnamed input moved"): named mode without
+                # --update lazy.nvim must still surface an unexplained lazy-nvim move, not stay
+                # silent just because lazy.nvim has no plugins.json entry to check a reason
+                # against. $fx/flake.lock.summary-after.json already moves lazy-nvim relative to
+                # summary-before.json, and neither name here is "lazy.nvim".
+                nvim -l $lua/update-summary.lua \
+                  $fx/plugins.json.before $fx/plugins.json.after \
+                  $fx/flake.lock.summary-before.json $fx/flake.lock.summary-after.json \
+                  tokyonight.nvim 2> summary-lazy-unrequested.txt
+                grep -q 'updated: lazy.nvim (seed) 9c9c9c9 -> 3f3f3f3' summary-lazy-unrequested.txt
+                grep -q '^nvimx-lock: warning:.*lazy\.nvim' summary-lazy-unrequested.txt
+
                 touch $out
               '';
         }

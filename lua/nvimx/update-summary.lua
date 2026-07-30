@@ -70,10 +70,12 @@ local function is_true(v)
   return not is_null(v) and v ~= false
 end
 
--- The same classifier resolve.lua's own `is_tag_ref` is: not shared as a module because it is
--- three lines, and this file has no other reason to load resolve.lua. Unlike resolve.lua, this
--- file never needs to tell a frozen 40-hex rev apart from anything else -- a rev move with no
--- tag ref on either side is simply the default case below, pin-frozen or not.
+-- The same two classifiers resolve.lua's own `is_frozen_rev` / `is_tag_ref` are: not shared as a
+-- module because each is three lines, and this file has no other reason to load resolve.lua.
+local function is_frozen_rev(v)
+  return type(v) == "string" and #v == 40 and v:match("^%x+$") ~= nil
+end
+
 local function is_tag_ref(v)
   return type(v) == "string" and v:sub(1, 10) == "refs/tags/"
 end
@@ -240,6 +242,20 @@ local function classify(name)
   local reason = nil
   if ref_before == nil and is_tag_ref(ref_after) then
     reason = ("version constraint resolved: %s"):format(ref_after)
+  elseif
+    before_entry
+    and after_entry
+    and is_true(before_entry.pin)
+    and is_frozen_rev(ref_before)
+    and not is_true(after_entry.pin)
+    and ref_after == nil
+  then
+    -- `pin` is deliberately not one of identity_fields (dropping it must not itself invalidate a
+    -- carried ref -- see resolve.lua's merge comment), so same_identity below never catches an
+    -- unpin on its own. But dropping `pin` does thaw the freeze (resolve.lua's merge sets
+    -- resolvedRef back to null), and the URL then goes back to tracking a branch/tag, which a
+    -- plain `nix flake lock` moves to HEAD -- a legitimate move with nothing else to explain it.
+    reason = "unpinned"
   elseif before_entry and after_entry and not same_identity(before_entry, after_entry) then
     reason = "spec changed"
   end
@@ -273,12 +289,20 @@ for _, name in ipairs(all_names) do
 end
 
 -- The synthetic lazy.nvim seed input (§3.6 of the plan): always reported for a full update, and
--- in named mode only when the user actually asked to move it with `--update lazy.nvim`.
-if mode_all or lazy_requested then
-  local rb, ra = locked_rev_before(lazy_input_name), locked_rev_after(lazy_input_name)
-  if rb ~= ra then
-    lines[#lines + 1] = ("updated: lazy.nvim (seed) %s -> %s"):format(short(rb), short(ra))
+-- in named mode when the user actually asked to move it with `--update lazy.nvim`. It is also a
+-- valid target of the unnamed-move safety net (docs/architecture.md calls it an "input" like any
+-- other): named mode with lazy.nvim neither requested nor mentioned still has to surface it if it
+-- moved anyway, exactly as an unrequested plugin would -- lazy has no spec to check a reason
+-- against, so an unrequested move is always unexplained.
+local lazy_rb, lazy_ra = locked_rev_before(lazy_input_name), locked_rev_after(lazy_input_name)
+local lazy_moved = lazy_rb ~= lazy_ra
+if mode_all or lazy_requested or lazy_moved then
+  if lazy_moved then
+    lines[#lines + 1] = ("updated: lazy.nvim (seed) %s -> %s"):format(short(lazy_rb), short(lazy_ra))
     counts.updated = counts.updated + 1
+    if not mode_all and not lazy_requested then
+      warn_names[#warn_names + 1] = "lazy.nvim"
+    end
   else
     lines[#lines + 1] = "unchanged: lazy.nvim (seed)"
     counts.unchanged = counts.unchanged + 1

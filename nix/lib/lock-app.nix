@@ -68,17 +68,19 @@ pkgs.writeShellApplication {
       usage
     fi
     [ -n "$config" ] && [ -n "$out" ] || usage
-    config=$(realpath "$config")
-    mkdir -p "$out"
-    out=$(realpath "$out")
     # --update is a lock's forward motion, not its beginning: mixing it with a first-ever lock
     # would leave resolve.lua with no previous decisions to force away from in the first place.
+    # Checked against the raw --out argument, before `mkdir -p "$out"` / `realpath "$out"` below,
+    # so that a run that fails this guard creates nothing -- not even an empty output directory.
     if [ "$update_mode" -eq 1 ]; then
       if [ ! -f "$out/plugins.json" ] || [ ! -f "$out/flake.lock" ]; then
         echo "nvimx-lock: no existing lock to update; run nvimx-lock first" >&2
         exit 2
       fi
     fi
+    config=$(realpath "$config")
+    mkdir -p "$out"
+    out=$(realpath "$out")
 
     # TODO: if the existing lock pins lazy.nvim, use that as the seed (to avoid skew).
     # For now nvimx's own flake input is always used as the seed.
