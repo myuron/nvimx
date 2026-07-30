@@ -160,7 +160,7 @@ programs.nvimx.plugins = {
       });
 
     # Or replace it outright, building whatever you like from the locked source tree.
-    "blink.cmp" =
+    "some-rust.nvim" =
       { pkgs, src, ... }:
       pkgs.rustPlatform.buildRustPackage { inherit src; /* ... */ };
   };
@@ -226,7 +226,14 @@ of `false`, or a list with nothing unrunnable in it, says nothing at all.
 Some plugins are known to need more than what their spec declares — a build command that is simply
 missing, or one that downloads something the Nix sandbox can never reach. `nix/build-registry/`
 holds nvimx's own recipes for those, so they build correctly with nothing configured on your side.
-It currently covers `telescope-fzf-native.nvim` and `fzf`.
+It currently covers:
+
+| Plugin | What the recipe does |
+| --- | --- |
+| `telescope-fzf-native.nvim` | Always the Makefile, whatever the spec declared. |
+| `fzf` | Takes `bin/fzf` from nixpkgs instead of the release binary `./install --bin` downloads. |
+| `nvim-treesitter` | Always copy + helptags: its Makefile fetches over the network, and parsers come from [`treesitter.grammars`](#tree-sitter-grammars) instead. |
+| `blink.cmp` | Builds the Rust fuzzy matching library from your locked source, so neither `cargo build --release` (which needs the network) nor the runtime binary download has to happen. |
 
 Registry entries are ordinary override functions that nvimx happens to ship, and they build your
 locked source rather than silently swapping in a nixpkgs package. The `fzf` entry borrows only the

@@ -708,6 +708,19 @@
                   cmd = "exit 1";
                 };
               };
+              # blink.cmp: the one entry that has to *produce* a compiled artifact from the
+              # locked src, so it is resolved against the real upstream tree (hash-pinned by
+              # nixpkgs, like pkgs.fzf.src above) and actually built. The declared build is the
+              # one build-network.nix rejects, which is what the entry is rescuing.
+              blinkEntry = nvimxLib.resolvePlugin {
+                name = "blink.cmp";
+                src = pkgs.vimPlugins.blink-cmp.src;
+                build = {
+                  kind = "shell";
+                  cmd = "cargo build --release";
+                };
+              };
+              blinkLib = "libblink_cmp_fuzzy${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
               # The mechanism itself, checked against a stub registry so that it does not depend
               # on which plugins happen to be shipped today. Compared by outPath: nothing below
               # has to be built.
@@ -785,7 +798,7 @@
                   }).outPath != stubDrv.outPath
                 ) "an override's defaultDrv should be the registry entry's result";
             in
-            pkgs.runCommand "build-registry" { } (
+            pkgs.runCommand "build-registry" { nativeBuildInputs = [ pkgs.neovim-unwrapped ]; } (
               if failures == [ ] then
                 ''
                   # the spec declares no build, so only the registry can have produced this
@@ -799,6 +812,25 @@
                   # helptags, so this only exists if the fixture's src reached $out untouched
                   test -f ${treesitterEntry}/lua/local-plugin.lua
                   test -f ${treesitterEntry}/doc/tags
+                  # blink.cmp: the library, built offline where the loader looks for it ...
+                  test -f ${blinkEntry}/target/release/${blinkLib}
+                  test -f ${blinkEntry}/lua/blink/cmp/fuzzy/rust/init.lua
+                  # ... and *no* version file beside it, which is what keeps blink from deciding
+                  # at every startup that the locally built library is out of date
+                  test ! -e ${blinkEntry}/target/release/version
+                  # the promise is a runtime one, and it is blink's own decision procedure that
+                  # has to come out right -- not just "the file is there" -- so ask it
+                  export HOME=$TMPDIR
+                  cat > blink.lua <<'LUA'
+                  local done, result
+                  require('blink.cmp.fuzzy.download').ensure_downloaded(function(err, impl)
+                    done, result = true, { err = err, impl = impl }
+                  end)
+                  assert(vim.wait(30000, function() return done end), 'ensure_downloaded never returned')
+                  assert(result.err == nil, 'ensure_downloaded failed: ' .. tostring(result.err))
+                  assert(result.impl == 'rust', 'blink.cmp did not pick the rust matcher: ' .. tostring(result.impl))
+                  LUA
+                  nvim --clean --cmd 'set rtp+=${blinkEntry}' -l blink.lua
                   touch $out
                 ''
               else
@@ -846,7 +878,14 @@
                 # that script, so it would not exercise the rescue at all
                 ++ lib.optional (
                   !(evaluates "fzf" { })
-                ) "nix/build-registry did not rescue a build needing the network";
+                ) "nix/build-registry did not rescue a build needing the network"
+                # ... so "blink.cmp" carries the other half: its `cargo build --release` is
+                # caught by build-network.nix, and the entry has to keep the throw from being
+                # reached. Its own src, since the entry reads the plugin's Cargo.lock -- only
+                # drvPath is forced, so nothing is built here
+                ++ lib.optional (
+                  !(evaluates "blink.cmp" { src = pkgs.vimPlugins.blink-cmp.src; })
+                ) "nix/build-registry did not rescue blink.cmp's cargo build";
             in
             pkgs.runCommand "plugins-escape-hatch" { } (
               if failures == [ ] then

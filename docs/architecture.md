@@ -300,7 +300,12 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
      name generic enough to collide, so the build asserts the tree really is junegunn/fzf), and
      `nvim-treesitter` (always copy + helptags, ignoring whatever build the spec declared — on the
      `main` branch layout its Makefile fetches dependencies over the network for every target, so it
-     can never succeed in the sandbox; parsers come from `treesitter.grammars` below instead)
+     can never succeed in the sandbox; parsers come from `treesitter.grammars` below instead), and
+     `blink.cmp` (builds the Rust fuzzy matching cdylib from the locked src, hashing its dependencies
+     out of the plugin's own `Cargo.lock` so that the recipe stays rev-agnostic, and links **only the
+     library** into `target/release/` — shipping the `version` file `build.rs` writes alongside it
+     would put blink into its "locally built library is out of date" path at every startup, since a
+     store path has no `.git` for it to compare against)
   4. `build.kind == "shell"` runs `build.cmd` in `buildPhase`, in the unpacked source directory
      (make/cmake-style builds that need no network work this way). `build.kind == "steps"` is the
      same thing applied to a table-form spec build (`build = { "make", ":TSUpdate" }`): its `shell`
