@@ -138,8 +138,13 @@ flowchart LR
         into each eligible plugin's version here, so it is not lost (#42); a plugin with its own
         version / branch / tag / commit is left untouched
       → raw-spec.json
-[3] Resolution: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>] [--lock <flake.lock>]
-      - resolve version (semver range) with git ls-remote --tags + lazy.manage.semver
+[3] Resolution: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>]
+    [--lock <flake.lock>] [--lazy <lazy.nvim path>]
+      - resolve version (semver range) with git ls-remote --tags --refs + lazy.manage.semver
+        (loaded from --lazy, required whenever a constraint needs resolving)
+      - a constraint that matches nothing is fatal if the plugin wrote it itself, but falls back
+        to the default branch (like lazy) if it came from `defaults.version` -- see the severity
+        table below
       - merge with --prev: a ref already decided is kept while the spec identity is unchanged,
         and pin = true freezes onto the rev --lock records (the lock app decides whether that
         state exists and passes it in; resolve.lua only reads what it is handed)
@@ -220,7 +225,7 @@ so a list of shell commands can still run even when it is mixed with steps that 
 
 | value | written by | example |
 |---|---|---|
-| `null` | nothing to decide (follows a branch / the default HEAD, or `commit` already says it) | — |
+| `null` | nothing to decide (follows a branch / the default HEAD, or `commit` already says it). With a non-null `version`, it also means a `defaults`-derived constraint fell back to the branch at the last lock | — |
 | a 40-hex rev | `pin = true`, frozen onto the rev in `flake.lock` | `"a1b2c3..."` |
 | `refs/tags/<tag>` | semver resolution of `version` | `"refs/tags/v0.1.8"` |
 
@@ -234,17 +239,21 @@ so a list of shell commands can still run even when it is mixed with steps that 
 | `branch = "b"` | `github:owner/repo/b` | follows the branch HEAD |
 | `tag = "t"` | `github:owner/repo/refs/tags/t` | frozen |
 | `commit = "sha"` | `github:owner/repo/<sha>` | frozen |
-| `version = "^1.2"` | `refs/tags/vX.Y.Z` for the resolved tag | frozen (re-resolved with `--update`) |
-| `pin = true` | freezes the current lock's rev into `resolvedRef`, so the URL itself names the rev | frozen |
+| `version = "^1.2"` | `refs/tags/vX.Y.Z` for the resolved tag, or `null` (default branch HEAD) if nothing matched and the constraint came from `defaults.version` | frozen (re-resolved with `--update`), or follows the default branch on a fallback |
+| `pin = true` | freezes the current lock's rev into `resolvedRef`, so the URL itself names the rev -- unless `version` is also set and this is the very first lock (no rev to freeze onto yet), in which case semver resolves it to a tag ref instead; see the caveat below | frozen, except see below |
 | explicit git URL | `git+https://...?ref=...&rev=...` (github.com is normalized to the github type) | follows the ref unless a rev is pinned |
 
-**semver resolution**: the tag list is obtained with `git ls-remote --tags` (preferring peeled `^{}`) and lazy's bundled `lazy.manage.semver` is called from `nvim -l`. The GitHub API is not used (rate limits, and non-GitHub support).
+**semver resolution**: the tag list is obtained with `git ls-remote --tags --refs <url>` (not preferring peeled `^{}` -- `--refs` excludes those from the output entirely) and lazy's bundled `lazy.manage.semver` is called from `nvim -l` (loaded from the path `--lazy` points resolve.lua at). The GitHub API is not used (rate limits, and non-GitHub support). `resolvedRef` records the tag *ref* (`refs/tags/<name>`), not its commit -- pinning that ref to a rev is `nix flake lock`'s job, the same fetcher step that peels an annotated tag. A constraint that matches no tag is fatal when the plugin wrote `version` itself (a likely typo, worth stopping the lock over), but falls back to the default branch -- exactly like lazy itself -- when it was materialized from `defaults.version` (a config-wide best-effort, not a promise about any one plugin's tags); either way, `git ls-remote` failing outright or a constraint `lazy.manage.semver` cannot parse is always fatal.
+
+**Caveat on `pin = true` + `version`**: the "the URL itself names the rev" guarantee in the table above is about a 40-hex freeze, which is what pinning normally produces. If a pinned plugin also carries `version` and gets resolved for the very first time (no rev in `flake.lock` yet to freeze onto), the result is a `refs/tags/<tag>` ref instead -- and unlike a 40-hex rev, that ref can move if the upstream repo moves the tag, since resolving a tag ref to a commit happens fresh on every `nix flake lock`. This is a weaker guarantee than the 40-hex case and is accepted as such; see `resolve.lua`'s merge comment for the same note next to the code.
 
 ### Update semantics
 
 - `nvimx-lock`: only adds new plugins and removes deleted ones. Existing pins stay untouched
 - Editing the spec beats `pin`. Changing the `branch` / `tag` / `commit` / `version` / source of a pinned plugin is an explicit request, so the frozen rev is dropped and the plugin is resolved again (lazy's own `pin` behaves the same way: it stops `:Lazy update`, not you). A `tag` that gets moved upstream is therefore *not* followed while pinned -- rename the tag in the spec, or use `--update <name>`
 - Editing `defaults.version` counts as editing the `version` of every plugin it materializes into (#42): each such plugin's spec identity changes and its `resolvedRef` is decided again, same as if that plugin's own `version` had been edited by hand
+- A `version`-resolved tag that gets moved upstream is *not* followed while the spec is unchanged: `resolvedRef` is only carried, never re-checked against the remote, once it is set (the same rule that lets a second lock run skip the network entirely, see below). `--update <name>` is the way to force a re-resolve
+- A plugin whose `defaults.version` constraint matches no tag today can gain a `resolvedRef` on a later lock with no config change at all, once upstream starts tagging releases -- `defaults.version` is evaluated fresh every run, exactly as it is by lazy itself, so this is expected rather than a bug
 - Removing `pin` thaws the plugin: the frozen rev is dropped and it goes back to following its branch/tag. It has to be, because the frozen rev is part of the input URL, so `nix flake update` cannot undo a freeze on its own
 - `pin` also beats a `version` constraint: the frozen rev is whatever the lock held, and it is never checked against the range. `nvimx-lock` warns about this on every run rather than freezing silently
 - `nvimx-lock` runs the resolver twice, on either side of `nix flake lock`. A plugin pinned for the first time has no rev in `flake.lock` yet, so the second pass is what freezes it; the flake is regenerated and re-locked only if that pass changed anything. One retry always suffices, because the third pass would read the same `flake.lock` back
@@ -455,11 +464,12 @@ nix/
   home-manager/default.nix   # the programs.nvimx module
 lua/nvimx/
   extract.lua                # preload shim + spec capture + normalization + JSON dump
-  resolve.lua                # semver resolution + merge with the previous plugins.json
+  resolve.lua                # semver resolution (git ls-remote) + merge with the previous plugins.json
+  version.lua                # pure: parse ls-remote output, pick the winning tag for a constraint
   genflake.lua               # plugins.json → lock/flake.nix text generation
   bootstrap.lua.in           # runtime bootstrap template (not `*.lua`, so stylua/luacheck skip it)
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / golden/
+tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / semver / golden/
 ```
 
 flake outputs:
@@ -468,7 +478,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, resolve-merge, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
+- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, semver-select, resolve-merge, resolve-semver, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
   - planned, not yet implemented: `genflake-golden` (#29), `e2e-offline` (#30)
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`

@@ -1,0 +1,41 @@
+{
+  "_comment": [
+    "A plugins.json as an older nvimx (pre-#23) would have written it: pinned, with a version",
+    "constraint that was never validated, and resolvedRef still null. Used with",
+    "raw-spec-pinned-frozen.json and flake.lock to reproduce the very first lock a pin + version",
+    "combination goes through after this feature lands. `source` must match what",
+    "parse_source(\"file:///nvimx-nonexistent/pinned\") derives exactly, or spec identity would not",
+    "match and the freeze this fixture exists to test would never fire."
+  ],
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": true
+  },
+  "localPlugins": {},
+  "plugins": {
+    "pinned.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "pinned-nvim",
+      "pin": true,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/pinned"
+      },
+      "tag": null,
+      "version": "^1.2"
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": []
+}

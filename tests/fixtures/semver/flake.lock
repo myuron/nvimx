@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "A hand-written stand-in for the flake.lock nvimx-lock produces, used only by",
+    "checks.resolve-semver step 13(b) together with raw-spec-pinned-frozen.json and",
+    "prev-pinned-unresolved.json. Only the shape resolve.lua reads matters (root ->",
+    "inputs.<inputName> -> nodes.<node>.locked.rev), so the rev is an obvious placeholder and is",
+    "never fetched."
+  ],
+  "nodes": {
+    "pinned-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA=",
+        "rev": "cccccccccccccccccccccccccccccccccccccccc",
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/pinned"
+      },
+      "original": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/pinned"
+      }
+    },
+    "root": {
+      "inputs": {
+        "pinned-nvim": "pinned-nvim"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

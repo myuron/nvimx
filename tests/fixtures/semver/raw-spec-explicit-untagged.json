@@ -1,0 +1,18 @@
+{
+  "_comment": [
+    "Classification B (an explicit version constraint on a remote with no tags at all) has to be",
+    "fatal, so it cannot share a fixture with a success path: the plugin below is expected to make",
+    "the whole resolve run fail. @UNTAGGED@ is replaced by checks.resolve-semver with a file:// URL",
+    "pointing at a local git repo it creates with zero tags."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "untagged.nvim": {
+      "name": "untagged.nvim",
+      "short": "o/untagged.nvim",
+      "url": "@UNTAGGED@",
+      "version": "^1.2"
+    }
+  }
+}

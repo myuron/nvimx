@@ -156,6 +156,26 @@
         let
           pkgs = pkgsFor system;
           nvimxLib = nvimxLibFor system;
+          # A git repo usable as a `version` constraint's remote with no network at all (#23),
+          # shared by checks.resolve-semver and checks.extractor-defaults-version. `git+file://`
+          # (not a bare path) is what nix's flake ref parser accepts for a local remote, so any
+          # caller building a flake input URL from one of these repos has to add that prefix
+          # itself -- genflake.lua already does, since it prepends "git+" to every git-type source.
+          # Tags are annotated (`tag -a`) so the same repo exercises both the `--refs` filtering
+          # and nix's own peeling of an annotated tag to its commit (see the plan's §1.3).
+          mkTagRepoSh = ''
+            # mkrepo <dir> [tag...]
+            mkrepo() {
+              local d="$1"
+              shift
+              mkdir -p "$d"
+              git init -q -b main "$d"
+              git -C "$d" -c user.name=nvimx -c user.email=nvimx@example.com commit -q --allow-empty -m init
+              for t in "$@"; do
+                git -C "$d" -c user.name=nvimx -c user.email=nvimx@example.com tag -a "$t" -m "$t"
+              done
+            }
+          '';
           # Actually evaluate and build the hm module against a fixture config
           mkHmCheck =
             nvimxConfig:
@@ -1047,6 +1067,21 @@
                 grep -q 'did not call require("lazy").setup' stderr.log
                 touch $out
               '';
+          # Pure unit test of lua/nvimx/version.lua (#23): no git, no jq, no network, and no
+          # fixture files -- tests/semver-select-test.lua carries its own fixed tag sets inline.
+          # Drives the real lua/lazy/manage/semver.lua from the seed, the same way resolve.lua
+          # does, so a change in lazy's own semver behavior shows up here (like extractor-snapshot
+          # does for the extractor).
+          semver-select =
+            pkgs.runCommand "semver-select"
+              {
+                nativeBuildInputs = [ pkgs.neovim-unwrapped ];
+              }
+              ''
+                nvim -l ${./tests/semver-select-test.lua} ${./lua/nvimx/version.lua} \
+                  ${lazy-nvim}/lua/lazy/manage/semver.lua
+                touch $out
+              '';
           # `defaults.version` is a config-wide opts key that lazy only ever applies at
           # git-operation time (lua/lazy/manage/git.lua:141), so extract.lua has to materialize it
           # per plugin or the constraint never reaches plugins.json and the config silently tracks
@@ -1057,66 +1092,107 @@
                 nativeBuildInputs = [
                   pkgs.neovim-unwrapped
                   pkgs.jq
+                  pkgs.git
                 ];
               }
-              ''
-                export HOME=$TMPDIR
-                sb=$TMPDIR/sandbox
-                mkdir -p $sb/config $sb/data/nvim/lazy $sb/state $sb/cache
-                ln -s ${lazy-nvim} $sb/data/nvim/lazy/lazy.nvim
+              (
+                mkTagRepoSh
+                + ''
+                  export HOME=$TMPDIR
+                  sb=$TMPDIR/sandbox
+                  mkdir -p $sb/config $sb/data/nvim/lazy $sb/state $sb/cache
+                  ln -s ${lazy-nvim} $sb/data/nvim/lazy/lazy.nvim
 
-                extract() { # <fixture> <raw-spec output>
-                  rm -f $sb/config/nvim
-                  ln -s "$1" $sb/config/nvim
-                  env \
-                    XDG_CONFIG_HOME=$sb/config \
-                    XDG_DATA_HOME=$sb/data \
-                    XDG_STATE_HOME=$sb/state \
-                    XDG_CACHE_HOME=$sb/cache \
-                    NVIMX_LAZY_SEED=${lazy-nvim} \
-                    NVIMX_OUT="$2" \
-                    nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
-                }
+                  extract() { # <fixture> <raw-spec output>
+                    rm -f $sb/config/nvim
+                    ln -s "$1" $sb/config/nvim
+                    env \
+                      XDG_CONFIG_HOME=$sb/config \
+                      XDG_DATA_HOME=$sb/data \
+                      XDG_STATE_HOME=$sb/state \
+                      XDG_CACHE_HOME=$sb/cache \
+                      NVIMX_LAZY_SEED=${lazy-nvim} \
+                      NVIMX_OUT="$2" \
+                      nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
+                  }
 
-                extract ${./tests/fixtures/defaults-version-config} $sb/defaults.json
+                  extract ${./tests/fixtures/defaults-version-config} $sb/defaults.json
 
-                # raw-spec: extract.lua's own contract, unaffected by #23's resolution
-                jq -e '.plugins["tokyonight.nvim"].version == "*"' $sb/defaults.json > /dev/null
-                jq -e '.plugins["plenary.nvim"].version == "*"' $sb/defaults.json > /dev/null
-                jq -e '.plugins["telescope.nvim"].version == "^0.1"' $sb/defaults.json > /dev/null
-                jq -e '.plugins["trouble.nvim"] | has("version") | not' $sb/defaults.json > /dev/null
-                jq -e '.plugins["trouble.nvim"].branch == "dev"' $sb/defaults.json > /dev/null
-                jq -e '.plugins["which-key.nvim"] | has("version") | not' $sb/defaults.json > /dev/null
-                jq -e '.plugins["which-key.nvim"].tag == "v3.0.0"' $sb/defaults.json > /dev/null
-                jq -e '.plugins["flash.nvim"] | has("version") | not' $sb/defaults.json > /dev/null
-                jq -e '.plugins["flash.nvim"].commit == "cbf1cb041a0e806c9f70e5b0b13d68f4dc26cfe8"' $sb/defaults.json > /dev/null
-                # false must not be folded into truthy and turned into "*" (a falsy check would pass this)
-                jq -e '.plugins["noice.nvim"].version == false' $sb/defaults.json > /dev/null
+                  # raw-spec: extract.lua's own contract, unaffected by #23's resolution
+                  jq -e '.plugins["tokyonight.nvim"].version == "*"' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["plenary.nvim"].version == "*"' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["telescope.nvim"].version == "^0.1"' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["trouble.nvim"] | has("version") | not' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["trouble.nvim"].branch == "dev"' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["which-key.nvim"] | has("version") | not' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["which-key.nvim"].tag == "v3.0.0"' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["flash.nvim"] | has("version") | not' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["flash.nvim"].commit == "cbf1cb041a0e806c9f70e5b0b13d68f4dc26cfe8"' $sb/defaults.json > /dev/null
+                  # false must not be folded into truthy and turned into "*" (a falsy check would pass this)
+                  jq -e '.plugins["noice.nvim"].version == false' $sb/defaults.json > /dev/null
 
-                # plugins.json: the issue's "Done when" is about the lock, so resolve it too
-                nvim -l ${./lua/nvimx}/resolve.lua $sb/defaults.json plugins.json 2> resolve.log
-                jq -e '.plugins["tokyonight.nvim"].version == "*"' plugins.json > /dev/null
-                jq -e '.plugins["plenary.nvim"].version == "*"' plugins.json > /dev/null
-                jq -e '.plugins["telescope.nvim"].version == "^0.1"' plugins.json > /dev/null
-                jq -e '.plugins["noice.nvim"].version == null' plugins.json > /dev/null
-                jq -e '.plugins["trouble.nvim"].version == null' plugins.json > /dev/null
-                jq -e '.plugins["which-key.nvim"].version == null' plugins.json > /dev/null
-                jq -e '.plugins["flash.nvim"].version == null' plugins.json > /dev/null
-                # do not grep the warning text: resolve.lua's "is not resolved yet" message is
-                # #23's TODO placeholder and will change when semver resolution lands.
-                # This whole plugins.json section has to be rebuilt at #23 regardless: it resolves
-                # github-type constraints with no network, which #23 turns into a hard error, so
-                # resolve will exit non-zero before reaching any of these asserts. #23 replaces it
-                # with the local-repo-as-remote approach its own check uses.
-                jq -e '[.plugins[] | select(.version != null)] | length == 3' plugins.json > /dev/null
+                  # `versionFromDefaults` (#23): present, and true, exactly on the plugins whose
+                  # version came from `defaults.version` -- not on ones with their own `version`
+                  # (telescope.nvim), and not on ones the default never reaches at all.
+                  jq -e '.plugins["tokyonight.nvim"].versionFromDefaults == true' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["plenary.nvim"].versionFromDefaults == true' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["telescope.nvim"] | has("versionFromDefaults") | not' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["trouble.nvim"] | has("versionFromDefaults") | not' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["which-key.nvim"] | has("versionFromDefaults") | not' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["flash.nvim"] | has("versionFromDefaults") | not' $sb/defaults.json > /dev/null
+                  jq -e '.plugins["noice.nvim"] | has("versionFromDefaults") | not' $sb/defaults.json > /dev/null
 
-                # defaults.version = false must be indistinguishable from "unset" (#42 goal 3)
-                extract ${./tests/fixtures/defaults-version-false-config} $sb/false.json
-                jq -e '.plugins["tokyonight.nvim"] | has("version") | not' $sb/false.json > /dev/null
-                jq -e '.plugins["telescope.nvim"].version == "^0.1"' $sb/false.json > /dev/null
+                  # plugins.json: the issue's "Done when" is about the lock, so resolve it too.
+                  # A real ls-remote needs a real remote, and the sandbox has no network at all, so
+                  # the three plugins that reach ls-remote are pointed at local git repos instead
+                  # (the same offline approach checks.resolve-semver uses for its own coverage).
+                  # plugins whose version never reaches the gate at all (trouble/which-key/flash/
+                  # noice, via branch/tag/commit/false respectively) are untouched: if the gate ever
+                  # regressed to let one of them through, ls-remote against their real (github) urls
+                  # would fail here with no network, and the check would fail loudly instead of
+                  # silently doing the wrong thing.
+                  mkrepo $sb/tagged v1.0.0 v2.0.0
+                  mkrepo $sb/untagged
+                  mkrepo $sb/telescope 0.1.5 0.1.8
+                  jq \
+                    --arg tagged "file://$sb/tagged" \
+                    --arg untagged "file://$sb/untagged" \
+                    --arg telescope "file://$sb/telescope" \
+                    '.plugins["plenary.nvim"].url = $tagged
+                     | .plugins["tokyonight.nvim"].url = $untagged
+                     | .plugins["telescope.nvim"].url = $telescope' \
+                    $sb/defaults.json > $sb/defaults-online.json
+                  nvim -l ${./lua/nvimx}/resolve.lua $sb/defaults-online.json plugins.json \
+                    --lazy ${lazy-nvim} 2> resolve.log
+                  cat resolve.log >&2
 
-                touch $out
-              '';
+                  jq -e '.plugins["tokyonight.nvim"].version == "*"' plugins.json > /dev/null
+                  # no tags on tokyonight.nvim's remote: a defaults-derived constraint falls back to
+                  # HEAD rather than failing the lock (#42's goal 1, the reason this check exists,
+                  # verified again now that #23 could have broken it)
+                  jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' plugins.json > /dev/null
+                  jq -e '.plugins["plenary.nvim"].version == "*"' plugins.json > /dev/null
+                  jq -e '.plugins["plenary.nvim"].resolvedRef == "refs/tags/v2.0.0"' plugins.json > /dev/null
+                  jq -e '.plugins["telescope.nvim"].version == "^0.1"' plugins.json > /dev/null
+                  jq -e '.plugins["telescope.nvim"].resolvedRef == "refs/tags/0.1.8"' plugins.json > /dev/null
+                  jq -e '.plugins["noice.nvim"].version == null' plugins.json > /dev/null
+                  jq -e '.plugins["trouble.nvim"].version == null' plugins.json > /dev/null
+                  jq -e '.plugins["which-key.nvim"].version == null' plugins.json > /dev/null
+                  jq -e '.plugins["flash.nvim"].version == null' plugins.json > /dev/null
+                  jq -e '[.plugins[] | select(.version != null)] | length == 3' plugins.json > /dev/null
+                  # the fallback must not show up as a per-plugin warning in the lock (§3.4.5 of the
+                  # #23 plan) -- only as the aggregated stderr line checked below
+                  jq -e '.warnings == []' plugins.json > /dev/null
+                  grep -q 'follow the default branch' resolve.log
+
+                  # defaults.version = false must be indistinguishable from "unset" (#42 goal 3)
+                  extract ${./tests/fixtures/defaults-version-false-config} $sb/false.json
+                  jq -e '.plugins["tokyonight.nvim"] | has("version") | not' $sb/false.json > /dev/null
+                  jq -e '.plugins["telescope.nvim"].version == "^0.1"' $sb/false.json > /dev/null
+
+                  touch $out
+                ''
+              );
           # A build nvimx cannot run (:excmd / Lua callback / list of steps) must be reported at
           # lock time, and must stay a warning: locking has to succeed anyway (#22).
           # The real lock app ends in `nix flake lock`, which needs the network, so this exercises
@@ -1152,7 +1228,7 @@
                 rc=0
                 # the whole directory, not the single file: resolve.lua dofile()s json.lua next to it
                 nvim -l ${./lua/nvimx}/resolve.lua $sb/unbuildable.json plugins.json \
-                  2> stderr.log || rc=$?
+                  --lazy ${lazy-nvim} 2> stderr.log || rc=$?
                 cat stderr.log >&2
                 if [ "$rc" -ne 0 ]; then
                   echo "resolve.lua must warn, not fail: got rc=$rc" >&2
@@ -1189,7 +1265,7 @@
                 # ...and the quiet path: a build nvimx *can* run must say nothing at all.
                 # Without this, warning about every build would pass every assertion above.
                 extract ${./tests/fixtures/build-plugins} $sb/buildable.json
-                nvim -l ${./lua/nvimx}/resolve.lua $sb/buildable.json quiet.json 2> quiet.log
+                nvim -l ${./lua/nvimx}/resolve.lua $sb/buildable.json quiet.json --lazy ${lazy-nvim} 2> quiet.log
                 if [ -s quiet.log ]; then
                   echo "a shell build must not warn, got:" >&2
                   cat quiet.log >&2
@@ -1204,7 +1280,7 @@
                 extract ${./tests/fixtures/build-steps-config} $sb/steps.json
                 rc=0
                 nvim -l ${./lua/nvimx}/resolve.lua $sb/steps.json steps-plugins.json \
-                  2> steps.log || rc=$?
+                  --lazy ${lazy-nvim} 2> steps.log || rc=$?
                 cat steps.log >&2
                 if [ "$rc" -ne 0 ]; then
                   echo "resolve.lua must warn, not fail, on table-form builds: got rc=$rc" >&2
@@ -1284,11 +1360,16 @@
                 # the whole directory, not the single file: resolve.lua dofile()s json.lua next to it
                 lua=${./lua/nvimx}
                 fx=${./tests/fixtures/merge}
+                # None of the resolves below end up with anything pending (telescope.nvim, the
+                # only plugin here with a `version`, does not have one anymore -- see its
+                # raw-spec's _comment), so --lazy is never actually consulted. It is passed on
+                # every call anyway so that this file stays correct if that ever changes.
+                lazy=${lazy-nvim}
 
                 # The first resolve of a lock run cannot freeze anything: there is no previous
                 # plugins.json to tell whether the flake.lock next to it still describes this spec.
                 nvim -l $lua/resolve.lua $fx/raw-spec-base.json pass1.json --lock $fx/flake.lock \
-                  2> pass1.log
+                  --lazy $lazy 2> pass1.log
                 jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' pass1.json > /dev/null
                 jq -e '.plugins["custom.nvim"].resolvedRef == null' pass1.json > /dev/null
 
@@ -1296,20 +1377,20 @@
                 # is what freezes them, and is the steady state. golden/base.plugins.json is that
                 # state written out for review: pin / dependencies plus both frozen revs.
                 nvim -l $lua/resolve.lua $fx/raw-spec-base.json out1.json \
-                  --prev pass1.json --lock $fx/flake.lock 2> out1.log
+                  --prev pass1.json --lock $fx/flake.lock --lazy $lazy 2> out1.log
                 diff -u $fx/golden/base.plugins.json out1.json
 
                 # "Running lock twice with no config change produces a byte-identical plugins.json":
                 # the steady state has to be a fixed point, or the convergence pass would never end.
                 nvim -l $lua/resolve.lua $fx/raw-spec-base.json out2.json \
-                  --prev out1.json --lock $fx/flake.lock 2> out2.log
+                  --prev out1.json --lock $fx/flake.lock --lazy $lazy 2> out2.log
                 cmp out1.json out2.json
                 # warnings are derived every run and never merged, so they repeat verbatim
                 diff -u out1.log out2.log
 
                 # "A pinned plugin keeps its ref after an unrelated plugin is added."
                 nvim -l $lua/resolve.lua $fx/raw-spec-added.json out3.json \
-                  --prev out1.json --lock $fx/flake.lock 2> /dev/null
+                  --prev out1.json --lock $fx/flake.lock --lazy $lazy 2> /dev/null
                 for pinned in tokyonight.nvim custom.nvim; do
                   diff -u \
                     <(jq -S --arg n "$pinned" '.plugins[$n]' out1.json) \
@@ -1322,14 +1403,14 @@
                 # in --prev now, and its spec has not moved) there is no rev to freeze onto, so
                 # the freeze must quietly leave it null instead of failing or inventing one.
                 nvim -l $lua/resolve.lua $fx/raw-spec-added.json out3b.json \
-                  --prev out3.json --lock $fx/flake.lock 2> /dev/null
+                  --prev out3.json --lock $fx/flake.lock --lazy $lazy 2> /dev/null
                 jq -e '.plugins["nvim-cmp"].pin == true' out3b.json > /dev/null
                 jq -e '.plugins["nvim-cmp"].resolvedRef == null' out3b.json > /dev/null
 
                 # "Removing a plugin from the config removes it from plugins.json and the
                 # generated flake." Nothing else may move: back to base is back to out1 byte for byte.
                 nvim -l $lua/resolve.lua $fx/raw-spec-base.json out4.json \
-                  --prev out3.json --lock $fx/flake.lock 2> /dev/null
+                  --prev out3.json --lock $fx/flake.lock --lazy $lazy 2> /dev/null
                 cmp out1.json out4.json
                 nvim -l $lua/genflake.lua out3.json flake-added.nix
                 nvim -l $lua/genflake.lua out4.json flake-base.nix
@@ -1347,7 +1428,7 @@
                 # rev is dropped. Editing metadata that cannot influence a ref (dependencies) does
                 # not, or every such edit would silently unpin a plugin.
                 nvim -l $lua/resolve.lua $fx/raw-spec-branch-changed.json out5.json \
-                  --prev out1.json --lock $fx/flake.lock 2> /dev/null
+                  --prev out1.json --lock $fx/flake.lock --lazy $lazy 2> /dev/null
                 jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' out5.json > /dev/null
                 jq -e '.plugins["tokyonight.nvim"].branch == "master"' out5.json > /dev/null
                 jq -e '.plugins["custom.nvim"].resolvedRef
@@ -1361,7 +1442,7 @@
                 # input URL, not even `nix flake update` could break it out again.
                 jq 'del(.plugins["tokyonight.nvim"].pin)' $fx/raw-spec-base.json > raw-spec-unpinned.json
                 nvim -l $lua/resolve.lua raw-spec-unpinned.json out8.json \
-                  --prev out1.json --lock $fx/flake.lock 2> /dev/null
+                  --prev out1.json --lock $fx/flake.lock --lazy $lazy 2> /dev/null
                 jq -e '.plugins["tokyonight.nvim"].pin == null' out8.json > /dev/null
                 jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' out8.json > /dev/null
                 # only the unpinned one thaws; the plugin that is still pinned keeps its rev
@@ -1370,14 +1451,23 @@
 
                 # `pin` + `version` is a trap: the pin freezes whatever rev the lock holds and
                 # nothing ever checks it against the range, so it has to say so -- and say it on
-                # both passes, because nvimx-lock keeps only the second one's log.
+                # both passes, because nvimx-lock keeps only the second one's log. Both passes are
+                # given a prev that already carries the constraint with resolvedRef null (the
+                # state a lock made just before #23 landed would be in), so the freeze wins over
+                # the constraint on both passes, and no ls-remote is attempted on either one --
+                # the pin+version interaction with an actual first-ever resolve (no prev at all)
+                # is checks.resolve-semver step 13(b)'s job, since that one does need a real (if
+                # local) remote to prove ls-remote really is skipped.
                 jq '.plugins["tokyonight.nvim"].version = "^1.0"' $fx/raw-spec-base.json > raw-spec-pinned-version.json
+                jq '.plugins["tokyonight.nvim"].version = "^1.0" | .plugins["tokyonight.nvim"].resolvedRef = null' \
+                  $fx/golden/base.plugins.json > prev-pinned-version.json
                 nvim -l $lua/resolve.lua raw-spec-pinned-version.json out9a.json \
-                  --lock $fx/flake.lock 2> out9a.log
+                  --prev prev-pinned-version.json --lock $fx/flake.lock --lazy $lazy 2> out9a.log
                 nvim -l $lua/resolve.lua raw-spec-pinned-version.json out9b.json \
-                  --prev out9a.json --lock $fx/flake.lock 2> out9b.log
-                # the freeze really did happen between the two passes...
-                jq -e '.plugins["tokyonight.nvim"].resolvedRef == null' out9a.json > /dev/null
+                  --prev out9a.json --lock $fx/flake.lock --lazy $lazy 2> out9b.log
+                # the freeze wins over the constraint on both passes
+                jq -e '.plugins["tokyonight.nvim"].resolvedRef
+                       == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' out9a.json > /dev/null
                 jq -e '.plugins["tokyonight.nvim"].resolvedRef
                        == "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' out9b.json > /dev/null
                 # ...and it did not silence the constraint on the way through, on either stream
@@ -1393,7 +1483,7 @@
                 # the decision it records must win over the rev in flake.lock (a resolvedRef that
                 # is already set is never recomputed -- that is the whole point of the merge).
                 nvim -l $lua/resolve.lua $fx/raw-spec-base.json out6.json \
-                  --prev $fx/prev-v1.json --lock $fx/flake.lock 2> /dev/null
+                  --prev $fx/prev-v1.json --lock $fx/flake.lock --lazy $lazy 2> /dev/null
                 jq -e '.plugins["tokyonight.nvim"].resolvedRef
                        == "1111111111111111111111111111111111111111"' out6.json > /dev/null
                 jq -e '.plugins["tokyonight.nvim"].pin == true' out6.json > /dev/null
@@ -1401,27 +1491,30 @@
                 # not in the old prev at all, so there is nothing to trust yet
                 jq -e '.plugins["custom.nvim"].resolvedRef == null' out6.json > /dev/null
 
-                # An unresolved version constraint is the one thing #18 leaves to #23, so it warns
-                # -- but only while it is still unresolved. Once a ref is on record the merge keeps
-                # it and the warning has to go, or every lock would nag about a settled constraint.
+                # A carried resolvedRef -- whatever put it there -- must not be re-decided or
+                # warned about while the spec identity is unchanged. This is deliberately not
+                # version-specific (telescope.nvim has no `version` in this fixture): the point is
+                # that the merge carries *any* resolvedRef unconditionally. The semver-specific
+                # version of this (a version constraint whose already-resolved tag ref survives a
+                # lock with no config change, proven against a real remote so ls-remote's absence
+                # is actually checked) is checks.resolve-semver step 5.
                 jq '.plugins["telescope.nvim"].resolvedRef = "refs/tags/0.1.8"' out1.json > resolved-prev.json
                 nvim -l $lua/resolve.lua $fx/raw-spec-base.json out7.json \
-                  --prev resolved-prev.json --lock $fx/flake.lock 2> resolved.log
+                  --prev resolved-prev.json --lock $fx/flake.lock --lazy $lazy 2> resolved.log
                 jq -e '.plugins["telescope.nvim"].resolvedRef == "refs/tags/0.1.8"' out7.json > /dev/null
                 jq -e '.warnings == []' out7.json > /dev/null
                 if [ -s resolved.log ]; then
-                  echo "a resolved version constraint must not warn, got:" >&2
+                  echo "a carried resolvedRef must not warn, got:" >&2
                   cat resolved.log >&2
                   exit 1
                 fi
-                grep -q 'version constraint "\^0.1" is not resolved yet' out1.log
 
                 # A prev nvimx cannot read must stop the run. Regenerating from scratch instead
                 # would quietly throw away every pinned rev in it, so say what to do and fail.
                 for bad in prev-broken prev-future; do
                   rc=0
                   nvim -l $lua/resolve.lua $fx/raw-spec-base.json bad.json --prev $fx/$bad.json \
-                    2> $bad.log || rc=$?
+                    --lazy $lazy 2> $bad.log || rc=$?
                   cat $bad.log >&2
                   if [ "$rc" -eq 0 ]; then
                     echo "resolve.lua silently accepted $bad.json" >&2
@@ -1454,9 +1547,15 @@
                 # rather than nil -- lazy's own encoder drops nil keys, so a spec without the
                 # plenary optional fragment would leave nothing for this to find.
                 jq -e 'all(.plugins[]; has("optional") | not)' $sb/raw-spec.json > /dev/null
-                nvim -l $lua/resolve.lua $sb/raw-spec.json extracted.json 2> /dev/null
+                # extract's own contract: version survives lazy's normalization intact
+                jq -e '.plugins["telescope.nvim"].version == "^0.1"' $sb/raw-spec.json > /dev/null
+                # Resolving that constraint needs a real remote (checks.resolve-semver step 14
+                # already covers it end to end, offline, against a local repo); this check is
+                # about pin / dependencies / optional surviving extract -> resolve, not semver, so
+                # the constraint is dropped before resolving to keep this check network-free.
+                jq 'del(.plugins["telescope.nvim"].version)' $sb/raw-spec.json > $sb/raw-spec-no-version.json
+                nvim -l $lua/resolve.lua $sb/raw-spec-no-version.json extracted.json --lazy $lazy 2> /dev/null
                 jq -e '.plugins["tokyonight.nvim"].pin == true' extracted.json > /dev/null
-                jq -e '.plugins["telescope.nvim"].version == "^0.1"' extracted.json > /dev/null
                 jq -e '.plugins["telescope.nvim"].dependencies == ["plenary.nvim"]' extracted.json > /dev/null
                 # ...and stay absent when the spec does not set them. `optional` is not among
                 # them: it is not a field that stays absent, it never exists in the schema at all.
@@ -1470,6 +1569,235 @@
                 jq -e '.plugins | has("plenary.nvim")' extracted.json > /dev/null
                 touch $out
               '';
+          # Offline, end-to-end coverage of semver resolution (#23): git ls-remote against local
+          # repos this check creates itself, so no network is needed and no fixture ever names a
+          # real, reachable remote. Destructive steps (removing a repo to prove a carried ref
+          # needs no further network access) are kept last, since several earlier steps still need
+          # those repos alive.
+          resolve-semver =
+            pkgs.runCommand "resolve-semver"
+              {
+                nativeBuildInputs = [
+                  pkgs.neovim-unwrapped
+                  pkgs.jq
+                  pkgs.git
+                ];
+              }
+              (
+                mkTagRepoSh
+                + ''
+                  export HOME=$TMPDIR
+                  lua=${./lua/nvimx}
+                  fx=${./tests/fixtures/semver}
+                  lazy=${lazy-nvim}
+                  sb=$TMPDIR/sandbox
+
+                  # 1. Three remotes: tagged (a real tag set to resolve against), untagged (a real
+                  # remote with zero tags -- classification B), and a small one just for the E2E
+                  # step's telescope.nvim dependency.
+                  mkrepo $sb/tagged v1.0.0 v1.2.0 v1.2.5 v2.0.0 v2.1.0-beta stable
+                  mkrepo $sb/untagged
+                  mkrepo $sb/telescope 0.1.5 0.1.8
+
+                  # 2. Explicit constraint, success path. gh.nvim has no `version` at all (a github
+                  # type plugin), proving the gate does not send it to ls-remote regardless of type.
+                  jq --arg u "file://$sb/tagged" \
+                    '.plugins["tagged.nvim"].url = $u | .plugins["pinned.nvim"].url = $u' \
+                    $fx/raw-spec-explicit.json > explicit.json
+                  nvim -l $lua/resolve.lua explicit.json out-explicit.json --lazy $lazy 2> explicit.log
+                  if [ -s explicit.log ]; then
+                    echo "an explicit constraint that resolves cleanly must not warn, got:" >&2
+                    cat explicit.log >&2
+                    exit 1
+                  fi
+                  jq -e '.plugins["tagged.nvim"].resolvedRef == "refs/tags/v1.2.5"' out-explicit.json > /dev/null
+                  jq -e '.warnings == []' out-explicit.json > /dev/null
+                  jq -e '.plugins["gh.nvim"].source.type == "github"' out-explicit.json > /dev/null
+                  jq -e '.plugins["gh.nvim"].version == null' out-explicit.json > /dev/null
+                  jq -e '.plugins["gh.nvim"].resolvedRef == null' out-explicit.json > /dev/null
+                  # 13(a). pinned.nvim resolves exactly the same way on its first lock, and the
+                  # "pin wins" warning does not fire -- the constraint really was validated.
+                  jq -e '.plugins["pinned.nvim"].resolvedRef == "refs/tags/v1.2.5"' out-explicit.json > /dev/null
+
+                  # 3. The resolved tag reaches the generated flake's input URL.
+                  nvim -l $lua/genflake.lua out-explicit.json flake-explicit.nix
+                  grep -q 'ref=refs/tags/v1.2.5' flake-explicit.nix
+
+                  # 4. Editing the constraint re-resolves against the same remote (spec identity
+                  # includes `version`; tests/fixtures/merge's coverage of this fact is metadata-only,
+                  # this is the semver-constrained case). $sb/tagged must stay alive for this.
+                  jq --arg u "file://$sb/tagged" \
+                    '.plugins["tagged.nvim"].url = $u | .plugins["pinned.nvim"].url = $u
+                     | .plugins["tagged.nvim"].version = "~1.0"' \
+                    $fx/raw-spec-explicit.json > step4.json
+                  nvim -l $lua/resolve.lua step4.json out-step4.json --prev out-explicit.json --lazy $lazy \
+                    2> /dev/null
+                  jq -e '.plugins["tagged.nvim"].resolvedRef == "refs/tags/v1.0.0"' out-step4.json > /dev/null
+
+                  # 5. --prev carries an already-resolved tag ref forward with no ls-remote at all --
+                  # proven by rewriting it to a value ls-remote could never have produced right now
+                  # ("^1.2" no longer resolves to v1.0.0) and checking that value survives untouched.
+                  jq '.plugins["tagged.nvim"].resolvedRef = "refs/tags/v1.0.0"' out-explicit.json > prev-step5.json
+                  nvim -l $lua/resolve.lua explicit.json out-step5.json --prev prev-step5.json --lazy $lazy \
+                    2> /dev/null
+                  jq -e '.plugins["tagged.nvim"].resolvedRef == "refs/tags/v1.0.0"' out-step5.json > /dev/null
+
+                  # 6. Classification A: an explicit constraint no tag on a real (if local) remote
+                  # satisfies is fatal, with the plugin name, constraint, url and candidate tags.
+                  jq --arg u "file://$sb/tagged" \
+                    '.plugins["tagged.nvim"].url = $u | .plugins["pinned.nvim"].url = $u
+                     | .plugins["tagged.nvim"].version = "^9"' \
+                    $fx/raw-spec-explicit.json > step6.json
+                  rc=0
+                  nvim -l $lua/resolve.lua step6.json out-step6.json --lazy $lazy 2> step6.log || rc=$?
+                  if [ "$rc" -eq 0 ]; then
+                    echo "an unsatisfiable explicit constraint must fail the lock" >&2
+                    exit 1
+                  fi
+                  [ ! -e out-step6.json ]
+                  grep -q 'plugin "tagged.nvim"' step6.log
+                  grep -q 'no tag matches version constraint "\^9"' step6.log
+                  grep -q 'newest' step6.log
+
+                  # 7. Classification B: an explicit constraint on a remote with no tags at all.
+                  jq --arg u "file://$sb/untagged" '.plugins["untagged.nvim"].url = $u' \
+                    $fx/raw-spec-explicit-untagged.json > step7.json
+                  rc=0
+                  nvim -l $lua/resolve.lua step7.json out-step7.json --lazy $lazy 2> step7.log || rc=$?
+                  if [ "$rc" -eq 0 ]; then
+                    echo "an explicit constraint on a tagless remote must fail the lock" >&2
+                    exit 1
+                  fi
+                  grep -q 'the remote has no tags' step7.log
+
+                  # 8. Classification C: git ls-remote itself fails (bad url), fatal regardless of
+                  # where the constraint came from.
+                  jq '.plugins["untagged.nvim"].url = "file:///nvimx-nonexistent/step8"' \
+                    $fx/raw-spec-explicit-untagged.json > step8.json
+                  rc=0
+                  nvim -l $lua/resolve.lua step8.json out-step8.json --lazy $lazy 2> step8.log || rc=$?
+                  if [ "$rc" -eq 0 ]; then
+                    echo "a git ls-remote failure must fail the lock" >&2
+                    exit 1
+                  fi
+                  grep -q 'git ls-remote failed' step8.log
+
+                  # 9. Classification D: a constraint lazy.manage.semver cannot parse must be caught
+                  # before ls-remote -- the url is unreachable, so if D were detected after the fetch
+                  # this would report classification C's message instead.
+                  rc=0
+                  nvim -l $lua/resolve.lua $fx/raw-spec-badrange.json out-step9.json --lazy $lazy \
+                    2> step9.log || rc=$?
+                  if [ "$rc" -eq 0 ]; then
+                    echo "an unparseable constraint must fail the lock" >&2
+                    exit 1
+                  fi
+                  grep -q 'not valid lazy.nvim semver syntax' step9.log
+                  if grep -q 'git ls-remote failed' step9.log; then
+                    echo "classification D must be decided before any network access" >&2
+                    exit 1
+                  fi
+
+                  # 10. A defaults.version-derived constraint falls back to HEAD instead of failing
+                  # the lock, on the very same remotes step 6/7 just proved are fatal for an explicit
+                  # constraint -- the contrast is the point (§3.4 of the plan).
+                  jq --arg t "file://$sb/tagged" --arg u "file://$sb/untagged" \
+                    '.plugins["tagged.nvim"].url = $t | .plugins["untagged.nvim"].url = $u' \
+                    $fx/raw-spec-defaults.json > step10.json
+                  nvim -l $lua/resolve.lua step10.json out-step10.json --lazy $lazy 2> step10.log
+                  jq -e '.plugins["untagged.nvim"].resolvedRef == null' out-step10.json > /dev/null
+                  jq -e '.plugins["tagged.nvim"].resolvedRef == "refs/tags/v2.0.0"' out-step10.json > /dev/null
+                  jq -e '.warnings == []' out-step10.json > /dev/null
+                  grep -q 'follow the default branch' step10.log
+
+                  # 11. The fallback survives a second pass byte-identically, with the same
+                  # aggregated report -- this is what makes overwriting nvimx-lock's first-pass log
+                  # with the second one safe for a defaults.version fallback, the same way it already
+                  # is for a pin (checks.resolve-merge's out9a/out9b).
+                  nvim -l $lua/resolve.lua step10.json out-step11.json --prev out-step10.json --lazy $lazy \
+                    2> step11.log
+                  cmp out-step10.json out-step11.json
+                  diff -u step10.log step11.log
+
+                  # 12. The gate: none of `tag` / `commit` / `version = false` may reach ls-remote,
+                  # against urls that do not exist -- if the gate regressed, this would fail with
+                  # classification C instead of quietly doing the right thing. No --lazy: nothing is
+                  # pending, so it must not be required (see step 15).
+                  nvim -l $lua/resolve.lua $fx/raw-spec-gate.json out-step12.json 2> step12.log
+                  jq -e '.plugins["tag-and-version.nvim"].resolvedRef == null' out-step12.json > /dev/null
+                  jq -e '.plugins["commit-and-version.nvim"].resolvedRef == null' out-step12.json > /dev/null
+                  jq -e '.plugins["version-false.nvim"].resolvedRef == null' out-step12.json > /dev/null
+                  if [ -s step12.log ]; then
+                    echo "the gate must not touch a nonexistent remote nor warn, got:" >&2
+                    cat step12.log >&2
+                    exit 1
+                  fi
+
+                  # 13(b). A prev freeze (pin = true, resolved on an earlier lock) wins over semver
+                  # resolution before any ls-remote happens: the url is a nonexistent path, so if the
+                  # freeze did not win first, this would fail with classification C.
+                  nvim -l $lua/resolve.lua $fx/raw-spec-pinned-frozen.json out-step13b.json \
+                    --prev $fx/prev-pinned-unresolved.json --lock $fx/flake.lock --lazy $lazy \
+                    2> step13b.log
+                  jq -e '.plugins["pinned.nvim"].resolvedRef
+                         == "cccccccccccccccccccccccccccccccccccccccc"' out-step13b.json > /dev/null
+                  grep -q 'pinned; version constraint "\^1.2" is not validated (pin wins)' step13b.log
+                  if grep -q 'git ls-remote failed' step13b.log; then
+                    echo "a prev freeze must win before any ls-remote is attempted" >&2
+                    exit 1
+                  fi
+
+                  # 14. E2E: a real extractor run, through to a real (local) resolution.
+                  sb2=$TMPDIR/sandbox2
+                  mkdir -p $sb2/config $sb2/data/nvim/lazy $sb2/state $sb2/cache
+                  ln -s ${./tests/fixtures/merge-config} $sb2/config/nvim
+                  ln -s $lazy $sb2/data/nvim/lazy/lazy.nvim
+                  env \
+                    XDG_CONFIG_HOME=$sb2/config \
+                    XDG_DATA_HOME=$sb2/data \
+                    XDG_STATE_HOME=$sb2/state \
+                    XDG_CACHE_HOME=$sb2/cache \
+                    NVIMX_LAZY_SEED=$lazy \
+                    NVIMX_OUT=$sb2/raw-spec.json \
+                    nvim --headless --cmd "luafile $lua/extract.lua"
+                  jq -e '.plugins["telescope.nvim"].version == "^0.1"' $sb2/raw-spec.json > /dev/null
+                  jq --arg u "file://$sb/telescope" '.plugins["telescope.nvim"].url = $u' \
+                    $sb2/raw-spec.json > $sb2/raw-spec-patched.json
+                  nvim -l $lua/resolve.lua $sb2/raw-spec-patched.json out-step14.json --lazy $lazy \
+                    2> step14.log
+                  jq -e '.plugins["telescope.nvim"].resolvedRef == "refs/tags/0.1.8"' out-step14.json > /dev/null
+
+                  # 15. --lazy is required exactly when something is pending, not unconditionally.
+                  rc=0
+                  nvim -l $lua/resolve.lua explicit.json out-step15.json 2> step15.log || rc=$?
+                  if [ "$rc" -eq 0 ]; then
+                    echo "resolving a pending version constraint without --lazy must fail" >&2
+                    exit 1
+                  fi
+                  grep -q -- '--lazy' step15.log
+                  # ...and the converse: nothing pending needs no --lazy at all (step 12 already
+                  # relies on this; repeated here so both halves of the contract sit together).
+                  nvim -l $lua/resolve.lua $fx/raw-spec-gate.json out-step15b.json 2> step15b.log
+
+                  # 16. Destructive (kept last): a fully carried tag ref needs no further network
+                  # access at all, even once the remote it originally came from is gone -- this is
+                  # what makes the second nvimx-lock pass, and every unrelated re-lock afterwards,
+                  # network-free (#18's identity contract). Not repeated for the defaults-fallback
+                  # case (out-step10.json): its resolvedRef stays null on purpose, so it is
+                  # re-queried on every run, and would legitimately fail once the remote is gone.
+                  rm -rf $sb/tagged $sb/untagged
+                  nvim -l $lua/resolve.lua explicit.json out-step16.json --prev out-explicit.json \
+                    --lazy $lazy 2> step16.log
+                  cmp out-explicit.json out-step16.json
+                  if [ -s step16.log ]; then
+                    echo "a fully carried resolve must not touch the network nor warn, got:" >&2
+                    cat step16.log >&2
+                    exit 1
+                  fi
+
+                  touch $out
+                ''
+              );
         }
       );
 

@@ -2,7 +2,9 @@
   "_comment": [
     "raw-spec-base.json plus one unrelated plugin. Adding it must not disturb the pins.",
     "The newcomer is pinned and has no node in flake.lock, which is the state every pin starts",
-    "in: the freeze has nothing to freeze onto and must simply leave resolvedRef null."
+    "in: the freeze has nothing to freeze onto and must simply leave resolvedRef null.",
+    "telescope.nvim has no `version` here for the same reason as in raw-spec-base.json: see its",
+    "_comment."
   ],
   "disabled": [],
   "notifs": [],
@@ -18,7 +20,6 @@
       "name": "telescope.nvim",
       "short": "nvim-telescope/telescope.nvim",
       "url": "https://github.com/nvim-telescope/telescope.nvim.git",
-      "version": "^0.1",
       "dependencies": ["plenary.nvim", "nui.nvim"]
     },
     "plenary.nvim": {

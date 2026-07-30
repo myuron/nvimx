@@ -1,0 +1,20 @@
+{
+  "_comment": [
+    "Used only together with prev-pinned-unresolved.json and flake.lock, to prove that a prev",
+    "freeze wins over semver resolution before any ls-remote happens (checks.resolve-semver step",
+    "13(b)). The url is a fixed, nonexistent path -- if the freeze did not win and semver resolution",
+    "ran anyway, ls-remote against this url would fail and the check would fail loudly instead of",
+    "silently passing for the wrong reason."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "pinned.nvim": {
+      "name": "pinned.nvim",
+      "short": "o/pinned.nvim",
+      "url": "file:///nvimx-nonexistent/pinned",
+      "version": "^1.2",
+      "pin": true
+    }
+  }
+}

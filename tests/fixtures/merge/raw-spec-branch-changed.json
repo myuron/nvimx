@@ -3,7 +3,9 @@
     "raw-spec-base.json with the pinned tokyonight.nvim moved to another branch, and the",
     "metadata-only dependencies fields of the equally pinned custom.nvim and of telescope.nvim",
     "edited. Editing the spec must beat the pin (resolvedRef drops back to null),",
-    "while editing metadata that cannot influence a ref must leave the frozen rev alone."
+    "while editing metadata that cannot influence a ref must leave the frozen rev alone.",
+    "telescope.nvim has no `version` here for the same reason as in raw-spec-base.json: see its",
+    "_comment."
   ],
   "disabled": [],
   "notifs": [],
@@ -19,7 +21,6 @@
       "name": "telescope.nvim",
       "short": "nvim-telescope/telescope.nvim",
       "url": "https://github.com/nvim-telescope/telescope.nvim.git",
-      "version": "^0.1",
       "dependencies": ["plenary.nvim"]
     },
     "plenary.nvim": {

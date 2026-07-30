@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json used by checks.resolve-semver's success-path steps.",
+    "Success-only fixture: every plugin here is expected to resolve without error, so the only",
+    "placeholder it contains is @TAGGED@, replaced by the check with a file:// URL pointing at a",
+    "local git repo it creates with a known tag set (see flake.nix's mkTagRepoSh). Do not add a",
+    "plugin that is meant to fail here -- an unreplaced placeholder is itself a valid (if",
+    "unreachable) git remote URL, so it would make ls-remote fail instead of testing what this",
+    "fixture is for."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "tagged.nvim": {
+      "name": "tagged.nvim",
+      "short": "o/tagged.nvim",
+      "url": "@TAGGED@",
+      "version": "^1.2"
+    },
+    "pinned.nvim": {
+      "name": "pinned.nvim",
+      "short": "o/pinned.nvim",
+      "url": "@TAGGED@",
+      "version": "^1.2",
+      "pin": true
+    },
+    "gh.nvim": {
+      "name": "gh.nvim",
+      "short": "o/gh.nvim",
+      "url": "https://github.com/o/gh.nvim.git"
+    }
+  }
+}

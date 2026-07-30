@@ -64,7 +64,7 @@
         "type": "github"
       },
       "tag": null,
-      "version": "^0.1"
+      "version": null
     },
     "tokyonight.nvim": {
       "branch": "main",
@@ -86,7 +86,5 @@
     }
   },
   "schemaVersion": 1,
-  "warnings": [
-    "plugin \"telescope.nvim\": version constraint \"^0.1\" is not resolved yet (TODO: semver)"
-  ]
+  "warnings": []
 }
