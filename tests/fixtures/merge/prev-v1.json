@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "A plugins.json as an older nvimx wrote it: schemaVersion 1, but without the pin / optional /",
+    "A plugins.json as an older nvimx wrote it: schemaVersion 1, but without the pin /",
     "dependencies fields. Reading it must work, the missing fields must read as unset, and the",
     "decision it already records (tokyonight.nvim's resolvedRef) must survive untouched -- in",
     "particular it must win over the rev in tests/fixtures/merge/flake.lock."

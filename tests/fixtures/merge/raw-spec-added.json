@@ -19,7 +19,6 @@
       "short": "nvim-telescope/telescope.nvim",
       "url": "https://github.com/nvim-telescope/telescope.nvim.git",
       "version": "^0.1",
-      "optional": true,
       "dependencies": ["plenary.nvim", "nui.nvim"]
     },
     "plenary.nvim": {

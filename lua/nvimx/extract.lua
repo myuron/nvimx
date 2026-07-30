@@ -53,7 +53,6 @@ local function dump_plugin(p)
     commit = p.commit,
     version = p.version,
     pin = p.pin,
-    optional = p.optional,
     build = build,
     dependencies = p.dependencies,
     hasCond = (p.cond ~= nil) or nil,

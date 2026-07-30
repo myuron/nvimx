@@ -176,7 +176,7 @@ end
 -- Spec identity: the fields that decide which ref a plugin resolves to. When all of them are
 -- unchanged the previous `resolvedRef` is carried over untouched; when any of them changed the
 -- user asked for something else, so the ref goes back to null and is resolved again.
--- pin / optional / dependencies / build are deliberately excluded: they are metadata that never
+-- pin / dependencies / build are deliberately excluded: they are metadata that never
 -- influences the ref, and editing them must not invalidate a pin.
 local identity_fields = { "branch", "tag", "commit", "version" }
 local source_fields = { "type", "owner", "repo", "url" }
@@ -298,7 +298,6 @@ for name, p in pairs(raw.plugins or {}) do
       commit = p.commit or vim.NIL,
       version = p.version or vim.NIL,
       pin = p.pin or vim.NIL,
-      optional = p.optional or vim.NIL,
       dependencies = json.array(sorted_deps(p.dependencies)),
       resolvedRef = vim.NIL,
       build = build,
