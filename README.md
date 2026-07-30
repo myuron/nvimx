@@ -160,7 +160,9 @@ programs.nvimx.plugins = {
 An override function receives `{ pkgs, name, src, build, defaultDrv, mkPluginDrv }` and returns a
 derivation. Always accept `...` too — more arguments may be added later. `src` is the locked source
 tree, and `defaultDrv` is the derivation that would have been used without the override, so patching
-and replacing are both one-liners. `mkPluginDrv` is nvimx's generic builder
+and replacing are both one-liners. `build` is either the scalar `{ kind, cmd }` shown below or, for a
+table-form spec build, `{ kind = "steps", steps = [ { kind, cmd } ... ] }`; most overrides ignore it
+and pass their own `build` to `mkPluginDrv` instead. `mkPluginDrv` is nvimx's generic builder
 (`{ name, src, build } -> drv`), which is the shortest way to say "the usual treatment, but with the
 build command corrected":
 
@@ -186,20 +188,28 @@ Resolution order, highest first:
 1. `plugins.overrides."<name>"`
 2. `plugins.nixpkgsFallback`
 3. `nix/build-registry/` — nvimx's shipped build recipes
-4. The generic build: run `build.kind == "shell"` if the spec declared one, otherwise a plain copy
+4. The generic build: run `build.kind == "shell"` (or the shell steps of `build.kind == "steps"`)
+   if the spec declared one, otherwise a plain copy
 
 A user's explicit opt-in outranks a shipped default, hence 1 and 2 above 3. Both apply only to
 plugins present in the lock; a name that matches nothing there is reported as a warning at
 activation time rather than silently doing nothing.
 
-Only a single shell command can run inside the Nix build sandbox. A spec whose `build` is an ex
-command (`build = ":TSUpdate"`), a Lua callback, or a list of steps has nothing nvimx can execute
-directly, so the plugin is installed with helptags only — and `nvimx-lock` says so, listing every
-such plugin at the end of its output
+Only shell commands can run inside the Nix build sandbox. A spec whose `build` is a list of steps
+(`build = { "make", ":TSUpdate" }`) has each element classified individually and runs its shell
+steps, in declared order, each in its own subshell — so a mix of runnable and unrunnable steps
+still gets as much done as it can. Each step starts from the plugin root with nothing carried over
+from the one before, the same way lazy runs them, so `{ "cd deps", "make" }` is not the same as
+`cd deps && make`. A spec whose `build` is an ex command (`build = ":TSUpdate"`), a Lua callback, a
+luarocks build (`build = "rockspec"`), or a `*.lua` file has nothing nvimx can execute directly
+(and neither do the non-shell elements of a list build), so that part is skipped and the plugin is
+installed with helptags only, plus whatever shell steps did run — and `nvimx-lock` says so, listing
+every such plugin at the end of its output, along with which of its steps could not run,
 and pointing at the hatches above (at `treesitter.grammars` for `nvim-treesitter`). The same list is
 recorded in `plugins.json` under `warnings`. Locking still succeeds; this is a warning, not an
 error. It is emitted by the Lua resolver, which runs before any Nix evaluation and therefore cannot
-see your config — so a plugin you have already handled with an override keeps being listed.
+see your config — so a plugin you have already handled with an override keeps being listed. A build
+of `false`, or a list with nothing unrunnable in it, says nothing at all.
 
 ### The build registry
 

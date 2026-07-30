@@ -12,6 +12,12 @@
 -- lazy only applies opts-level defaults (e.g. `defaults.version`) at git-operation time,
 -- so they are never written into the plugin object; anything applied that way is
 -- materialized per plugin here (#42).
+--
+-- `build` is dumped as string | string[] | false | nil: a scalar or list of steps is kept
+-- verbatim (an element that is not a string becomes a "<type>" placeholder), `false` is kept as
+-- `false` (lazy's "do not build", lua/lazy/manage/task/plugin.lua:57), and a scalar is otherwise
+-- equivalent to a 1-element list (`:64`). Classifying each element (shell / excmd / rockspec /
+-- ... ) is resolve.lua's job, not this one's.
 
 local seed = vim.env.NVIMX_LAZY_SEED
 local out = vim.env.NVIMX_OUT
@@ -68,12 +74,28 @@ local function effective_version(p, default_version)
   return default_version
 end
 
+-- An element of a table-form build is a string or a function (lua/lazy/types.lua:34); anything
+-- else cannot occur for a real spec but is dumped as a placeholder rather than erroring.
+---@param v any one element of a table-form build
+---@return string
+local function dump_build_step(v)
+  return type(v) == "string" and v or ("<" .. type(v) .. ">")
+end
+
 ---@param p table the plugin object normalized by lazy
 ---@param default_version string|nil Config.options.defaults.version, false normalized to nil
 local function dump_plugin(p, default_version)
   local build = nil
-  if p.build ~= nil then
-    build = type(p.build) == "string" and p.build or ("<" .. type(p.build) .. ">")
+  if p.build == false then
+    build = false
+  elseif type(p.build) == "table" then
+    local steps = {}
+    for _, s in ipairs(p.build) do
+      steps[#steps + 1] = dump_build_step(s)
+    end
+    build = steps
+  elseif p.build ~= nil then
+    build = dump_build_step(p.build)
   end
   return {
     name = p.name,

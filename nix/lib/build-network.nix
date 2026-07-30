@@ -143,17 +143,22 @@ in
     in
     if hits == [ ] then null else builtins.head hits;
 
-  # { name, cmd, tool } → the error message shown when a build cannot be run
+  # { name, cmd, tool, step ? null } → the error message shown when a build cannot be run.
+  # `step` is the 1-based index of the offending step within a table-form build; leave it null
+  # for a scalar build, where there is no list position to name.
   message =
     {
       name,
       cmd,
       tool,
+      step ? null,
     }:
     ''
       nvimx: plugin "${name}" cannot be built automatically.
 
-        build = ${builtins.toJSON cmd}
+        build = ${builtins.toJSON cmd}${
+          lib.optionalString (step != null) " (build step ${builtins.toString step})"
+        }
 
       This command runs `${tool}`, which ${reasons.${tool} or "downloads from the network"}.
       Nix builds run in a sandbox with no network access, so nvimx refuses it here rather

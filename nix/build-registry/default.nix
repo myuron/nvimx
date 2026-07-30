@@ -18,7 +18,9 @@
 #   pkgs         the package set the env is being built for
 #   name         the plugin name (= this entry's key)
 #   src          the locked source tree
-#   build        the build recorded in plugins.json ({ kind, cmd })
+#   build        the build recorded in plugins.json (a scalar { kind, cmd } or, for a table-form
+#                spec build, { kind = "steps", steps = [ { kind, cmd } ] }). An entry usually
+#                ignores it and passes its own { kind, cmd } to mkPluginDrv instead
 #   mkPluginDrv  the generic builder ({ name, src, build } -> drv): the shortest route to
 #                "the usual treatment, but with the build command corrected"
 #   defaultDrv   what nvimx would have built without this entry (mkPluginDrv applied to the
@@ -48,4 +50,5 @@
 {
   "telescope-fzf-native.nvim" = import ./telescope-fzf-native.nvim.nix;
   "fzf" = import ./fzf.nix;
+  "nvim-treesitter" = import ./nvim-treesitter.nix;
 }

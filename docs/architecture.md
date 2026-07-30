@@ -191,11 +191,25 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
       "pin": null,                          // lazy's `pin` (true | null; null = not set)
       "dependencies": [ "plenary.nvim" ],   // always an array, sorted by name (order carries no meaning)
       "resolvedRef": "refs/tags/0.1.8",     // the ref decided at lock time (see below)
-      "build": { "kind": "none" }           // "none" | "shell" | "excmd" | "function"
+      "build": { "kind": "none" }           // "none" | "shell" | "excmd" | "function" | "rockspec" | "luafile" | "steps"
     }
   },
   "localPlugins": { "myplugin": { "dir": "~/projects/myplugin" } },  // dir-specified. not locked
   "warnings": [ "..." ]
+}
+```
+
+A table-form spec build (`build = { "make", ":TSUpdate" }`) expands into `"kind": "steps"` rather than
+being collapsed to a single placeholder; each element is classified the same way a scalar build would be,
+so a list of shell commands can still run even when it is mixed with steps that cannot:
+
+```jsonc
+"build": {
+  "kind": "steps",
+  "steps": [
+    { "kind": "shell", "cmd": "make" },
+    { "kind": "excmd", "cmd": ":TSUpdate" }
+  ]
 }
 ```
 
@@ -242,10 +256,10 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
 
 Using the fetchTree result directly was rejected: helptags are not generated so `:h` breaks, and build integration becomes impossible.
 
-- **Default**: `mkDerivation` that unpacks the src, runs the recorded shell build if there is one,
-  copies the resulting tree to `$out`, and generates helptags if `doc/` exists.
-  `stdenvNoCC` is used unless there is a shell build, so a pure-lua plugin never drags the C
-  toolchain into its build closure.
+- **Default**: `mkDerivation` that unpacks the src, runs the recorded shell step(s) if there are
+  any, copies the resulting tree to `$out`, and generates helptags if `doc/` exists.
+  `stdenvNoCC` is used unless there is at least one shell step, so a pure-lua plugin never drags
+  the C toolchain into its build closure.
   `vimUtils.buildVimPlugin` produces too many false positives in its require check, so it is not used by default.
   `dontFixup = true`: the plugin tree must reach the farm exactly as upstream shipped it
   (stdenv's `move-docs` hook would relocate `doc/` to `share/doc/` and break `:h`, and `patchShebangs`
@@ -272,18 +286,33 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
      the opt-in 2 above is for (borrowing a *companion binary* that cannot be produced offline from the locked
      src either — `fzf` — is the one carve-out). Because an entry applies to everyone, it must also hold for
      any rev the user may have pinned — version-sensitive patching belongs in `plugins.overrides`.
-     Shipped today: `telescope-fzf-native.nvim` (always the Makefile, whatever the spec declared) and
+     Shipped today: `telescope-fzf-native.nvim` (always the Makefile, whatever the spec declared),
      `fzf` (`bin/fzf` from nixpkgs instead of the release binary `./install --bin` downloads; keyed by a
-     name generic enough to collide, so the build asserts the tree really is junegunn/fzf)
-  4. `build.kind == "shell"` runs in `buildPhase`, in the unpacked source directory (make/cmake-style builds
-     that need no network work this way). The tools available are whatever stdenv provides
-     (cc, gnumake, coreutils, gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz, patch, diffutils, bash)
-     plus `cmake` and `pkg-config`; anything beyond that needs 1–3.
-     `excmd`/`function` cannot run in the sandbox at all (`function` is every non-string build, so lazy's
-     list-of-steps form lands there too), so `resolve.lua` warns about them **at lock time**
-     (naming the three hatches above, and `treesitter.grammars` for `nvim-treesitter`) and the plugin is
-     installed with helptags only. resolve.lua runs before any Nix evaluation, so it cannot know whether
-     1–3 already cover the plugin — the warning fires regardless
+     name generic enough to collide, so the build asserts the tree really is junegunn/fzf), and
+     `nvim-treesitter` (always copy + helptags, ignoring whatever build the spec declared — on the
+     `main` branch layout its Makefile fetches dependencies over the network for every target, so it
+     can never succeed in the sandbox; parsers come from `treesitter.grammars` below instead)
+  4. `build.kind == "shell"` runs `build.cmd` in `buildPhase`, in the unpacked source directory
+     (make/cmake-style builds that need no network work this way). `build.kind == "steps"` is the
+     same thing applied to a table-form spec build (`build = { "make", ":TSUpdate" }`): its `shell`
+     elements run **in declared order**, each in its own subshell (one per shell step, with `cwd`
+     reset to the plugin root for every one) so that a `cd` in one step cannot leak into
+     the next step or into `installPhase` — this also fixed a pre-existing bug where a scalar
+     `build.cmd` that itself `cd`'d could leak into `installPhase` and corrupt `$out`. Elements that
+     are not `shell` (`excmd` / `function` / `rockspec` / `luafile`) are simply skipped, in place,
+     without disturbing the steps around them. The tools available to a shell step are whatever
+     stdenv provides (cc, gnumake, coreutils, gnused/gnugrep/gawk, findutils, tar/gzip/bzip2/xz,
+     patch, diffutils, bash) plus `cmake` and `pkg-config`; anything beyond that needs 1–3.
+     `excmd` / `function` / `rockspec` / `luafile` cannot run in the sandbox at all (`function` is
+     every non-string element; `rockspec` is lazy's luarocks integration, which nvimx disables during
+     extraction anyway; `luafile` is a `*.lua` path lazy `loadfile`s from inside a live neovim with the
+     plugin already loaded — nothing the sandbox can reproduce), so `resolve.lua` warns about them
+     **at lock time** (naming the three hatches above, and `treesitter.grammars` for
+     `nvim-treesitter`), whether that is the plugin's whole build or just some of a `steps` list — in
+     the latter case the warning also says which steps still run. Whatever cannot run is skipped
+     rather than attempted; the plugin still gets whatever shell steps *can* run, plus helptags.
+     resolve.lua runs before any Nix evaluation, so it cannot know whether 1–3 already cover the
+     plugin — the warning fires regardless
 
   1–3 only ever apply to plugins in the lock; the lazy.nvim seed is nvimx's own foundation and is
   not overridable. A name matching nothing in the lock is a typo that would silently do nothing, so
@@ -430,7 +459,7 @@ lua/nvimx/
   genflake.lua               # plugins.json → lock/flake.nix text generation
   bootstrap.lua.in           # runtime bootstrap template (not `*.lua`, so stylua/luacheck skip it)
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / registry-plugins / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / golden/
+tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / golden/
 ```
 
 flake outputs:
@@ -453,9 +482,10 @@ flake outputs:
 | lua files not tracked by git | they are not part of the flake source, so they are missed during extraction → the lock app detects working-tree differences and warns |
 | Non-GitHub / explicit git URL | normalized to a `git+https://` / `git+ssh://` input |
 | Plugin name collision | surfaces during lazy's Spec normalization (same behavior as lazy). inputName collisions are an error at lock time |
-| build is a Lua function / excmd | cannot be run automatically. Warns at lock time and points to registry / overrides / nixpkgsFallback |
-| build is a shell command needing the network | detected at evaluation time and thrown with a message naming the same three escape hatches |
-| luarocks (rocks) | **explicitly unsupported**. `rocks.enabled=false` is forced. `extraLuaPackages` is the escape hatch |
+| build is a Lua function / excmd / rockspec / a `*.lua` file, or `false` | cannot be run automatically (`false` is lazy's own "do not build" and warns about nothing). Warns at lock time and points to registry / overrides / nixpkgsFallback |
+| build is a table of steps | each element is classified individually and recorded in order (`build.kind == "steps"`); `shell` elements run in declared order, each in its own subshell, and the rest are skipped. A warning fires only if at least one element cannot run, and names which steps those are |
+| build is a shell command (or step) needing the network | detected at evaluation time and thrown with a message naming the same three escape hatches |
+| luarocks (rocks) | **explicitly unsupported**. `rocks.enabled=false` is forced during extraction, so a `build = "rockspec"` (or a `rockspec` element inside a table build) is recorded as `{ kind: "rockspec" }` and never run; warned about at lock time like any other unrunnable build |
 | Machine-dependent spec (`enabled = fn`, `cond`) | the superset is locked. `if` branching on the spec list itself only captures the branch taken on the machine running lock (documented) |
 | Local plugin development (dev=true) | supported alongside via `devPlugins` / `devPath` + the dev.path function |
 | lazy writing state | stdpath(data/state/cache) is user-owned territory, so this is fine |
