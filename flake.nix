@@ -891,6 +891,76 @@
                 grep -q 'did not call require("lazy").setup' stderr.log
                 touch $out
               '';
+          # `defaults.version` is a config-wide opts key that lazy only ever applies at
+          # git-operation time (lua/lazy/manage/git.lua:141), so extract.lua has to materialize it
+          # per plugin or the constraint never reaches plugins.json and the config silently tracks
+          # HEAD (#42). Self-contained in the store like extractor-snapshot, so no network is needed.
+          extractor-defaults-version =
+            pkgs.runCommand "extractor-defaults-version"
+              {
+                nativeBuildInputs = [
+                  pkgs.neovim-unwrapped
+                  pkgs.jq
+                ];
+              }
+              ''
+                export HOME=$TMPDIR
+                sb=$TMPDIR/sandbox
+                mkdir -p $sb/config $sb/data/nvim/lazy $sb/state $sb/cache
+                ln -s ${lazy-nvim} $sb/data/nvim/lazy/lazy.nvim
+
+                extract() { # <fixture> <raw-spec output>
+                  rm -f $sb/config/nvim
+                  ln -s "$1" $sb/config/nvim
+                  env \
+                    XDG_CONFIG_HOME=$sb/config \
+                    XDG_DATA_HOME=$sb/data \
+                    XDG_STATE_HOME=$sb/state \
+                    XDG_CACHE_HOME=$sb/cache \
+                    NVIMX_LAZY_SEED=${lazy-nvim} \
+                    NVIMX_OUT="$2" \
+                    nvim --headless --cmd "luafile ${./lua/nvimx/extract.lua}"
+                }
+
+                extract ${./tests/fixtures/defaults-version-config} $sb/defaults.json
+
+                # raw-spec: extract.lua's own contract, unaffected by #23's resolution
+                jq -e '.plugins["tokyonight.nvim"].version == "*"' $sb/defaults.json > /dev/null
+                jq -e '.plugins["plenary.nvim"].version == "*"' $sb/defaults.json > /dev/null
+                jq -e '.plugins["telescope.nvim"].version == "^0.1"' $sb/defaults.json > /dev/null
+                jq -e '.plugins["trouble.nvim"] | has("version") | not' $sb/defaults.json > /dev/null
+                jq -e '.plugins["trouble.nvim"].branch == "dev"' $sb/defaults.json > /dev/null
+                jq -e '.plugins["which-key.nvim"] | has("version") | not' $sb/defaults.json > /dev/null
+                jq -e '.plugins["which-key.nvim"].tag == "v3.0.0"' $sb/defaults.json > /dev/null
+                jq -e '.plugins["flash.nvim"] | has("version") | not' $sb/defaults.json > /dev/null
+                jq -e '.plugins["flash.nvim"].commit == "cbf1cb041a0e806c9f70e5b0b13d68f4dc26cfe8"' $sb/defaults.json > /dev/null
+                # false must not be folded into truthy and turned into "*" (a falsy check would pass this)
+                jq -e '.plugins["noice.nvim"].version == false' $sb/defaults.json > /dev/null
+
+                # plugins.json: the issue's "Done when" is about the lock, so resolve it too
+                nvim -l ${./lua/nvimx}/resolve.lua $sb/defaults.json plugins.json 2> resolve.log
+                jq -e '.plugins["tokyonight.nvim"].version == "*"' plugins.json > /dev/null
+                jq -e '.plugins["plenary.nvim"].version == "*"' plugins.json > /dev/null
+                jq -e '.plugins["telescope.nvim"].version == "^0.1"' plugins.json > /dev/null
+                jq -e '.plugins["noice.nvim"].version == null' plugins.json > /dev/null
+                jq -e '.plugins["trouble.nvim"].version == null' plugins.json > /dev/null
+                jq -e '.plugins["which-key.nvim"].version == null' plugins.json > /dev/null
+                jq -e '.plugins["flash.nvim"].version == null' plugins.json > /dev/null
+                # do not grep the warning text: resolve.lua's "is not resolved yet" message is
+                # #23's TODO placeholder and will change when semver resolution lands.
+                # This whole plugins.json section has to be rebuilt at #23 regardless: it resolves
+                # github-type constraints with no network, which #23 turns into a hard error, so
+                # resolve will exit non-zero before reaching any of these asserts. #23 replaces it
+                # with the local-repo-as-remote approach its own check uses.
+                jq -e '[.plugins[] | select(.version != null)] | length == 3' plugins.json > /dev/null
+
+                # defaults.version = false must be indistinguishable from "unset" (#42 goal 3)
+                extract ${./tests/fixtures/defaults-version-false-config} $sb/false.json
+                jq -e '.plugins["tokyonight.nvim"] | has("version") | not' $sb/false.json > /dev/null
+                jq -e '.plugins["telescope.nvim"].version == "^0.1"' $sb/false.json > /dev/null
+
+                touch $out
+              '';
           # A build nvimx cannot run (:excmd / Lua callback / list of steps) must be reported at
           # lock time, and must stay a warning: locking has to succeed anyway (#22).
           # The real lock app ends in `nix flake lock`, which needs the network, so this exercises
