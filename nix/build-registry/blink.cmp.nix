@@ -51,6 +51,10 @@ let
   libName = "libblink_cmp_fuzzy${ext}";
 
   cargoLockPath = "${src}/Cargo.lock";
+  # Parsed rather than grepped: this file has to survive whatever rev the user pinned, and
+  # nix/build-registry/default.nix warns off recipes that read upstream text by shape.
+  # importCargoLock parses the same file anyway, so this costs nothing new.
+  cargoLockPackages = (builtins.fromTOML (builtins.readFile cargoLockPath)).package or [ ];
 
   # Both hatches, quoted the way a user would write them. A recipe that cannot cope with the
   # rev in front of it should say what to do about it rather than fail as an nvimx bug.
@@ -76,15 +80,19 @@ let
     nativeBuildInputs = [ pkgs.gitMinimal ];
 
     # The user's lock picks the rev, so a test upstream happened to break on some rev must not
-    # make the plugin unbuildable. What nvimx ships is the library, and the check below proves
-    # neovim can load it.
+    # make the plugin unbuildable. What nvimx ships is the library, and checks.build-registry
+    # proves neovim can load it.
     doCheck = false;
 
     env = {
       # TODO: drop once the crate stops needing nightly rust
       RUSTC_BOOTSTRAP = true;
-      # On darwin the undefined symbols are provided by neovim's LuaJIT at load time
-      RUSTFLAGS = lib.optionalString stdenv.hostPlatform.isDarwin "-C link-arg=-undefined -C link-arg=dynamic_lookup";
+    }
+    # Left out entirely off darwin rather than set to "": cargo treats a present-but-empty
+    # RUSTFLAGS as authoritative and drops whatever build.rustflags would have applied.
+    // lib.optionalAttrs stdenv.hostPlatform.isDarwin {
+      # The undefined symbols are provided by neovim's LuaJIT at load time
+      RUSTFLAGS = "-C link-arg=-undefined -C link-arg=dynamic_lookup";
     };
   };
 
@@ -118,7 +126,7 @@ if !builtins.pathExists cargoLockPath then
 
     ${hatches}
   ''
-else if lib.hasInfix "source = \"git+" (builtins.readFile cargoLockPath) then
+else if lib.any (p: lib.hasPrefix "git+" (p.source or "")) cargoLockPackages then
   # Early revs vendored frizbee straight from git. importCargoLock would fail asking for
   # `outputHashes`, which reads as an nvimx bug rather than as a property of the pinned rev.
   throw ''
