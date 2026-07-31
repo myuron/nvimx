@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "A plugins.json holding decisions for two of raw-spec.json's plugins, used to prove that an",
+    "existing lock always wins over the imported file. tag.nvim's resolvedRef is deliberately null:",
+    "null is a decision too (\"track this ref, nothing to pin\"), so the import must not overwrite it",
+    "either. `source` must match what parse_source derives from raw-spec.json exactly, or",
+    "same_identity would fail and this fixture would test nothing."
+  ],
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": { "owner": "folke", "repo": "lazy.nvim", "type": "github" },
+    "synthetic": true
+  },
+  "localPlugins": {},
+  "plugins": {
+    "plain.nvim": {
+      "branch": null, "build": { "kind": "none" }, "commit": null, "dependencies": [],
+      "inputName": "plain-nvim", "pin": null,
+      "resolvedRef": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "source": { "owner": "o", "repo": "plain.nvim", "type": "github" },
+      "tag": null, "version": null
+    },
+    "tag.nvim": {
+      "branch": null, "build": { "kind": "none" }, "commit": null, "dependencies": [],
+      "inputName": "tag-nvim", "pin": null, "resolvedRef": null,
+      "source": { "type": "git", "url": "file:///nvimx-nonexistent/tag.nvim" },
+      "tag": "v1.0.0", "version": null
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": []
+}

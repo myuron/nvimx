@@ -1,0 +1,17 @@
+{
+  "badsha.nvim": { "branch": "main", "commit": "not-a-sha" },
+  "branchy.nvim": { "branch": "main", "commit": "6666666666666666666666666666666666666666" },
+  "commit.nvim": { "branch": "main", "commit": "5555555555555555555555555555555555555555" },
+  "defver.nvim": { "branch": "main", "commit": "3333333333333333333333333333333333333333" },
+  "disabled-me.nvim": { "branch": "main", "commit": "8888888888888888888888888888888888888888" },
+  "ghost.nvim": { "branch": "main", "commit": "9999999999999999999999999999999999999999" },
+  "git-nvim": { "branch": "main", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" },
+  "git.nvim": { "branch": "main", "commit": "4444444444444444444444444444444444444444" },
+  "lazy.nvim": { "branch": "main", "commit": "0000000000000000000000000000000000000000" },
+  "local.nvim": { "branch": "main", "commit": "cccccccccccccccccccccccccccccccccccccccc" },
+  "nullentry.nvim": null,
+  "pinned.nvim": { "branch": "main", "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+  "plain.nvim": { "commit": "7777777777777777777777777777777777777777" },
+  "tag.nvim": { "branch": "main", "commit": "2222222222222222222222222222222222222222" },
+  "ver.nvim": { "branch": "main", "commit": "1111111111111111111111111111111111111111" }
+}
