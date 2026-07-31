@@ -2213,7 +2213,8 @@
 
                 # 1. golden + exact pin. stdout is also captured (used by step 2 below): the
                 # progress line resolve.lua prints when it actually resolves a version constraint
-                # goes to stdout (resolve.lua:686), not stderr, on purpose (#22).
+                # goes to stdout, not stderr, on purpose (#22) -- see the io.stdout:write next to
+                # resolve.lua's "resolving version constraints" message.
                 nvim -l $lua/resolve.lua $fx/raw-spec.json out1.json \
                   --import-lazy-lock $fx/lazy-lock.json \
                   > out1.out 2> out1.log
@@ -2285,8 +2286,8 @@
                 grep -q 'import: version constraint "\^1.2" is not validated for 1 plugin(s) pinned from lazy-lock.json' \
                   out1.log
                 # defver.nvim's constraint comes from `defaults.version` (versionFromDefaults =
-                # true), so its message uses the "the config-wide ..." phrasing resolve.lua:816
-                # already established for the pin+version warning -- not the plain "version
+                # true), so its message uses the "the config-wide ..." phrasing resolve.lua's
+                # pin+version warning already established -- not the plain "version
                 # constraint" ver.nvim gets above (an explicit `version`). The plan's own sketch of
                 # this grep omitted "the config-wide " and so never actually matched; fixed here to
                 # check the real, correct message instead of weakening it to fit the typo.
