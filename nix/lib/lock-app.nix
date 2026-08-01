@@ -1,6 +1,5 @@
 # nvimx-lock: a script that runs extract → resolve → flake generation → nix flake lock in one go.
 # Locking is an online operation (the build is fully pure and offline).
-# TODO (Phase 6): --import-lazy-lock
 { pkgs, lazyNvimSeed }:
 let
   luaDir = ../../lua/nvimx;
@@ -15,12 +14,15 @@ pkgs.writeShellApplication {
     # itself rather than betting on the user's environment happening to have one (and one new
     # enough to support `git ls-remote --refs`).
     pkgs.git
+    # grep -- lifting pass 1's import report out of resolve.log before pass 2's `2>` truncates it
+    # (below) needs it, and nothing else in this script's closure guarantees it is on PATH either.
+    pkgs.gnugrep
     pkgs.neovim-unwrapped
     pkgs.nixfmt-rfc-style
   ];
   text = ''
     usage() {
-      echo "usage: nvimx-lock --config <configDir> --out <lockDir> [--update [name...]]" >&2
+      echo "usage: nvimx-lock --config <configDir> --out <lockDir> [--update [name...] | --import-lazy-lock [path]]" >&2
       exit 2
     }
 
@@ -29,6 +31,8 @@ pkgs.writeShellApplication {
     update_mode=0
     update_all=0
     update_names=()
+    import_mode=0
+    import_path=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --config)
@@ -53,6 +57,18 @@ pkgs.writeShellApplication {
           # the marker cannot be recovered from the array's length afterwards.
           [ "$got" -eq 1 ] || update_all=1
           ;;
+        --import-lazy-lock)
+          # A one-token lookahead, not --update's multi-token while loop: this flag takes at most
+          # one value (a path), so there is nothing to repeat-consume. A following argument that
+          # does not itself start with "--" is that path; anything else (another flag, or the end
+          # of argv) means the default path (resolved below, once $config is realpath'd) applies.
+          import_mode=1
+          shift
+          if [ $# -gt 0 ] && [ "''${1#--}" = "$1" ]; then
+            import_path="$1"
+            shift
+          fi
+          ;;
         *)
           usage
           ;;
@@ -67,6 +83,16 @@ pkgs.writeShellApplication {
       echo "nvimx-lock: --update takes either no names (update everything) or names, not both" >&2
       usage
     fi
+    # --import-lazy-lock and --update are opposite intents ("hold still at lazy's commits" vs.
+    # "move to today's HEAD"), and combining them can only ever produce one of two useless
+    # outcomes: the --update guard below rejects the run outright when there is no existing lock,
+    # or there is one and every seed is blocked by it, making --import-lazy-lock a silent no-op.
+    # Rejecting here -- before --config/--out are even validated -- keeps this provable in
+    # checks.resolve-import-lazy-lock without ever invoking nix.
+    if [ "$import_mode" -eq 1 ] && [ "$update_mode" -eq 1 ]; then
+      echo "nvimx-lock: --import-lazy-lock cannot be combined with --update; run them as two separate locks" >&2
+      usage
+    fi
     [ -n "$config" ] && [ -n "$out" ] || usage
     # --update is a lock's forward motion, not its beginning: mixing it with a first-ever lock
     # would leave resolve.lua with no previous decisions to force away from in the first place.
@@ -79,6 +105,19 @@ pkgs.writeShellApplication {
       fi
     fi
     config=$(realpath "$config")
+    # --import-lazy-lock [path] (#25): the default lives next to the config, so it can only be
+    # resolved once $config is absolute. Checked before `mkdir -p "$out"` for the same reason the
+    # --update guard above is: a run that fails this must not leave an empty lock directory behind.
+    # A missing file is fatal rather than a silent fallback to a plain lock -- that fallback would
+    # move every plugin to today's HEAD, which is the exact accident this flag exists to prevent.
+    if [ "$import_mode" -eq 1 ]; then
+      [ -n "$import_path" ] || import_path="$config/lazy-lock.json"
+      if [ ! -f "$import_path" ]; then
+        echo "nvimx-lock: no lazy-lock.json at $import_path" >&2
+        exit 2
+      fi
+      import_path=$(realpath "$import_path")
+    fi
     mkdir -p "$out"
     out=$(realpath "$out")
 
@@ -96,11 +135,30 @@ pkgs.writeShellApplication {
     # resolve.lua's warnings are held back until the very end (see the resolve step below).
     # Print them from the trap when a later step failed before we got there -- otherwise
     # removing the sandbox would swallow them entirely (#22).
+    #
+    # import.log exists for one reason only: pass 2 below (the convergence resolve) redirects its
+    # own stderr with `2>` to the exact same resolve.log path pass 1 used, and `2>` truncates on
+    # open -- so by the time either pass's log would be printed, pass 1's `[nvimx] import: ...`
+    # report (#25) is already gone unless it was copied out first. Pass 2 never produces any
+    # import lines itself (it deliberately never gets --import-lazy-lock -- see the comment on
+    # that pass below), so import.log is populated once, right after pass 1, and is simply
+    # ignored on every run that was not given --import-lazy-lock in the first place (grep finds
+    # nothing, so the file stays empty and flush_logs' `-s` check skips it).
     resolve_log_shown=0
-    cleanup() {
-      if [ "$resolve_log_shown" -eq 0 ] && [ -s "$sandbox/resolve.log" ]; then
+    flush_logs() {
+      if [ "$resolve_log_shown" -eq 1 ]; then
+        return
+      fi
+      resolve_log_shown=1
+      if [ -s "$sandbox/import.log" ]; then
+        cat "$sandbox/import.log" >&2
+      fi
+      if [ -s "$sandbox/resolve.log" ]; then
         cat "$sandbox/resolve.log" >&2
       fi
+    }
+    cleanup() {
+      flush_logs
       rm -rf "$sandbox"
     }
     trap cleanup EXIT
@@ -145,6 +203,9 @@ pkgs.writeShellApplication {
       fi
       resolve_args+=(--update-plan "$sandbox/update-plan.txt")
     fi
+    if [ "$import_mode" -eq 1 ]; then
+      resolve_args+=(--import-lazy-lock "$import_path")
+    fi
     # resolve.lua reports non-fatal problems (a build nvimx cannot run, a `defaults.version`
     # constraint no tag on some plugin's remote could satisfy) on stderr. They are held back and
     # re-printed after `nix flake lock`, whose output is long enough to scroll them out of sight
@@ -157,9 +218,17 @@ pkgs.writeShellApplication {
       ''${resolve_args[@]+"''${resolve_args[@]}"} \
       2> "$sandbox/resolve.log" || rc=$?
     if [ "$rc" -ne 0 ]; then
-      cat "$sandbox/resolve.log" >&2
-      resolve_log_shown=1
+      flush_logs
       exit "$rc"
+    fi
+    # Lift the import report out of resolve.log now, before the convergence pass below reopens
+    # that same path with `2>` and truncates it. Only this pass can have produced import lines in
+    # the first place (the convergence pass never gets --import-lazy-lock -- see its own comment
+    # below for why), so this is also the only place that needs to do the lifting. `grep` exits 1
+    # when nothing matches (e.g. any run without --import-lazy-lock), which `set -e` would
+    # otherwise treat as a script failure, hence `|| true`.
+    if [ "$import_mode" -eq 1 ]; then
+      grep '^\[nvimx\] import: ' "$sandbox/resolve.log" > "$sandbox/import.log" || true
     fi
 
     echo "nvimx-lock: generating lock flake" >&2
@@ -202,16 +271,17 @@ pkgs.writeShellApplication {
     # Deliberately not passed here: any of the --update flags. This second resolve's whole job is
     # to freeze onto whatever `nix flake lock` (and, in --update mode, `nix flake update` above)
     # just settled on -- passing --update again would force[] the same names right back to null
-    # and the two passes would never converge. #25's --import-lazy-lock will need this same
-    # exclusion for its own flag if it ever restructures resolve_args into something both resolve
-    # calls share.
+    # and the two passes would never converge.
+    # --import-lazy-lock (#25) is deliberately not passed here either, for a different reason: this
+    # pass gets --prev pointing at the plugins.json the first resolve just wrote, so every plugin
+    # already has a previous decision and every seed would be blocked anyway. Passing it would be a
+    # no-op, so this call stays exactly as it is rather than being restructured to share resolve_args.
     rc=0
     nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$sandbox/plugins2.json" \
       --prev "$out/plugins.json" --lock "$out/flake.lock" --lazy "$seed" \
       2> "$sandbox/resolve.log" || rc=$?
     if [ "$rc" -ne 0 ]; then
-      cat "$sandbox/resolve.log" >&2
-      resolve_log_shown=1
+      flush_logs
       exit "$rc"
     fi
     if ! cmp -s "$sandbox/plugins2.json" "$out/plugins.json"; then
@@ -222,10 +292,7 @@ pkgs.writeShellApplication {
       (cd "$out" && nix flake lock)
     fi
 
-    if [ -s "$sandbox/resolve.log" ]; then
-      cat "$sandbox/resolve.log" >&2
-    fi
-    resolve_log_shown=1
+    flush_logs
 
     # update-summary.lua's own failure is deliberately left fatal (not downgraded to a warning,
     # #24): every lock file above is already written by this point, so a non-zero exit here is a

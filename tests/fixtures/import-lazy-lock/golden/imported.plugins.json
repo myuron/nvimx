@@ -1,0 +1,175 @@
+{
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": true
+  },
+  "localPlugins": {
+    "local.nvim": {
+      "dir": "/some/local/path"
+    }
+  },
+  "plugins": {
+    "branchy.nvim": {
+      "branch": "master",
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "branchy-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/branchy.nvim"
+      },
+      "tag": null,
+      "version": null
+    },
+    "commit.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": "dddddddddddddddddddddddddddddddddddddddd",
+      "dependencies": [],
+      "inputName": "commit-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/commit.nvim"
+      },
+      "tag": null,
+      "version": null
+    },
+    "defver.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "defver-nvim",
+      "pin": null,
+      "resolvedRef": "3333333333333333333333333333333333333333",
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/defver.nvim"
+      },
+      "tag": null,
+      "version": "*"
+    },
+    "git.nvim": {
+      "branch": "main",
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "git-nvim",
+      "pin": null,
+      "resolvedRef": "4444444444444444444444444444444444444444",
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/git.nvim"
+      },
+      "tag": null,
+      "version": null
+    },
+    "only-here.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "only-here-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "only-here.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "pinned.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "pinned-nvim",
+      "pin": true,
+      "resolvedRef": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/pinned.nvim"
+      },
+      "tag": null,
+      "version": null
+    },
+    "plain.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "plain-nvim",
+      "pin": null,
+      "resolvedRef": "7777777777777777777777777777777777777777",
+      "source": {
+        "owner": "o",
+        "repo": "plain.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "tag.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "tag-nvim",
+      "pin": null,
+      "resolvedRef": "2222222222222222222222222222222222222222",
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/tag.nvim"
+      },
+      "tag": "v1.0.0",
+      "version": null
+    },
+    "ver.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "ver-nvim",
+      "pin": null,
+      "resolvedRef": "1111111111111111111111111111111111111111",
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/ver.nvim"
+      },
+      "tag": null,
+      "version": "^1.2"
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": []
+}

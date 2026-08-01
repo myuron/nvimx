@@ -27,3 +27,6 @@ lock → commit → switch again.
 - Update one plugin: `nvimx-lock --update tokyonight.nvim` (any number of names) → commit → switch.
   Every other plugin's lock entry is left untouched
 - Either form prints a summary of what moved (and what was skipped) before exiting
+- Coming from plain lazy.nvim: put your `lazy-lock.json` next to `init.lua`, `git add` it, and run
+  the first lock with `--import-lazy-lock` — every plugin is then pinned to the commit lazy already
+  had, so nothing moves during the migration. See "Migrating from lazy.nvim" in the nvimx README

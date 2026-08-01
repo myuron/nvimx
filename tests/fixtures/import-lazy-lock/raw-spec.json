@@ -1,0 +1,69 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json (the shape extract.lua dumps), used by",
+    "checks.resolve-import-lazy-lock. Hand-written rather than extracted so the seed cases below",
+    "are exactly the ones the test means to cover.",
+    "Every url is deliberately unreachable: nothing here is ever fetched, and ver.nvim /",
+    "defver.nvim exist to prove that a seeded resolvedRef closes #23's semver gate -- if the gate",
+    "ever fired, ls-remote would fail on these urls (or on git being absent from the check's PATH)",
+    "and the whole resolve would exit non-zero. exit 0 *is* the assertion.",
+    "No plugin here combines pin with version on purpose: that pair produces a real warn_plugin",
+    "entry in plugins.json, and this fixture's golden asserts warnings == []. That case is covered",
+    "by a jq-derived variant inside the check instead."
+  ],
+  "disabled": ["disabled-me.nvim"],
+  "notifs": [],
+  "plugins": {
+    "plain.nvim": {
+      "name": "plain.nvim",
+      "short": "o/plain.nvim",
+      "url": "https://github.com/o/plain.nvim.git"
+    },
+    "git.nvim": {
+      "name": "git.nvim",
+      "url": "file:///nvimx-nonexistent/git.nvim",
+      "branch": "main"
+    },
+    "ver.nvim": {
+      "name": "ver.nvim",
+      "url": "file:///nvimx-nonexistent/ver.nvim",
+      "version": "^1.2"
+    },
+    "defver.nvim": {
+      "name": "defver.nvim",
+      "url": "file:///nvimx-nonexistent/defver.nvim",
+      "version": "*",
+      "versionFromDefaults": true
+    },
+    "tag.nvim": {
+      "name": "tag.nvim",
+      "url": "file:///nvimx-nonexistent/tag.nvim",
+      "tag": "v1.0.0"
+    },
+    "pinned.nvim": {
+      "name": "pinned.nvim",
+      "url": "file:///nvimx-nonexistent/pinned.nvim",
+      "pin": true
+    },
+    "commit.nvim": {
+      "name": "commit.nvim",
+      "url": "file:///nvimx-nonexistent/commit.nvim",
+      "commit": "dddddddddddddddddddddddddddddddddddddddd"
+    },
+    "branchy.nvim": {
+      "name": "branchy.nvim",
+      "url": "file:///nvimx-nonexistent/branchy.nvim",
+      "branch": "master"
+    },
+    "only-here.nvim": {
+      "name": "only-here.nvim",
+      "short": "o/only-here.nvim",
+      "url": "https://github.com/o/only-here.nvim.git"
+    },
+    "local.nvim": {
+      "name": "local.nvim",
+      "dev": true,
+      "dir": "/some/local/path"
+    }
+  }
+}

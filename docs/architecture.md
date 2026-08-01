@@ -79,7 +79,7 @@ sequenceDiagram
     participant G as git ls-remote
     participant F as nix flake lock
 
-    U->>L: nvimx-lock [--update] [--import-lazy-lock]
+    U->>L: nvimx-lock [--update or --import-lazy-lock]
     L->>N: inject extract.lua with --cmd and run init.lua
     Note over N: intercept setup(spec, opts)<br/>via package.preload["lazy"]<br/>→ normalize with Spec.new (expand import/deps)
     N-->>L: raw-spec.json
@@ -139,7 +139,7 @@ flowchart LR
         version / branch / tag / commit is left untouched
       → raw-spec.json
 [3] Resolution: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>]
-    [--lock <flake.lock>] [--lazy <lazy.nvim path>]
+    [--lock <flake.lock>] [--lazy <lazy.nvim path>] [--import-lazy-lock <lazy-lock.json>]
       - resolve version (semver range) with git ls-remote --tags --refs + lazy.manage.semver
         (loaded from --lazy, required whenever a constraint needs resolving)
       - a constraint that matches nothing is fatal if the plugin wrote it itself, but falls back
@@ -247,6 +247,8 @@ so a list of shell commands can still run even when it is mixed with steps that 
 
 **Caveat on `pin = true` + `version`**: the "the URL itself names the rev" guarantee in the table above is about a 40-hex freeze, which is what pinning normally produces. If a pinned plugin also carries `version` and gets resolved for the very first time (no rev in `flake.lock` yet to freeze onto), the result is a `refs/tags/<tag>` ref instead -- and unlike a 40-hex rev, that ref can move if the upstream repo moves the tag, since resolving a tag ref to a commit happens fresh on every `nix flake lock`. This is a weaker guarantee than the 40-hex case and is accepted as such; see `resolve.lua`'s merge comment for the same note next to the code.
 
+**Caveat on `--import-lazy-lock`'s seed** (#25): a commit imported from `lazy-lock.json` lands in `resolvedRef` as a bare 40-hex string, which is exactly the shape a `pin = true` freeze produces and is indistinguishable from one by `is_frozen_rev`. Consequently, removing `pin` from a plugin that was pinned *and* imported drops the imported commit along with the freeze, the same as it would for a real pin -- there is currently no way to tell "seeded" apart from "frozen" once the run that seeded it is over. Also, seeding a git-type (non-GitHub) plugin whose spec also names a `tag` produces a URL with both `ref` and `rev` set (`?ref=refs/tags/<t>&rev=<sha>`), since genflake's git-type branch fills in `ref` from `tag`/`branch` whenever one is not already implied by the rev; see the risk in `resolve.lua`'s import seed comment (next to the `--import-lazy-lock` merge step).
+
 ### Update semantics
 
 - `nvimx-lock`: only adds new plugins and removes deleted ones. Existing pins stay untouched
@@ -259,7 +261,7 @@ so a list of shell commands can still run even when it is mixed with steps that 
 - `nvimx-lock` runs the resolver twice, on either side of `nix flake lock`. A plugin pinned for the first time has no rev in `flake.lock` yet, so the second pass is what freezes it; the flake is regenerated and re-locked only if that pass changed anything. One retry always suffices, because the third pass would read the same `flake.lock` back
 - `nvimx-lock --update [name...]` (#24): no names re-resolves every plugin that is not `pin = true` (pinned ones are skipped, and say so in the summary); one or more names re-resolves only those, pinned or not -- naming a plugin explicitly is what overrides `pin` and a `commit`-fixed spec is named harmlessly, since its URL cannot move either way. Either form discards the named plugins' `resolvedRef` (the same `force` mechanism #18 built in), then runs `nix flake lock` (which moves anything whose URL changed, e.g. a freshly-thawed pin) followed by `nix flake update <inputName...>` for exactly those plugins (which moves anything whose URL did not change, e.g. a branch/tag tracker). `lazy.nvim` is a valid name too: it moves the synthetic `lazy-nvim` seed input, and is included automatically by a no-names update. Needs Nix ≥ 2.19 for `nix flake update <input>`'s positional-argument form. A summary of what moved, what was skipped, and what was added/removed is printed at the end (`nvimx-lock: update summary`); in named mode it also warns if an unnamed input moved for no reason the summary can account for (a version constraint resolving for the first time, or an edited spec, do not count -- both are normal lock behavior). A no-names update is the most expensive thing nvimx does: every plugin's version constraint is re-resolved, which means one `git ls-remote` per constrained plugin, up to twice over because of the two resolver passes -- a constraint that resolves to `refs/tags/...` on the first pass carries that ref into the second pass unchanged and is not re-queried; only `defaults.version` fallback plugins (whose constraint matched no tag) are queried on both passes, which also happens on every plain lock, `--update` or not
 - Back door: plain `nix flake update <inputName>` in lockDir also works (same as twist), but it cannot move a pinned plugin -- a frozen rev is part of the input URL, not just of `flake.lock`
-- `nvimx-lock --import-lazy-lock <path>`: pins from an existing lazy-lock.json's `{branch, commit}` on the first run for a bit-identical migration. Returns to normal tracking at `--update` time
+- `nvimx-lock --import-lazy-lock [path]` (#25): seeds each plugin's `resolvedRef` from the `commit` an existing lazy-lock.json records (defaulting to `<configDir>/lazy-lock.json`), so a migration from plain lazy.nvim pins exactly the plugin set the user is already running. Only plugins the previous lock has no decision about at all are seeded -- an existing `plugins.json` entry always wins, so a second import is a no-op. The seed goes into `resolvedRef`, never into `commit`/`branch`: those are part of the spec identity, so a seed written there would be discarded by the very next lock. A seeded `resolvedRef` also closes the semver gate, which is what makes a `defaults.version` migration need no network at all -- the constraint is not validated on that run, and the report says so. Cannot be combined with `--update`. Returns to normal tracking at `--update` time
 
 ### Plugin derivations (1 plugin = 1 derivation)
 
@@ -437,7 +439,9 @@ Since the lock command itself is a product of the hm build, failing evaluation w
 ```
 
 - **First run**: `nix run github:myuron/nvimx#lock -- --config ./nvim --out ./nvim/nvimx-lock`
-  (coming from an existing lazy setup, add `--import-lazy-lock ~/.config/nvim/lazy-lock.json`)
+  (coming from an existing lazy setup, add `--import-lazy-lock`; the path defaults to
+  `<configDir>/lazy-lock.json`, so it only needs spelling out -- e.g.
+  `--import-lazy-lock ~/.config/nvim/lazy-lock.json` -- when the file lives somewhere else)
   → `git add` → `home-manager switch`. Switching first (degraded) and running `nvimx-lock` afterwards also works
 - **Adding a plugin**: write the spec in lua → `git add` → `nvimx-lock` (fetches only the new inputs) → commit → switch.
   Even if you forget to lock and switch anyway, nvim still starts and only that plugin shows as not installed (safe failure)
@@ -475,7 +479,7 @@ lua/nvimx/
   update-summary.lua         # --update's before/after summary (plugin, old ref, new ref)
   bootstrap.lua.in           # runtime bootstrap template (not `*.lua`, so stylua/luacheck skip it)
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / cargo-git-lock / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / semver / update / golden/
+tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / cargo-git-lock / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / semver / update / import-lazy-lock / golden/
 ```
 
 flake outputs:
@@ -484,7 +488,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, semver-select, resolve-merge, resolve-semver, resolve-update, update-summary, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
+- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, semver-select, resolve-merge, resolve-semver, resolve-update, update-summary, resolve-import-lazy-lock, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
   - planned, not yet implemented: `genflake-golden` (#29), `e2e-offline` (#30)
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
@@ -506,6 +510,7 @@ flake outputs:
 | Local plugin development (dev=true) | supported alongside via `devPlugins` / `devPath` + the dev.path function |
 | lazy writing state | stdpath(data/state/cache) is user-owned territory, so this is fine |
 | Slight mismatch in treesitter grammar revs | known limitation. A strict mode is planned |
+| lazy-lock.json entry with no matching plugin | reported (with a "did you mean" hint when the name only differs by input-name normalization) and skipped, never silently dropped |
 
 ## Implementation phases
 
@@ -516,7 +521,7 @@ Each phase ends with an artifact you can actually try out:
 3. **Build path**: sources / plugin-drv / farm / bootstrap / wrapper → verify with `packages.demo` that `:Lazy` shows everything loaded/local. Start dogfooding
 4. **hm module + template**: `programs.nvimx.*`, degraded mode, `nvimx-lock`, E2E against real dotfiles
 5. **Full build-plugin support**: build-registry, shell builds, the treesitter merge drv, nixpkgsFallback, warnings at lock time
-6. **Version/update features**: `resolve.lua` (semver), pin-preserving merge, `--update [name]` (#24), `--import-lazy-lock`
+6. **Version/update features**: `resolve.lua` (semver), pin-preserving merge, `--update [name]` (#24), `--import-lazy-lock` (#25)
 7. **Finishing touches**: devPlugins, extraLuaPackages, non-GitHub validation, `checks.e2e-offline`, README
 
 ## How to verify

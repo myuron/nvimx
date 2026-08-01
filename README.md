@@ -111,6 +111,74 @@ everything" rather than running it out of habit. `--update <name>...` moves the 
 type — whose positional-argument form needs Nix ≥ 2.19; older Nix would need
 `nix flake lock --update-input <name>` by hand instead.
 
+## Migrating from lazy.nvim
+
+If you already run lazy.nvim, you have a `lazy-lock.json` recording the exact commit of every
+installed plugin. `nvimx-lock --import-lazy-lock` seeds those commits into the first lock, so the
+migration does not move a single plugin: you get the plugin set you are running today, under nix,
+and you decide when to move forward.
+
+1. Copy your existing config into the repo — `init.lua`, the `lua/` tree, **and `lazy-lock.json`** —
+   and `git add` all of it. Nix only sees git-tracked files.
+
+2. Lock with the import. `lazy-lock.json` sits inside your config directory, so the path can be
+   omitted:
+
+   ```bash
+   nix run github:myuron/nvimx#lock -- --config ./nvim --out ./nvim/nvimx-lock --import-lazy-lock
+   ```
+
+   Pass a path explicitly if it lives somewhere else:
+   `--import-lazy-lock ~/.config/nvim/lazy-lock.json`. A missing file is an error, not a silent
+   fallback — a fallback would move every plugin to today's HEAD, which is what this flag exists
+   to prevent.
+
+3. Read the import report before committing. It is printed at the very end of the run and accounts
+   for every entry in `lazy-lock.json`:
+
+   - `import: pinned <name> to <sha>` — locked to exactly the commit lazy recorded
+   - `import: <name> is not in lazy-lock.json; it will resolve normally` — the only plugins that
+     move. lazy only writes plugins it has actually installed, so this is usually a plugin you
+     added to the spec but never started nvim with
+   - `import: skipped ...` — an entry your spec overrides (it already fixes a `commit`, or names a
+     different `branch`); the spec wins. Also covers a local (`dev`/`dir`) plugin, which has nothing
+     to pin, and the aggregate `import: skipped N entries already decided by the existing lock` on a
+     re-import, once `plugins.json` already has its own decision for those entries
+   - `import: ignored ...` — an entry with no plugin in the config to attach to
+
+4. Cross-check, then commit:
+
+   ```bash
+   jq -r '.plugins | to_entries[] | "\(.key) \(.value.resolvedRef)"' nvim/nvimx-lock/plugins.json
+   git add nvim/nvimx-lock && git commit -m "migrate nvim plugins to nvimx"
+   ```
+
+   Each `resolvedRef` should be the commit `lazy-lock.json` has under the same name, and each
+   `locked.rev` in `nvim/nvimx-lock/flake.lock` should be that same commit again.
+
+5. From here on, run plain `nvimx-lock`. `--import-lazy-lock` is a one-shot migration: once
+   `plugins.json` exists, every decision in it wins over the imported file, so a second import is a
+   no-op that only prints `import: skipped N entries already decided by the existing lock`. When
+   you want to start moving forward, that is `nvimx-lock --update [name...]`.
+
+A few things worth knowing:
+
+- `--import-lazy-lock` cannot be combined with `--update`. One says "hold still at lazy's
+  commits", the other says "move to today's HEAD"; run them as two separate locks.
+- The import does not check version constraints. If your spec uses an explicit `version`, the
+  imported commit is taken as-is and the run reports `import: version constraint ... is not
+  validated for N plugin(s) pinned from lazy-lock.json`; a constraint that instead comes from
+  `defaults = { version = "*" }` gets the wording `import: the config-wide version constraint ...
+  is not validated for N plugin(s) pinned from lazy-lock.json`. That is deliberate: the whole
+  migration then needs no network at all, because lazy already resolved those constraints for you.
+  `nvimx-lock --update <name>` resolves one for real whenever you want it checked again.
+- `lazy.nvim` itself is not imported: nvimx pins it through its own flake input, so the entry
+  `lazy-lock.json` has for it is reported and skipped.
+- For a plugin on a non-GitHub git URL whose spec names no `branch`, the imported commit becomes
+  `git+<url>?rev=<sha>` with no ref. Most servers serve that fine, but one that refuses to serve an
+  unadvertised object will fail at `nix flake lock`, naming the input. Adding `branch = "..."` to
+  that plugin's spec fixes it.
+
 ## Options
 
 All options live under `programs.nvimx`.

@@ -3,7 +3,7 @@
 -- Usage:
 --   nvim -l resolve.lua <raw-spec.json> <where to write plugins.json> \
 --     [--prev <existing plugins.json>] [--lock <existing flake.lock>] [--lazy <lazy.nvim path>] \
---     [--update [<name>]]... [--update-plan <path>]
+--     [--update [<name>]]... [--update-plan <path>] [--import-lazy-lock <lazy-lock.json>]
 --
 -- Converts raw-spec.json into the plugins.json schema, merging with the previous lock so that
 -- refs already decided stay decided (--prev) and `pin = true` plugins get frozen onto the rev
@@ -12,6 +12,12 @@
 -- --lazy points at a checkout of lazy.nvim (the store path nvimx-lock uses as its seed) and is
 -- required whenever a version constraint needs resolving (#23): it is where lazy's own
 -- lua/lazy/manage/semver.lua is dofile()d from, so matching stays bit-exact with lazy itself.
+-- --import-lazy-lock reads an existing lazy.nvim lock and seeds each matching plugin's
+-- `resolvedRef` with the commit lazy already recorded (#25), so migrating from plain lazy.nvim
+-- pins exactly the plugin set the user is running today. Only plugins with no previous decision
+-- at all are seeded -- an existing --prev entry always wins. The seed is written to `resolvedRef`
+-- only, never to `commit` or `branch`: those are part of the spec identity, so writing there
+-- would make the next plain lock discard the seed as a spec change.
 
 local function fail(msg)
   io.stderr:write("[nvimx] resolve failed: " .. tostring(msg) .. "\n")
@@ -22,7 +28,7 @@ local function usage()
   io.stderr:write(
     "usage: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>] "
       .. "[--lock <flake.lock>] [--lazy <lazy.nvim path>] [--update [<name>]]... "
-      .. "[--update-plan <path>]\n"
+      .. "[--update-plan <path>] [--import-lazy-lock <path>]\n"
   )
   os.exit(2)
 end
@@ -30,7 +36,7 @@ end
 -- A flag loop rather than fixed positions: #24 added --update / --update-plan here, and #25
 -- (--import-lazy-lock) can add itself the same way without disturbing the callers that only pass
 -- the two positional paths.
-local raw_path, out_path, prev_path, lock_path, lazy_path, update_plan_path
+local raw_path, out_path, prev_path, lock_path, lazy_path, update_plan_path, import_path
 local update_all = false
 local update_names = {}
 do
@@ -40,7 +46,7 @@ do
   local i = 1
   while i <= #arg do
     local a = arg[i]
-    if a == "--prev" or a == "--lock" or a == "--lazy" or a == "--update-plan" then
+    if a == "--prev" or a == "--lock" or a == "--lazy" or a == "--update-plan" or a == "--import-lazy-lock" then
       local value = arg[i + 1]
       if not value then
         io.stderr:write(("[nvimx] resolve: %s needs a path\n"):format(a))
@@ -52,6 +58,8 @@ do
         lock_path = value
       elseif a == "--lazy" then
         lazy_path = value
+      elseif a == "--import-lazy-lock" then
+        import_path = value
       else
         update_plan_path = value
       end
@@ -95,7 +103,14 @@ end
 local json = dofile(arg[0]:gsub("resolve%.lua$", "json.lua"))
 local ver = dofile(arg[0]:gsub("resolve%.lua$", "version.lua"))
 
-local function read_json(path, what)
+-- The default advice is prev-specific (checks.resolve-merge greps "is not valid JSON" and "run
+-- nvimx-lock again", so its wording must stay byte-identical); --import-lazy-lock's own advice
+-- (#25) is passed in explicitly instead of changing the default.
+local JSON_ADVICE_LOCK = "Fix the file, or delete it and run nvimx-lock again -- deleting it loses the pinned revs."
+local JSON_ADVICE_IMPORT =
+  "Fix the file, or regenerate it with :Lazy restore in lazy.nvim -- nvimx will not guess the commits."
+
+local function read_json(path, what, advice)
   local f = io.open(path, "r")
   if not f then
     fail(("cannot open %s: %s"):format(what, path))
@@ -105,13 +120,7 @@ local function read_json(path, what)
   local ok, decoded = pcall(vim.json.decode, text)
   if not ok then
     -- Silently regenerating would drop every pinned rev, so this has to be fatal.
-    fail(
-      ("%s is not valid JSON (%s): %s. Fix the file, or delete it and run nvimx-lock again -- "):format(
-        what,
-        path,
-        decoded
-      ) .. "deleting it loses the pinned revs."
-    )
+    fail(("%s is not valid JSON (%s): %s. "):format(what, path, decoded) .. (advice or JSON_ADVICE_LOCK))
   end
   return decoded
 end
@@ -164,6 +173,64 @@ if prev_path then
   end
   prev_plugins = type(prev.plugins) == "table" and prev.plugins or {}
 end
+
+-- --import-lazy-lock (#25): lazy.nvim's own lock file, parsed up front like --prev / --lock so
+-- the seed step in the main loop below can look plugins up by name. Nothing is reported here --
+-- reporting needs raw.plugins (to tell "not in the config" from "disabled" from "lazy.nvim
+-- itself"), which is not walked until after the main loop, so every finding here is only
+-- collected, never printed, until the dedicated report block near the end of this file.
+--
+-- import_db is nil when --import-lazy-lock was not passed at all (the seed step below is then a
+-- no-op) and a (possibly empty) table otherwise, name -> { commit, branch }. import_bad holds
+-- every entry that could not be understood, `{ name, reason }`, name-order not yet meaningful
+-- (pairs() order; sorted at report time).
+local import_db = nil
+local import_bad = {}
+if import_path then
+  local decoded = read_json(import_path, "the lazy-lock.json", JSON_ADVICE_IMPORT)
+  -- vim.json.decode of a top-level JSON array returns a table with integer keys, not a string
+  -- keyed one -- so it is *not* caught here. It falls through to the entry loop below instead,
+  -- where every "key" turns out to be a number and is reported as classification 9's
+  -- "key is not a plugin name". That is deliberate (only a JSON scalar -- a bare number, string,
+  -- or boolean -- is a hard error): dropping a whole migration's worth of data because the file
+  -- happens to be a JSON array would be a worse failure mode than reporting every entry as bad.
+  if type(decoded) ~= "table" then
+    -- vim.json.decode of a top-level JSON `null` returns vim.NIL, whose Lua type is "userdata" --
+    -- true, but meaningless to a user reading this message. Say "null" instead, the actual JSON
+    -- word they wrote.
+    local decoded_desc = decoded == vim.NIL and "null" or ("a " .. type(decoded))
+    fail(("the lazy-lock.json (%s) is not a table (it decoded to %s)"):format(import_path, decoded_desc))
+  end
+  import_db = {}
+  for name, v in pairs(decoded) do
+    if type(name) ~= "string" then
+      import_bad[#import_bad + 1] = { name = tostring(name), reason = "key is not a plugin name" }
+    elseif type(v) ~= "table" then
+      -- Catches vim.NIL too (a JSON `null` value): its Lua type is "userdata", not "table", so
+      -- this branch is reached and .commit is never indexed into it.
+      import_bad[#import_bad + 1] = { name = name, reason = "value is not an object" }
+    elseif is_null(v.commit) or type(v.commit) ~= "string" then
+      import_bad[#import_bad + 1] = { name = name, reason = "no commit" }
+    elseif not is_frozen_rev(v.commit) then
+      import_bad[#import_bad + 1] = { name = name, reason = ("commit %q is not a 40-hex sha"):format(v.commit) }
+    else
+      import_db[name] = { commit = v.commit, branch = type(v.branch) == "string" and v.branch or nil }
+    end
+  end
+end
+
+-- Collected while the main loop below runs, then sorted and reported (#25's report block).
+local import_seeded = {} -- name -> true, for plugins whose resolvedRef this run seeded
+local import_pinned = {} -- { name, commit }[], classification 1
+local import_skipped = {} -- { name, reason }[], classifications 2/3
+local import_prev_blocked = 0 -- classification 4's count (an aggregate, not a per-name list)
+-- name -> true, for every import_db-matched, non-local plugin the main loop below classified into
+-- import_pinned / import_skipped / import_prev_blocked (whichever it was). Used only by the report
+-- loop's explicit else bucket (plan §3.6, review item 7): that loop walks the same names again from
+-- raw.plugins, and checking this table is what lets it tell "already accounted for" apart from
+-- "fell through unclassified" without depending on its own `p.dev or p.dir` check staying in sync
+-- with this loop's, by construction rather than by two distant conditions matching textually.
+local import_accounted = {}
 
 -- flake.lock is read as a pin DB only, exactly the way nix/lib/sources.nix reads it:
 -- root node → inputs.<inputName> → nodes.<node>.locked.rev.
@@ -237,6 +304,41 @@ local function same_identity(a, b)
     if norm(sa[k]) ~= norm(sb[k]) then
       return false
     end
+  end
+  return true
+end
+
+local function short_sha(s)
+  -- A raw spec can be malformed by hand (or by a future bug upstream of here) into a `commit`
+  -- that is not a string at all; s:sub would crash on it. tostring() degrades to something
+  -- readable instead of taking the whole run down over what is, at worst, a confusing message.
+  if type(s) ~= "string" then
+    return tostring(s)
+  end
+  return s:sub(1, 12)
+end
+
+-- Whether a lazy-lock.json entry may seed this plugin's resolvedRef (§3.4 of #25's plan).
+-- Returns true, or false plus the reason to report. Only called for a plugin with no previous
+-- decision at all (the caller already checked that against the raw prev_plugins[name], not the
+-- force-aware `prev` local -- see the seed step itself for why that distinction matters).
+local function seedable(entry, imp)
+  if not is_null(entry.commit) then
+    -- `commit` is part of the spec identity and genflake.lua prefers it over resolvedRef, so a
+    -- spec that already fixes one makes any seed here dead weight -- and if the two disagree,
+    -- the spec's own commit is what actually wins, which is worth calling out.
+    local extra = ""
+    if entry.commit ~= imp.commit then
+      extra = (" (lazy-lock.json has %s)"):format(short_sha(imp.commit))
+    end
+    return false, ("the spec already fixes commit %s%s"):format(short_sha(entry.commit), extra)
+  end
+  local b = norm(entry.branch)
+  if b and imp.branch and b ~= imp.branch then
+    -- The spec's branch was changed after lazy-lock.json was written -- evidence the user wants
+    -- something other than what lazy last recorded, so the spec wins (same principle as
+    -- same_identity: an edited spec always beats a past decision).
+    return false, ("the spec is on branch %q but lazy-lock.json recorded %q"):format(b, imp.branch)
   end
   return true
 end
@@ -580,6 +682,47 @@ for name, p in pairs(raw.plugins or {}) do
       entry.resolvedRef = locked_rev(input_name) or vim.NIL
     end
 
+    -- --import-lazy-lock (#25): seed this plugin's resolvedRef from lazy-lock.json, but only when
+    -- there is truly no previous decision to override. This has to run before #23's gate just
+    -- below: a non-null resolvedRef closes that gate, which is exactly what lets a
+    -- `defaults.version` migration need no ls-remote at all (the whole point of seeding here
+    -- rather than after semver resolution runs).
+    --
+    -- The check is against the raw prev_plugins[name], deliberately not the `prev` local computed
+    -- above: `prev` is nil whenever force[name] is set (see its definition), which would make
+    -- `--update foo --import-lazy-lock ...` seed foo right back to lazy's old commit -- reversing
+    -- what --update just asked for. The CLI (lock-app.nix) rejects the combination outright, but
+    -- resolve.lua's own semantics still have to be right for anyone driving it by hand.
+    -- A `prev` entry with resolvedRef == null still blocks the seed: null is itself a decision
+    -- ("track this ref, nothing to pin"), and overwriting it with an old commit would silently
+    -- revert a plugin that is meant to keep moving.
+    --
+    -- Risk worth recording here (docs/architecture.md's `--import-lazy-lock` caveat points back at
+    -- this comment): seeding a git-type (non-GitHub) plugin whose spec also names a `tag` produces
+    -- a genflake URL with both `ref` and `rev` set (`?ref=refs/tags/<t>&rev=<sha>`), because
+    -- genflake's git-type branch fills in `ref` from `tag`/`branch` whenever one is not already
+    -- implied by the rev, and a seeded resolvedRef does not suppress that. Most git servers resolve
+    -- an unadvertised rev fine regardless of `ref`, but one that refuses to would fail at
+    -- `nix flake lock`, naming the input -- the same failure mode the README documents for a plain
+    -- branchless git URL.
+    if import_db and not (prev_plugins and prev_plugins[name] ~= nil) then
+      local imp = import_db[name]
+      if imp then
+        import_accounted[name] = true
+        local ok, why = seedable(entry, imp)
+        if ok then
+          entry.resolvedRef = imp.commit
+          import_seeded[name] = true
+          import_pinned[#import_pinned + 1] = { name = name, commit = imp.commit }
+        else
+          import_skipped[#import_skipped + 1] = { name = name, reason = why }
+        end
+      end
+    elseif import_db and import_db[name] then
+      import_accounted[name] = true
+      import_prev_blocked = import_prev_blocked + 1
+    end
+
     -- Gate for semver resolution (#23): every plugin with a version constraint still needing a
     -- decision is queued rather than resolved right here, so that ls-remote can be batched and
     -- parallelized across all of them once the whole spec has been walked (§3.2 of the plan).
@@ -829,6 +972,228 @@ table.sort(plugin_warnings, function(a, b)
 end)
 for _, w in ipairs(plugin_warnings) do
   warn(w.msg)
+end
+
+-- --import-lazy-lock's report (#25). Everything here is note() -- stderr only, never the
+-- warnings array: an import is a one-shot migration, and baking this run's circumstances into
+-- the committed plugins.json would only produce a diff that the next plain lock deletes again.
+-- Collected above rather than emitted inline, because both raw.plugins and import_db are walked
+-- with pairs(): sorted here so two identical runs print identical stderr.
+if import_db then
+  local raw_plugins = raw.plugins or {}
+  local disabled_set = {}
+  for _, dn in ipairs(raw.disabled or {}) do
+    disabled_set[dn] = true
+  end
+  local bad_names = {}
+  for _, b in ipairs(import_bad) do
+    bad_names[b.name] = true
+  end
+
+  -- lazy-lock side: every import_db entry the main merge loop above never saw at all. A name it
+  -- did see (a plain plugin, not dev/dir) was already sorted into import_pinned/import_skipped/
+  -- import_prev_blocked there, so this loop's matched-plugin branch below only double-checks that
+  -- against import_accounted rather than doing nothing.
+  local ignored_disabled, ignored_missing, local_skipped = {}, {}, {}
+  local lazy_self = false
+  -- Explicit else bucket (plan §3.6, review item 7): a name that matched a real, non-local config
+  -- plugin (`p ~= nil` and not `p.dev or p.dir`) but that import_accounted has no record of would
+  -- mean the main merge loop above fell through without sorting it into import_pinned,
+  -- import_skipped, or import_prev_blocked -- silently dropping it from the
+  -- `pinned + skipped + ignored == total` invariant. That cannot currently happen (the main loop's
+  -- own `if imp then ... elseif import_db[name] then` already covers every matched name), but this
+  -- bucket exists so a future change to either loop's matching logic drifting out of sync with the
+  -- other is reported and counted instead of silently disappearing.
+  local unaccounted = {}
+  local lock_names = {}
+  for n in pairs(import_db) do
+    lock_names[#lock_names + 1] = n
+  end
+  table.sort(lock_names)
+  local input_name_lookup = {}
+  for rn in pairs(raw_plugins) do
+    input_name_lookup[to_input_name(rn)] = rn
+  end
+  for _, n in ipairs(lock_names) do
+    local p = raw_plugins[n]
+    if p == nil then
+      if n == "lazy.nvim" then
+        -- nvimx pins lazy.nvim through its own synthetic flake input, never through a config
+        -- plugin entry (raw.plugins has no "lazy.nvim" key at all -- extract.lua never adds
+        -- one), so lazy-lock.json's own entry for itself is always unmatched. Called out with
+        -- its own message (classification 8) rather than folded into "not in the config": it is
+        -- not a config mistake, every lazy-lock.json has this entry.
+        lazy_self = true
+      elseif disabled_set[n] then
+        ignored_disabled[#ignored_disabled + 1] = n
+      else
+        ignored_missing[#ignored_missing + 1] = { name = n, hint = input_name_lookup[to_input_name(n)] }
+      end
+    elseif p.dev or p.dir then
+      local_skipped[#local_skipped + 1] = n
+    elseif not import_accounted[n] then
+      unaccounted[#unaccounted + 1] = n
+    end
+  end
+
+  -- config side: plugins with no lazy-lock.json entry at all (classification 5). A plugin whose
+  -- entry was invalid (classification 9) is deliberately excluded here (`not bad_names[rn]`): it
+  -- was already reported as broken, and saying "also not in lazy-lock.json" about the very same
+  -- plugin would be a second, contradictory statement about the one entry (§3.6 of the plan).
+  local not_in_lock = {}
+  for rn, p in pairs(raw_plugins) do
+    if not (p.dev or p.dir) and import_db[rn] == nil and not bad_names[rn] then
+      not_in_lock[#not_in_lock + 1] = rn
+    end
+  end
+  table.sort(not_in_lock)
+
+  if next(import_db) == nil and #import_bad == 0 then
+    note("import: lazy-lock.json has no entries; nothing to seed")
+  end
+
+  -- Classification 1.
+  table.sort(import_pinned, function(a, b)
+    return a.name < b.name
+  end)
+  for _, e in ipairs(import_pinned) do
+    note(("import: pinned %s to %s"):format(e.name, short_sha(e.commit)))
+  end
+
+  -- Classifications 2 and 3 share one message shape (seedable() already built the full reason),
+  -- so they share one sorted list too.
+  table.sort(import_skipped, function(a, b)
+    return a.name < b.name
+  end)
+  for _, e in ipairs(import_skipped) do
+    note(("import: skipped %s: %s"):format(e.name, e.reason))
+  end
+
+  -- Classification 3L.
+  table.sort(local_skipped)
+  for _, n in ipairs(local_skipped) do
+    note(("import: skipped %s: it is a local plugin (dev/dir), so there is nothing to pin"):format(n))
+  end
+
+  -- Classification 4: one aggregate line, not one per plugin -- a config with a healthy-sized
+  -- lock re-imported after every plugin already has a decision would otherwise print a line per
+  -- plugin on every single run.
+  if import_prev_blocked > 0 then
+    note(
+      ("import: skipped %d %s already decided by the existing lock"):format(
+        import_prev_blocked,
+        import_prev_blocked == 1 and "entry" or "entries"
+      )
+    )
+  end
+
+  -- Classification 5: always shown, even when lazy-lock.json is empty or has no entries at all --
+  -- every config plugin genuinely does resolve normally in that case, and that is worth stating
+  -- rather than leaving the reader to infer it from "nothing to seed" alone.
+  for _, n in ipairs(not_in_lock) do
+    note(("import: %s is not in lazy-lock.json; it will resolve normally"):format(n))
+  end
+
+  -- Classification 6.
+  table.sort(ignored_disabled)
+  for _, n in ipairs(ignored_disabled) do
+    note(("import: ignored %s (disabled in the config)"):format(n))
+  end
+
+  -- Classification 7.
+  table.sort(ignored_missing, function(a, b)
+    return a.name < b.name
+  end)
+  for _, e in ipairs(ignored_missing) do
+    if e.hint then
+      note(("import: ignored %s (not in the config; did you mean %q?)"):format(e.name, e.hint))
+    else
+      note(("import: ignored %s (not in the config)"):format(e.name))
+    end
+  end
+
+  -- Classification 8.
+  if lazy_self then
+    note("import: lazy.nvim itself is not imported (nvimx pins lazy.nvim through its own flake input)")
+  end
+
+  -- Classification 7-equivalent (plan §3.6, review item 7): see `unaccounted`'s own comment above
+  -- for why this branch should be unreachable. Worded and counted like classification 7 (ignored)
+  -- rather than given a whole new bucket, since from the user's point of view it is the same
+  -- "nvimx has nothing decided for this" outcome -- the only thing that would make this fire is a
+  -- bug in nvimx itself.
+  table.sort(unaccounted)
+  for _, n in ipairs(unaccounted) do
+    note(
+      ("import: ignored %s (matched a config plugin but was not accounted for by the import merge; "):format(n)
+        .. "this is a bug in nvimx, please report it)"
+    )
+  end
+
+  -- Classification 9.
+  table.sort(import_bad, function(a, b)
+    return a.name < b.name
+  end)
+  for _, b in ipairs(import_bad) do
+    note(("import: invalid entry %s in lazy-lock.json: %s"):format(b.name, b.reason))
+  end
+
+  -- Classification 10: plugins whose `version` constraint was never actually checked, because a
+  -- seed closed #23's gate before ls-remote ever ran for them. `versioned` is already sorted by
+  -- name (just above, for the pin+version warning). Grouped by (constraint, from_defaults) rather
+  -- than by constraint alone: two plugins can share the literal string "*" for different reasons
+  -- (one explicit, one via `defaults.version`), and that distinction is worth keeping visible.
+  -- `pin = true` plugins are excluded: they already got the "pinned; version constraint ... is
+  -- not validated (pin wins)" warning above, and this would only repeat it.
+  local by_constraint = {}
+  local constraint_order = {}
+  for _, item in ipairs(versioned) do
+    if import_seeded[item.name] and not is_true(item.entry.pin) then
+      local key = tostring(item.from_defaults) .. "\0" .. tostring(item.constraint)
+      if not by_constraint[key] then
+        by_constraint[key] = { constraint = item.constraint, from_defaults = item.from_defaults, names = {} }
+        constraint_order[#constraint_order + 1] = key
+      end
+      local names = by_constraint[key].names
+      names[#names + 1] = item.name
+    end
+  end
+  table.sort(constraint_order, function(a, b)
+    local ca, cb = by_constraint[a].constraint, by_constraint[b].constraint
+    if ca ~= cb then
+      return ca < cb
+    end
+    return a < b
+  end)
+  for _, key in ipairs(constraint_order) do
+    local group = by_constraint[key]
+    table.sort(group.names)
+    -- `<PREFIX>` follows the same distinction the pin+version warning above draws (resolve.lua's
+    -- own convention): explicit `version` gets "version constraint", `defaults.version` gets "the
+    -- config-wide version constraint". `<name>` in the advice clause is a literal placeholder, not
+    -- a stand-in for one of the plugin names -- those are listed afterwards instead.
+    local subject = group.from_defaults and "the config-wide version constraint %q" or "version constraint %q"
+    note(
+      (
+        "import: "
+        .. subject
+        .. " is not validated for %d plugin(s) pinned from lazy-lock.json "
+        .. "(run nvimx-lock --update <name> to resolve it again): %s"
+      ):format(tostring(group.constraint), #group.names, table.concat(group.names, ", "))
+    )
+  end
+
+  -- Summary: the invariant §3.6 of the plan wants provable is
+  -- `pinned + skipped + ignored == lazy-lock.json's total entry count`, so nothing is ever
+  -- silently dropped.
+  note(
+    ("import: %d pinned, %d skipped, %d ignored, %d not in lazy-lock.json"):format(
+      #import_pinned,
+      #import_skipped + #local_skipped + import_prev_blocked,
+      #ignored_disabled + #ignored_missing + (lazy_self and 1 or 0) + #import_bad + #unaccounted,
+      #not_in_lock
+    )
+  )
 end
 
 -- Fatal version-resolution problems (§3.4): reported together, sorted the same way
