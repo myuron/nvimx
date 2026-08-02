@@ -373,8 +373,8 @@
                 }) "a neovim package with no passthru.lua must be refused when rocks are asked for"
                 # ... and only then: the default (_: [ ]) discards its argument, so laziness has to
                 # keep the throw out of the way of everyone who never touches this option. The line
-                # is "did the function touch the set", not "was the list non-empty" -- a function
-                # that reaches in and returns [ ] still throws, which is the intended side of it.
+                # is drawn at forcing, not at mentioning -- see the comment in nix/lib/wrapper.nix
+                # for which shapes land on which side of it.
                 ++ lib.optional (
                   !(wraps { package = noLua; })
                 ) "a neovim package with no passthru.lua must still wrap when no rocks are asked for";
