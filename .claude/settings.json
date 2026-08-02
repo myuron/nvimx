@@ -2,5 +2,20 @@
   "autoMemoryEnabled": false,
   "permissions": {
     "defaultMode": "plan"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath // empty' | { read -r f || exit 0; case \"$f\" in *.nix|*.lua) ;; *) exit 0 ;; esac; out=$(cd \"${CLAUDE_PROJECT_DIR:-.}\" && nix fmt -- \"$f\" 2>&1) || { printf '%s\\n' \"$out\" >&2; exit 2; }; }",
+            "timeout": 120,
+            "statusMessage": "nix fmt"
+          }
+        ]
+      }
+    ]
   }
 }
