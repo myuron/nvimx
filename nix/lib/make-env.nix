@@ -111,7 +111,7 @@ let
   # path, and only computed when there is a lock to judge against.
   unknownDevPluginNames =
     if hasLock then
-      builtins.filter (n: !(pluginsDb.plugins ? ${n}) && !(localPlugins ? ${n})) devPlugins
+      builtins.filter (n: !(pluginsDb.plugins ? ${n}) && !(localPlugins ? ${n})) (lib.unique devPlugins)
     else
       [ ];
 
