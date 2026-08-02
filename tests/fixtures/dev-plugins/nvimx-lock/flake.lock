@@ -1,0 +1,44 @@
+{
+  "nodes": {
+    "lazy-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1765971162,
+        "narHash": "sha256-5A4kducPwKb5fKX4oSUFvo898P0dqfsqqLxFaXBsbQY=",
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "rev": "306a05526ada86a7b30af95c5cc81ffba93fef97",
+        "type": "github"
+      },
+      "original": {
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "lazy-nvim": "lazy-nvim",
+        "tokyonight-nvim": "tokyonight-nvim"
+      }
+    },
+    "tokyonight-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1774363414,
+        "narHash": "sha256-a9iRWue7DB7s/wNdxqqB51Jya5P9X6sDftqhdmKggU0=",
+        "owner": "folke",
+        "repo": "tokyonight.nvim",
+        "rev": "cdc07ac78467a233fd62c493de29a17e0cf2b2b6",
+        "type": "github"
+      },
+      "original": {
+        "owner": "folke",
+        "repo": "tokyonight.nvim",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

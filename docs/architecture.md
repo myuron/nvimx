@@ -64,7 +64,7 @@ flowchart TB
     farm --> boot
     boot --> wrapped
 
-    wrapped -- "deployed by home-manager switch" --> runtime["runtime: user lua unmodified<br/>require('lazy') → preload shim<br/>dev.path = farm makes every plugin is_local"]
+    wrapped -- "deployed by home-manager switch" --> runtime["runtime: user lua unmodified<br/>require('lazy') → preload shim<br/>dev.path fn makes every plugin is_local (farm, or a devPlugins working tree)"]
     extractor -.-> lockapp
     seed -. "used for extraction only on the first run" .-> lockapp
 ```
@@ -176,7 +176,7 @@ flowchart LR
         (neutralizes the git clone in the user's existing bootstrap snippet)
 ```
 
-At runtime the user's init.lua runs as-is, and `require("lazy")` goes through the preload shim so that `setup` receives the merged forced opts. Every plugin is treated as `is_local` via `dev.path = farm, patterns = {""}, fallback = false` → lazy's git/install pipeline is skipped entirely and everything is loaded from the store.
+At runtime the user's init.lua runs as-is, and `require("lazy")` goes through the preload shim so that `setup` receives the merged forced opts. Every plugin is treated as `is_local` via `dev.path` (a function of the plugin, returning `<farm>/<name>` for anything not under local development), `patterns = {""}`, `fallback = false` → lazy's git/install pipeline is skipped entirely and everything is loaded from the store, the one exception being a plugin you deliberately point at a working tree with `devPlugins` (or one the spec itself marked `dev`). The function has to return the *full* plugin directory, because lazy appends `/<name>` only to the string form (`lua/lazy/core/meta.lua:229-231`).
 
 ## Main components
 
@@ -199,7 +199,7 @@ At runtime the user's init.lua runs as-is, and `require("lazy")` goes through th
       "build": { "kind": "none" }           // "none" | "shell" | "excmd" | "function" | "rockspec" | "luafile" | "steps"
     }
   },
-  "localPlugins": { "myplugin": { "dir": "~/projects/myplugin" } },  // dir-specified. not locked
+  "localPlugins": { "myplugin": { "dir": "/home/you/projects/myplugin" } },  // dev/dir plugins: not locked. make-env reads the *names* and routes them to devPath; the recorded dir is ignored, because a spec-level dir short-circuits lazy before dev.path is consulted anyway
   "warnings": [ "..." ]
 }
 ```
@@ -364,7 +364,7 @@ Using the fetchTree result directly was rejected: helptags are not generated so 
 1. `vim.opt.rtp:prepend(farm .. "/lazy.nvim")`
 2. Register `package.preload["lazy"]`: on the first require it unregisters itself → requires the real module → monkeypatches `setup` (handling both `setup(spec, opts)` and `setup(opts)`) → merges the forced opts with `vim.tbl_deep_extend("force", ...)`
 3. Forced opts: `install.missing=false`, `checker.enabled=false`, `change_detection.enabled=false`, `pkg.enabled=false`, `rocks.enabled=false`, `readme.enabled=false`, `dev = { path = <function>, patterns = {""}, fallback = false }`
-4. **dev.path is a function**: names listed in `devPlugins` return `devPath` (e.g. `~/projects`), everything else returns the farm → this keeps the user's own local plugin development (dev=true) workflow intact
+4. **dev.path is a function**: `make-env.nix` bakes a name → directory table into `bootstrap.lua` (`devDirs`). Every name it holds — from `devPlugins`, or a key of the lock's `localPlugins` (the spec's own `dev = true` plugins) — maps to `<devPath>/<name>`; anything else falls back to `<farm>/<name>`. `devPath` is the single knob for the entries this table decides, and it replaces lazy's own `dev.path`, which the forced opts override anyway. `localPlugins[*].dir` is **not** read, because reading it could not change any resolved directory: a `dir` the user wrote in the spec short-circuits lazy before `dev.path` is consulted at all (`meta.lua:214-217`), so the only entries the table can decide are the bare `dev = true` ones. That also keeps the lock's recorded paths — absolute, and `$HOME`-bearing unless the user wrote an absolute `dir` themselves — from having any effect on another machine (the lock still records them; nothing reads them). The function must return the **full** plugin directory: lazy appends `/<name>` only to the string form (`lua/lazy/core/meta.lua:229-231`). `fallback = false` is kept, so a working tree that does not exist is *not* silently replaced by the store copy. A name in neither the lock nor `localPlugins` is reported as `unknownDevPluginNames` and warned about at activation time, like `unknownPluginNames`
 5. `xdg.dataFile."<app>/lazy/lazy.nvim"` symlinks to the farm so that the `fs_stat` in the user's standard bootstrap snippet succeeds and no git clone runs
 
 Consistency with the read-only store: a plugin whose `dir` is not under the lazy root becomes `is_local = true`, which makes lazy skip all git tasks (clone/fetch/checkout/status, etc.) and the whole install pipeline (guaranteed by lazy.nvim's implementation).
@@ -479,7 +479,7 @@ lua/nvimx/
   update-summary.lua         # --update's before/after summary (plugin, old ref, new ref)
   bootstrap.lua.in           # runtime bootstrap template (not `*.lua`, so stylua/luacheck skip it)
 templates/default/           # template for embedding into dotfiles
-tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / cargo-git-lock / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / semver / update / import-lazy-lock / golden/
+tests/fixtures/              # basic-config / build-plugins / build-steps-config / registry-plugins / cargo-git-lock / treesitter-config / unbuildable-config / local-plugin / empty-config / merge / merge-config / defaults-version-config / defaults-version-false-config / semver / update / import-lazy-lock / dev-plugins / golden/
 ```
 
 flake outputs:
@@ -488,7 +488,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, semver-select, resolve-merge, resolve-semver, resolve-update, update-summary, resolve-import-lazy-lock, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
+- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, semver-select, resolve-merge, resolve-semver, resolve-update, update-summary, resolve-import-lazy-lock, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, dev-plugins, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, hm-module-dev, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
   - planned, not yet implemented: `genflake-golden` (#29), `e2e-offline` (#30)
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
@@ -507,7 +507,7 @@ flake outputs:
 | build is a shell command (or step) needing the network | detected at evaluation time and thrown with a message naming the same three escape hatches |
 | luarocks (rocks) | **explicitly unsupported**. `rocks.enabled=false` is forced during extraction, so a `build = "rockspec"` (or a `rockspec` element inside a table build) is recorded as `{ kind: "rockspec" }` and never run; warned about at lock time like any other unrunnable build |
 | Machine-dependent spec (`enabled = fn`, `cond`) | the superset is locked. `if` branching on the spec list itself only captures the branch taken on the machine running lock (documented) |
-| Local plugin development (dev=true) | supported alongside via `devPlugins` / `devPath` + the dev.path function |
+| Local plugin development | `devPlugins` names them, `devPath` says where they live, and the dev.path function routes them; a spec-level `dev = true` is picked up automatically from `localPlugins` and follows `devPath` too, unless that spec entry also sets `dir` — then lazy short-circuits on the `dir` and `devPath` never applies to it. A plugin named in `devPlugins` stays in the lock and in the farm, so removing the name restores the pinned build with no re-lock; a spec-level `dev = true` plugin was never locked in the first place. A missing working tree is not fallen back on |
 | lazy writing state | stdpath(data/state/cache) is user-owned territory, so this is fine |
 | Slight mismatch in treesitter grammar revs | known limitation. A strict mode is planned |
 | lazy-lock.json entry with no matching plugin | reported (with a "did you mean" hint when the name only differs by input-name normalization) and skipped, never silently dropped |
@@ -522,7 +522,7 @@ Each phase ends with an artifact you can actually try out:
 4. **hm module + template**: `programs.nvimx.*`, degraded mode, `nvimx-lock`, E2E against real dotfiles
 5. **Full build-plugin support**: build-registry, shell builds, the treesitter merge drv, nixpkgsFallback, warnings at lock time
 6. **Version/update features**: `resolve.lua` (semver), pin-preserving merge, `--update [name]` (#24), `--import-lazy-lock` (#25)
-7. **Finishing touches**: devPlugins, extraLuaPackages, non-GitHub validation, `checks.e2e-offline`, README
+7. **Finishing touches**: devPlugins (#26), extraLuaPackages, non-GitHub validation, `checks.e2e-offline`, README
 
 ## How to verify
 

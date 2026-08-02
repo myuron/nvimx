@@ -13,6 +13,11 @@
   plugins ? { },
   # Likewise for programs.nvimx.treesitter
   treesitter ? { },
+  # Plugin names to load from a working tree under devPath instead of the Nix store. Flat
+  # scalars rather than a `dev = { ... }` attrset: unlike plugins / treesitter these are two
+  # independent top-level options, and they map 1:1 onto the module's own two options.
+  devPlugins ? [ ],
+  devPath ? "~/projects",
 }:
 let
   inherit (pkgs) lib;
@@ -79,6 +84,37 @@ let
     else
       [ ];
 
+  # localPlugins: the plugins the spec marked dev/dir, which resolve.lua deliberately keeps out
+  # of the lock (there is nothing to pin). They have no farm entry either, so without a dev dir
+  # they resolve to a store path that does not exist. Guarded by hasLock like every other
+  # pluginsDb read, and tolerant of a plugins.json written before the key existed.
+  localPlugins = if hasLock then pluginsDb.localPlugins or { } else { };
+
+  # Name -> working-tree directory, handed to bootstrap.lua. Only the *keys* of localPlugins are
+  # used; the recorded localPlugins[*].dir is deliberately NOT -- reading it could not change a
+  # single resolved directory. A `dir` the user wrote in the spec short-circuits lazy before
+  # dev.path is ever consulted (lua/lazy/core/meta.lua:214-217), so the only entries this map can
+  # actually decide are the bare `dev = true` ones, which is exactly what devPath is for. That
+  # also spares us having to care what the recorded value even is: `dev = true` alone records the
+  # path lazy derived from the user's own dev.path (defaulting to ~/projects) and `dir = "~/x"`
+  # records a norm'd one, both absolute and both carrying the $HOME of whoever ran the lock,
+  # while `dir = "/abs/x"` is kept verbatim. Every value here is therefore <devPath>/<name>, and
+  # nothing machine-specific out of plugins.json reaches bootstrap.lua. (Which is not the same as
+  # devPath deciding where every dev plugin loads from: for a spec entry that sets `dir`, lazy
+  # short-circuits on that dir and never reaches this map. The option descriptions say so.)
+  devDirs = lib.genAttrs (lib.unique (devPlugins ++ builtins.attrNames localPlugins)) (
+    n: "${devPath}/${n}"
+  );
+
+  # Same rationale as unknownPluginNames: a name matching nothing is a typo that would otherwise
+  # be a silent no-op. Reported rather than thrown so it cannot break the degraded (no lock)
+  # path, and only computed when there is a lock to judge against.
+  unknownDevPluginNames =
+    if hasLock then
+      builtins.filter (n: !(pluginsDb.plugins ? ${n}) && !(localPlugins ? ${n})) devPlugins
+    else
+      [ ];
+
   farm = mkFarm {
     entries = [
       {
@@ -92,7 +128,7 @@ let
     }) pluginDrvs;
   };
 
-  bootstrap = mkBootstrap { inherit farm; };
+  bootstrap = mkBootstrap { inherit farm devDirs; };
   wrapped = mkWrapper {
     inherit
       package
@@ -111,6 +147,8 @@ in
     pluginDrvs
     unknownPluginNames
     treesitterWithoutPlugin
+    devDirs
+    unknownDevPluginNames
     hasLock
     ;
 }

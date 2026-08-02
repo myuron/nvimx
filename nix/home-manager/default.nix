@@ -92,6 +92,45 @@ in
       description = "Packages prepended to the wrapper's PATH (ripgrep, lsp servers, etc.)";
     };
 
+    devPlugins = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "my-plugin.nvim" ];
+      description = ''
+        Plugin names to load from a working tree under devPath instead of the Nix store. Use
+        the name lazy derived for the plugin (the key in nvimx-lock/plugins.json).
+
+        These plugins stay in the lock and in the farm, so removing a name here restores the
+        pinned build with no re-lock. While a name is listed, that plugin is deliberately
+        outside nvimx's reproducibility guarantee: the lock no longer describes what you run.
+
+        Plugins your lazy spec itself marks `dev = true` are handled automatically and need
+        no entry here; they follow devPath just the same -- unless that same spec entry also
+        sets `dir`, in which case lazy uses the `dir` you wrote and devPath does not apply.
+      '';
+    };
+
+    devPath = lib.mkOption {
+      type = lib.types.str;
+      default = "~/projects";
+      example = "~/src";
+      description = ''
+        Where dev working trees live. A plugin nvimx develops locally -- named in devPlugins,
+        or marked `dev = true` by your own lazy spec -- resolves to <devPath>/<name>. A
+        leading `~` is expanded by lazy.nvim at runtime, not here.
+
+        The one exception is a spec entry that sets `dir` itself: lazy uses that path directly
+        and never consults devPath for it. Short of that, devPath is the only thing deciding
+        where a dev plugin is loaded from.
+
+        This replaces lazy.nvim's own `dev.path`, which nvimx overrides the same way it
+        overrides the rest of dev: set this rather than `dev.path` in your spec.
+
+        A str rather than a path on purpose: a path would copy the working tree into the
+        Nix store, which is an immutable snapshot -- exactly what this option exists to avoid.
+      '';
+    };
+
     plugins = {
       overrides = lib.mkOption {
         type = lib.types.attrsOf (lib.types.functionTo lib.types.package);
@@ -200,7 +239,8 @@ in
       defaultText = lib.literalExpression "nvimx lib.makeEnv { ... }";
       description = ''
         The result of makeEnv (farm / bootstrap / wrapped / pluginDrvs /
-        unknownPluginNames / treesitterWithoutPlugin / hasLock).
+        unknownPluginNames / treesitterWithoutPlugin / devDirs / unknownDevPluginNames /
+        hasLock).
         By default it is built automatically from the options above.
         This is an escape hatch for advanced users who want to supply it directly.
       '';
@@ -232,6 +272,13 @@ in
         so the grammars have nowhere to go and are ignored.
         Add nvim-treesitter to your lazy spec and re-run `nvimx-lock`, or set
         treesitter.grammars = null.
+      ''
+      ++ lib.optional ((cfg.env.unknownDevPluginNames or [ ]) != [ ]) ''
+        programs.nvimx: devPlugins names plugins that are in neither the lock nor its
+        localPlugins, so nvimx cannot confirm the name:
+        ${lib.concatMapStringsSep "\n" (n: "  - ${n}") (cfg.env.unknownDevPluginNames or [ ])}
+        Use the name lazy derived for the plugin (the key in nvimx-lock/plugins.json); if you
+        added the plugin to your spec without re-locking, re-run `nvimx-lock`.
       '';
 
     programs.nvimx.env = lib.mkDefault (
@@ -244,6 +291,8 @@ in
           viAlias
           plugins
           treesitter
+          devPlugins
+          devPath
           ;
       }
     );
