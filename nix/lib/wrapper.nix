@@ -24,7 +24,9 @@ let
       a neovim-nightly-overlay package); an already-wrapped pkgs.neovim has no passthru.lua.
     '');
   # Applied lazily: the default (_: [ ]) discards its argument, so a package with no passthru.lua
-  # never reaches the throw above unless rocks were actually asked for.
+  # never reaches the throw above. What forces it is the function *touching* the set, not the list
+  # coming back non-empty -- `ps: lib.optionals false [ ps.foo ]` throws too. That is the intended
+  # side of the line: reaching into the rock set at all is what needs a matching interpreter.
   luaPackages = extraLuaPackages lua.pkgs;
   luaEnv = lua.withPackages (_: luaPackages);
   # ";;" is Lua's "and the interpreter's compiled-in default path here". It cannot ride along in

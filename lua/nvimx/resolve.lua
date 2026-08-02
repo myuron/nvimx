@@ -527,8 +527,8 @@ local function has_rockspec(build)
     return build.kind == "rockspec"
   end
   -- Plain ipairs(build.steps), no `or {}`: the guard above already means kind == "steps",
-  -- which the classifier only ever produces with a steps list. unrunnable_steps (:501) is
-  -- written the same way for the same reason.
+  -- which the classifier only ever produces with a steps list. unrunnable_steps is written
+  -- the same way for the same reason.
   for _, s in ipairs(build.steps) do
     if s.kind == "rockspec" then
       return true
