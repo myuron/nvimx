@@ -105,7 +105,7 @@ flowchart LR
     D -- "4. default" --> H["cp + helptags<br/>(shell build runs buildPhase)"]
     E & F & G & H --> I["linkFarm<br/>nvimx-plugins"]
     I --> J["bootstrap.lua<br/>(farm path embedded)"]
-    J --> K["wrapProgram neovim<br/>--cmd luafile"]
+    J --> K["wrapProgram neovim<br/>--cmd luafile<br/>PATH / LUA_PATH / LUA_CPATH"]
     K --> M["deployed via home.packages"]
 ```
 
@@ -118,7 +118,7 @@ flowchart LR
    The plugin names derived by lazy's `Spec` are used verbatim as directory names in the symlink farm → the nix-side directory names and lazy's plugin names are guaranteed to match by construction (no hand-rolled reconciliation logic).
 3. **The lock pipeline is unified on `nvim -l` (Lua)**.
    Reusing the semver module bundled with lazy.nvim (`lazy.manage.semver`) makes the version resolution semantics identical to lazy's.
-4. **Runtime injection is limited to the wrapper's `--cmd luafile` + `package.preload["lazy"]`**.
+4. **Runtime injection is limited to the wrapper's `--cmd luafile` + `package.preload["lazy"]`, plus `LUA_PATH` / `LUA_CPATH` when `extraLuaPackages` asks for rocks**.
    The user's lua stays unmodified.
 
 ## Data flow
@@ -168,7 +168,8 @@ flowchart LR
 [3] Turn plugins into derivations: overrides > nixpkgsFallback > build-registry > default (cp + helptags)
 [4] linkFarm "nvimx-plugins" [ { name = <lazy-derived name>; path = drv; } ... ]
 [5] Generate bootstrap.lua (embedding the farm path and the forced opts)
-      → wrapProgram neovim (the user-selected package) with --cmd 'luafile <bootstrap.lua>'
+      → wrapProgram neovim (the user-selected package) with --cmd 'luafile <bootstrap.lua>',
+        extraPackages on PATH and extraLuaPackages' rock env on LUA_PATH / LUA_CPATH
 [6] hm deployment:
       home.packages = [ wrapped-nvim, nvimx-lock ]
       xdg.configFile."nvim" = configDir            (when manageConfig = true)
@@ -397,7 +398,7 @@ programs.nvimx = {
   devPath = "~/projects";
 
   extraPackages = [ ];             # prepended to the wrapper's PATH (ripgrep, lsp, etc.)
-  extraLuaPackages = ps: [ ];      # manual luarocks dependencies (escape hatch)
+  extraLuaPackages = ps: [ ];      # lua rocks on the wrapper's LUA_PATH / LUA_CPATH (luarocks itself stays off)
 
   lock = {
     installCommand = true;         # add nvimx-lock to home.packages
@@ -464,7 +465,7 @@ nix/
     build-network.nix        # detecting build commands that cannot run in the sandbox
     farm.nix                 # linkFarm construction
     bootstrap.nix            # bootstrap.lua generation
-    wrapper.nix              # wrapProgram for neovim
+    wrapper.nix              # wrapProgram for neovim (PATH / LUA_PATH / LUA_CPATH)
     treesitter.nix           # nvim-treesitter + grammar merge derivation
     lock-app.nix             # lock script (writeShellApplication)
   build-registry/            # name → build recipe (default.nix = the index + how to add an entry)
@@ -488,7 +489,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, semver-select, resolve-merge, resolve-semver, resolve-update, update-summary, resolve-import-lazy-lock, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, dev-plugins, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, hm-module-dev, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases}`
+- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, semver-select, resolve-merge, resolve-semver, resolve-update, update-summary, resolve-import-lazy-lock, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, dev-plugins, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, hm-module-dev, hm-module-lua-packages, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases, extra-lua-packages}`
   - planned, not yet implemented: `genflake-golden` (#29), `e2e-offline` (#30)
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
@@ -502,10 +503,10 @@ flake outputs:
 | lua files not tracked by git | they are not part of the flake source, so they are missed during extraction → the lock app detects working-tree differences and warns |
 | Non-GitHub / explicit git URL | normalized to a `git+https://` / `git+ssh://` input |
 | Plugin name collision | surfaces during lazy's Spec normalization (same behavior as lazy). inputName collisions are an error at lock time |
-| build is a Lua function / excmd / rockspec / a `*.lua` file, or `false` | cannot be run automatically (`false` is lazy's own "do not build" and warns about nothing). Warns at lock time and points to registry / overrides / nixpkgsFallback |
+| build is a Lua function / excmd / rockspec / a `*.lua` file, or `false` | cannot be run automatically (`false` is lazy's own "do not build" and warns about nothing). Warns at lock time and points to registry / overrides / nixpkgsFallback -- and, for a `rockspec`, to `extraLuaPackages` (see the luarocks row below) |
 | build is a table of steps | each element is classified individually and recorded in order (`build.kind == "steps"`); `shell` elements run in declared order, each in its own subshell, and the rest are skipped. A warning fires only if at least one element cannot run, and names which steps those are |
 | build is a shell command (or step) needing the network | detected at evaluation time and thrown with a message naming the same three escape hatches |
-| luarocks (rocks) | **explicitly unsupported**. `rocks.enabled=false` is forced during extraction, so a `build = "rockspec"` (or a `rockspec` element inside a table build) is recorded as `{ kind: "rockspec" }` and never run; warned about at lock time like any other unrunnable build |
+| luarocks (rocks) | **explicitly unsupported**. `rocks.enabled=false` is forced during extraction, so a `build = "rockspec"` (or a `rockspec` element inside a table build) is recorded as `{ kind: "rockspec" }` and never run; warned about at lock time like any other unrunnable build. `programs.nvimx.extraLuaPackages` is the supported way out: it takes the rock from nixpkgs' Lua package set for the chosen neovim and puts it on the wrapper's LUA_PATH / LUA_CPATH, so the dependency the rockspec build was going to install is simply already there |
 | Machine-dependent spec (`enabled = fn`, `cond`) | the superset is locked. `if` branching on the spec list itself only captures the branch taken on the machine running lock (documented) |
 | Local plugin development | `devPlugins` names them, `devPath` says where they live, and the dev.path function routes them; a spec-level `dev = true` is picked up automatically from `localPlugins` and follows `devPath` too, unless that spec entry also sets `dir` — then lazy short-circuits on the `dir` and `devPath` never applies to it. A plugin named in `devPlugins` stays in the lock and in the farm, so removing the name restores the pinned build with no re-lock; a spec-level `dev = true` plugin was never locked in the first place. A missing working tree is not fallen back on |
 | lazy writing state | stdpath(data/state/cache) is user-owned territory, so this is fine |
@@ -522,7 +523,7 @@ Each phase ends with an artifact you can actually try out:
 4. **hm module + template**: `programs.nvimx.*`, degraded mode, `nvimx-lock`, E2E against real dotfiles
 5. **Full build-plugin support**: build-registry, shell builds, the treesitter merge drv, nixpkgsFallback, warnings at lock time
 6. **Version/update features**: `resolve.lua` (semver), pin-preserving merge, `--update [name]` (#24), `--import-lazy-lock` (#25)
-7. **Finishing touches**: devPlugins (#26), extraLuaPackages, non-GitHub validation, `checks.e2e-offline`, README
+7. **Finishing touches**: devPlugins (#26), extraLuaPackages (#27), non-GitHub validation, `checks.e2e-offline`, README
 
 ## How to verify
 

@@ -193,6 +193,7 @@ All options live under `programs.nvimx`.
 | `vimAlias` | `bool` | `false` | Add a symlink so that the `vim` command launches the wrapped Neovim. |
 | `viAlias` | `bool` | `false` | Add a symlink so that the `vi` command launches the wrapped Neovim. |
 | `extraPackages` | `listOf package` | `[ ]` | Packages prepended to the wrapper's `PATH` (ripgrep, language servers, etc.). |
+| `extraLuaPackages` | `functionTo (listOf package)` | `ps: [ ]` | Lua rocks to put on the wrapper's `LUA_PATH` / `LUA_CPATH`, as a function over the Lua package set of the Neovim you chose. luarocks itself stays disabled. See [Lua rocks](#lua-rocks). |
 | `devPlugins` | `listOf str` | `[ ]` | Plugin names to load from a working tree under `devPath` instead of the Nix store. See [Local plugin development](#local-plugin-development). |
 | `devPath` | `str` | `"~/projects"` | Where dev working trees live. A locally developed plugin — named in `devPlugins`, or marked `dev = true` by your own spec — resolves to `<devPath>/<name>`, unless that spec entry also sets `dir`, which lazy uses directly instead. Replaces lazy.nvim's own `dev.path`. A `str`, not a `path`: a path would copy the tree into the store. |
 | `plugins.overrides` | `attrsOf (functionTo package)` | `{ }` | Per-plugin derivation overrides, keyed by the plugin name lazy derived. See [Escape hatches](#escape-hatches). |
@@ -281,15 +282,17 @@ steps, in declared order, each in its own subshell — so a mix of runnable and 
 still gets as much done as it can. Each step starts from the plugin root with nothing carried over
 from the one before, the same way lazy runs them, so `{ "cd deps", "make" }` is not the same as
 `cd deps && make`. A spec whose `build` is an ex command (`build = ":TSUpdate"`), a Lua callback, a
-luarocks build (`build = "rockspec"`), or a `*.lua` file has nothing nvimx can execute directly
-(and neither do the non-shell elements of a list build), so that part is skipped and the plugin is
-installed with helptags only, plus whatever shell steps did run — and `nvimx-lock` says so, listing
-every such plugin at the end of its output, along with which of its steps could not run,
-and pointing at the hatches above (at `treesitter.grammars` for `nvim-treesitter`). The same list is
-recorded in `plugins.json` under `warnings`. Locking still succeeds; this is a warning, not an
-error. It is emitted by the Lua resolver, which runs before any Nix evaluation and therefore cannot
-see your config — so a plugin you have already handled with an override keeps being listed. A build
-of `false`, or a list with nothing unrunnable in it, says nothing at all.
+luarocks build (`build = "rockspec"` — see [Lua rocks](#lua-rocks) for how to supply what it was
+going to install), or a `*.lua` file has nothing nvimx can execute directly (and neither do the
+non-shell elements of a list build), so that part is skipped and the plugin is installed with
+helptags only, plus whatever shell steps did run — and `nvimx-lock` says so, listing every such
+plugin at the end of its output, along with which of its steps could not run, and pointing at the
+hatches above (at `treesitter.grammars` for `nvim-treesitter`, at [`extraLuaPackages`](#lua-rocks)
+for a `rockspec` build). The same list is recorded in `plugins.json` under `warnings`. Locking
+still succeeds; this is a warning, not an error. It is emitted by the Lua resolver, which runs
+before any Nix evaluation and therefore cannot see your config — so a plugin you have already
+handled with an override keeps being listed. A build of `false`, or a list with nothing unrunnable
+in it, says nothing at all.
 
 ### The build registry
 
@@ -393,6 +396,36 @@ Three things are deliberate:
   loads a dev plugin from. (The lock does still *record* the directory lazy resolved on the
   machine that ran it; nvimx simply never reads it.) Point `devPath` wherever you keep your
   projects.
+
+### Lua rocks
+
+lazy.nvim can install luarocks dependencies for a plugin. nvimx switches that off — `rocks.enabled`
+is forced to `false`, so nothing is ever fetched or built at runtime — and lets you take the rock
+from Nix instead:
+
+```nix
+programs.nvimx.extraLuaPackages = ps: [ ps.inspect ];
+```
+
+The function receives the Lua package set of the Neovim *you* chose — `package`'s own
+`passthru.lua.pkgs`, which is `luajitPackages` for a stock nixpkgs Neovim — so the rocks always
+match the interpreter that will load them, C rocks included. It is the same shape as
+home-manager's `programs.neovim.extraLuaPackages`, and it composes: two modules can each add
+rocks and the lists are concatenated. A rock nixpkgs does not package is reachable too, since the
+argument is only a package set: `_: [ myOwnRock ]` works just as well.
+
+What it touches is `LUA_PATH` and `LUA_CPATH`, and nothing else. `extraPackages` stays the way to
+put an *executable* on `PATH`, and no Lua interpreter from this option is added to it. The
+interpreter's own default search path survives, and so does a `LUA_PATH` you already export — the
+rocks are prefixed to it, not substituted for it. (If that exported `LUA_PATH` has no `;;` in it,
+the defaults stay out, exactly as they would for any other Lua program you run.) They are
+exported, so anything Neovim launches — a `:terminal` shell, a language server, a `:!` command —
+inherits them, and a Lua program run from there will find these rocks first. Ask for no rocks and
+the wrapper is exactly what it was before, environment variables included.
+
+This does not resurrect `build = "rockspec"`: that build kind still cannot run, and `nvimx-lock`
+still warns about it — pointing you here. `extraLuaPackages` is how you satisfy the dependency
+such a build was going to install.
 
 ## How it works
 
