@@ -2552,11 +2552,15 @@
               # Evaluation half. A lock with a non-empty localPlugins -- one entry with no `dir`
               # and one whose recorded `dir` points somewhere devPath would never produce -- plus
               # one devPlugins name that matches a locked plugin and one that matches nothing.
+              # typo.nvim is listed twice on purpose: both devDirs and unknownDevPluginNames must
+              # dedupe, the way unknownPluginNames does, or the warning repeats a name per
+              # occurrence -- which is what two modules each naming the same plugin produces.
               locked = nvimxLib.makeEnv {
                 package = pkgs.neovim-unwrapped;
                 lockDir = ./tests/fixtures/dev-plugins/nvimx-lock;
                 devPlugins = [
                   "tokyonight.nvim"
+                  "typo.nvim"
                   "typo.nvim"
                 ];
                 devPath = "~/proj";
