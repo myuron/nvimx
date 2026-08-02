@@ -92,6 +92,32 @@ in
       description = "Packages prepended to the wrapper's PATH (ripgrep, lsp servers, etc.)";
     };
 
+    extraLuaPackages = lib.mkOption {
+      type = lib.types.functionTo (lib.types.listOf lib.types.package);
+      default = _: [ ];
+      defaultText = lib.literalExpression "ps: [ ]";
+      example = lib.literalExpression "ps: [ ps.inspect ]";
+      description = ''
+        Lua rocks to put on the wrapper's LUA_PATH / LUA_CPATH, as a function over a Lua
+        package set -- the same shape as home-manager's programs.neovim.extraLuaPackages.
+
+        The set handed to the function is the one belonging to the neovim in `package`
+        (its passthru.lua.pkgs, i.e. luajitPackages for a stock nixpkgs neovim), so the
+        rocks always match the interpreter that will load them. A package with no
+        passthru.lua -- an already-wrapped pkgs.neovim, say -- is rejected rather than
+        matched against some other interpreter's rocks.
+
+        This is the supported way to satisfy a luarocks dependency: nvimx forces lazy.nvim's
+        rocks.enabled = false, so a `build = "rockspec"` is never run. Naming the rock here
+        does not make that build run either; it puts the dependency in place instead.
+
+        Only LUA_PATH / LUA_CPATH are touched. Use extraPackages for anything that has to
+        land on PATH -- no Lua interpreter from this option is added to it. They are
+        exported, so anything neovim launches -- a :terminal shell, a language server, a
+        :! command -- inherits them.
+      '';
+    };
+
     devPlugins = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -287,6 +313,7 @@ in
           package
           lockDir
           extraPackages
+          extraLuaPackages
           vimAlias
           viAlias
           plugins

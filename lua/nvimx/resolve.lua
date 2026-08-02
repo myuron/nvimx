@@ -517,9 +517,51 @@ local function step_clause(s)
   return ("step %d is %s"):format(s.index, what)
 end
 
+-- True when the build nvimx could not run is (or contains) a luarocks build. Both shapes have
+-- the same cure, so the "steps" form has to be inspected as well: { "make", "rockspec" } is
+-- exactly the table shape #36 taught this file to classify.
+---@param build table the classified build
+---@return boolean
+local function has_rockspec(build)
+  if build.kind ~= "steps" then
+    return build.kind == "rockspec"
+  end
+  -- Plain ipairs(build.steps), no `or {}`: the guard above already means kind == "steps",
+  -- which the classifier only ever produces with a steps list. unrunnable_steps (:501) is
+  -- written the same way for the same reason.
+  for _, s in ipairs(build.steps) do
+    if s.kind == "rockspec" then
+      return true
+    end
+  end
+  return false
+end
+
+-- The trailing clause naming the specific way out, when nvimx has one for the shape it could
+-- not run. The three generic hatches (overrides / nixpkgsFallback / nix/build-registry) are
+-- printed once at the end of the run and stay the fallback; these are the cases where none of
+-- the three is what the user actually wants. At most one clause is appended -- for
+-- nvim-treesitter the grammars pointer is the more useful of the two even if its spec somehow
+-- declared a rockspec build.
+---@param name string
+---@param build table
+---@return string "" when there is no specific pointer
+local function build_pointer(name, build)
+  if name == "nvim-treesitter" then
+    return ". nvimx merges parsers from nixpkgs instead -- set programs.nvimx.treesitter.grammars"
+  end
+  if has_rockspec(build) then
+    -- #27. nvimx forces lazy's rocks.enabled = false, so this build never runs; the rock has
+    -- to come from Nix instead.
+    return ". nvimx never runs luarocks -- add the rock with programs.nvimx.extraLuaPackages instead"
+  end
+  return ""
+end
+
 -- The full message for a plugin whose build cannot run entirely (scalar excmd/function/rockspec/
--- luafile) or only partially (some steps of a "steps" build). Scalar wording is kept byte-for-byte
--- identical to before this file grew `steps` support (checks.resolve-build-warnings pins it).
+-- luafile) or only partially (some steps of a "steps" build). The core sentence is kept
+-- byte-for-byte identical to before this file grew `steps` support; build_pointer may append one
+-- trailing clause on top of it. checks.resolve-build-warnings pins both.
 ---@param name string
 ---@param build table the classified build
 ---@return string
@@ -531,10 +573,7 @@ local function build_warning(name, build)
     -- a lie here; `function` keeps it because that is what the spec did have.
     local cmd = build.cmd or (build.kind == "rockspec" and "rockspec") or ("<" .. build.kind .. ">")
     local msg = ("build is %s (%q) and cannot be run at build time"):format(what, cmd)
-    if name == "nvim-treesitter" then
-      msg = msg .. ". nvimx merges parsers from nixpkgs instead -- set programs.nvimx.treesitter.grammars"
-    end
-    return msg
+    return msg .. build_pointer(name, build)
   end
 
   local unrunnable = unrunnable_steps(build)
@@ -558,10 +597,7 @@ local function build_warning(name, build)
     table.concat(clauses, "; "),
     remaining
   )
-  if name == "nvim-treesitter" then
-    msg = msg .. ". nvimx merges parsers from nixpkgs instead -- set programs.nvimx.treesitter.grammars"
-  end
-  return msg
+  return msg .. build_pointer(name, build)
 end
 
 -- #24: `--update [name...]`'s name validation and force-set construction. Every requested name

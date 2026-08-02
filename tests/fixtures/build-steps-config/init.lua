@@ -53,6 +53,13 @@ require("lazy").setup({
     build = "rockspec",
   },
   {
+    -- #27: the same cure as the scalar case above, reached through the table form. `has_rockspec`
+    -- has to look inside the steps list, not just at the scalar kind -- this is the entry that
+    -- makes that branch a tested one rather than a believed one.
+    "example/rockspec-steps.nvim",
+    build = { "make", "rockspec" },
+  },
+  {
     -- a build ending in .lua is loadfile()'d by lazy from inside a live neovim with the plugin
     -- already on the runtimepath (task/plugin.lua:73-79), which the sandbox cannot reproduce;
     -- classified as its own kind rather than executed as a shell command named "install.lua".

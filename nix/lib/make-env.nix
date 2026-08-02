@@ -7,6 +7,10 @@
   package,
   lockDir,
   extraPackages ? [ ],
+  # A function over the Lua package set of `package` (ps: [ ps.foo ]), the same shape as
+  # home-manager's programs.neovim.extraLuaPackages. Threaded straight to the wrapper, which is
+  # what knows which Lua the chosen neovim links against.
+  extraLuaPackages ? (_: [ ]),
   vimAlias ? false,
   viAlias ? false,
   # Same shape as the module's programs.nvimx.plugins, so it can be passed straight through
@@ -134,6 +138,7 @@ let
       package
       bootstrap
       extraPackages
+      extraLuaPackages
       vimAlias
       viAlias
       ;
