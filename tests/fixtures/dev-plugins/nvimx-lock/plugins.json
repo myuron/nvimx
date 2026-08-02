@@ -1,0 +1,63 @@
+{
+  "_comment": [
+    "Hand-written plugins.json for checks.dev-plugins: basic-config's lock plus a non-empty",
+    "localPlugins, which no other fixture has.",
+    "make-env reads only the *keys* of localPlugins; every one of them routes to <devPath>/<name>,",
+    "and the value is never looked at. The two entries pin that from both sides:",
+    "  dirred.nvim has a `dir`, deliberately pointing somewhere devPath would never produce, so the",
+    "  check fails loudly if anyone starts reading it. It is ignored not because it is machine-",
+    "  specific -- a dir the user wrote absolute is recorded verbatim -- but because a spec-level",
+    "  dir short-circuits lazy before dev.path is ever consulted (lua/lazy/core/meta.lua:214-217),",
+    "  so reading it could not change any resolved directory. See the plan's SS3.3 and SS7 R1.",
+    "  bare.nvim has no `dir` at all, so make-env must not need one. Note this shape is hand-made:",
+    "  no current lock can emit it. resolve.lua builds localPlugins entries as { dir = p.dir } and",
+    "  json.lua would render the resulting empty table as {}, but p.dir is never nil there --",
+    "  extract.lua dumps Plugin.Spec.new's meta-resolved plugins, and lua/lazy/core/meta.lua",
+    "  :229-238 always fills a dev plugin's dir in (measured: a bare `dev = true` came out",
+    "  {\"dev\":true,\"dir\":\"<HOME>/projects/...\"}).",
+    "  It stands for a plugins.json written by an older or future resolve.lua that omits the key,",
+    "  and it is what makes `v.dir` reintroduced without an `or` fallback fail here rather than in",
+    "  a user's config.",
+    "What a real lock *does* produce is a dir-bearing entry like dirred.nvim -- either the path lazy",
+    "derived from dev.path, or the one the spec wrote (verbatim if absolute, norm'd if it began",
+    "with ~). Only this fixture's literal `~` is unrealistic; it is kept because it contrasts so",
+    "visibly with devPath. A plugin that sets `dir` without `dev` produces no entry at all (SS7 R2)."
+  ],
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": true
+  },
+  "localPlugins": {
+    "bare.nvim": {},
+    "dirred.nvim": {
+      "dir": "~/elsewhere/dirred.nvim"
+    }
+  },
+  "plugins": {
+    "tokyonight.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "tokyonight-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "folke",
+        "repo": "tokyonight.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": []
+}

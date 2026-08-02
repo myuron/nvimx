@@ -2,6 +2,9 @@
 -- The user's lua stays unmodified. require("lazy") is intercepted via preload and
 -- replaced with a setup that merges in the forced opts.
 local farm = "@farm@"
+-- Plugin name -> working-tree directory, for plugins under local development.
+-- Empty unless devPlugins / devPath (or a dev/dir entry in the spec) put something in it.
+local dev_dirs = @devDirs@
 
 vim.opt.rtp:prepend(farm .. "/lazy.nvim")
 
@@ -19,10 +22,18 @@ package.preload["lazy"] = function()
     rocks = { enabled = false, hererocks = false },
     readme = { enabled = false },
     -- Treat every plugin as is_local under the farm so that lazy's git/install
-    -- pipeline is skipped entirely (we only read from the store)
+    -- pipeline is skipped entirely (we only read from the store). Plugins named in
+    -- devPlugins -- and the spec's own dev/dir plugins, which have no farm entry at
+    -- all -- resolve to their working tree instead, deliberately outside the
+    -- reproducibility guarantee.
     dev = {
-      -- TODO (Phase 7): make this a function that accounts for devPlugins / devPath
-      path = farm,
+      -- A function, not a string: lazy appends "/<name>" only to the string form
+      -- (lua/lazy/core/meta.lua:229-231), so the function has to return the full plugin
+      -- directory itself. With dev_dirs empty this is exactly the old `path = farm`.
+      -- The result goes through Util.norm, which is what expands a leading "~".
+      path = function(plugin)
+        return dev_dirs[plugin.name] or (farm .. "/" .. plugin.name)
+      end,
       patterns = { "" },
       fallback = false,
     },
