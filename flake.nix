@@ -2926,6 +2926,15 @@
               agentLib.mkLocalInstallScript {
                 inherit pkgs bundle;
                 targets = localTargets;
+                # copy-tree rsyncs the bundle over .claude/skills with --delete, so anything
+                # not in the bundle is removed. nvimx-change is hand-written and lives in the
+                # same directory, so it has to be excluded or every install would wipe it.
+                # Listing "/.system" too because passing excludePatterns replaces the default
+                # rather than extending it (see agent-skills' defaultExcludePatterns).
+                excludePatterns = [
+                  "/.system"
+                  "/nvimx-change"
+                ];
               }
             }/bin/skills-install-local";
           };
