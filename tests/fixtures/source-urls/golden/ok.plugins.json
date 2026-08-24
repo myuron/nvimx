@@ -1,0 +1,360 @@
+{
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": true
+  },
+  "localPlugins": {},
+  "plugins": {
+    "file.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "file-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-nonexistent/file.nvim"
+      },
+      "tag": null,
+      "version": null
+    },
+    "ghe.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "ghe-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "https://github.example.com/o/ghe.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "ghtag.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "ghtag-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "ghtag.nvim",
+        "type": "github"
+      },
+      "tag": "v1.0.0",
+      "version": null
+    },
+    "gitproto.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "gitproto-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "git://git.example.com/o/gitproto.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "http.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "http-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "http://git.example.com/o/http.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "httpgh.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "httpgh-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "http://github.com/o/httpgh.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "nested.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "nested-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "https://gitlab.com/g/sub/nested.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "nodotgit.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "nodotgit-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "nodotgit.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "scp.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "scp-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "ssh://git@git.example.com/o/scp.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "scpbranch.nvim": {
+      "branch": "trunk",
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "scpbranch-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "ssh://git@git.example.com/o/scpbranch.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "scpcommit.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": "cccccccccccccccccccccccccccccccccccccccc",
+      "dependencies": [],
+      "inputName": "scpcommit-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "ssh://git@git.example.com/o/scpcommit.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "scpgh.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "scpgh-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "ssh://git@github.com/o/scpgh.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "scpuser.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "scpuser-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "ssh://forgejo@git.example.com/o/scpuser.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "short.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "short-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "short.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "single.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "single-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "https://git.example.com/single.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "ssh.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "ssh-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "ssh://git@git.example.com/o/ssh.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "sshport.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "sshport-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "ssh://git@git.example.com:2222/o/sshport.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "tildeuser.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "tildeuser-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "https://git.sr.ht/~user/tildeuser.nvim"
+      },
+      "tag": null,
+      "version": null
+    },
+    "trailing.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "trailing-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "trailing.nvim/",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "upperhost.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "upperhost-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "https://GitHub.com/o/upperhost.nvim"
+      },
+      "tag": null,
+      "version": null
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": []
+}

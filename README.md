@@ -178,6 +178,19 @@ A few things worth knowing:
   `git+<url>?rev=<sha>` with no ref. Most servers serve that fine, but one that refuses to serve an
   unadvertised object will fail at `nix flake lock`, naming the input. Adding `branch = "..."` to
   that plugin's spec fixes it.
+- For a plugin on the scp-style URL shorthand (`git@host:owner/repo.git`), the imported commit is
+  lost the first time it locks under #28's source URL validation: that URL is normalized to
+  `ssh://git@host/owner/repo.git`, which changes the plugin's spec identity and drops whatever
+  `resolvedRef` it carried, imported commit included. It is not re-derived on the next lock either,
+  since re-deriving it is not what a plain lock does. Simply re-running the import does not bring it
+  back: an existing entry in `plugins.json`, even with `resolvedRef` already null, blocks the reseed.
+  To recover it, delete that plugin's entry from `plugins.json` first, then run `--import-lazy-lock`
+  again.
+- A git-type source URL that already carries `?ref=` / `?rev=` -- and does not also set `branch` /
+  `tag` / `commit`, the only combination that ever locked -- now fails outright under #28's source
+  URL validation, since a source URL may no longer carry a query string at all. Move it into the
+  spec fields instead: `?ref=<x>` becomes `branch = "<x>"` or `tag = "<x>"`, `?rev=<sha>` becomes
+  `commit = "<sha>"`.
 
 ## Options
 

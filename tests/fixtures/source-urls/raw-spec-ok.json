@@ -1,0 +1,104 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json (the shape extract.lua dumps), used by checks.resolve-sources.",
+    "Hand-written rather than extracted so this fixture holds exactly the URL forms the accept",
+    "matrix means to cover, independent of how a given lazy.nvim happens to normalize a spec",
+    "(the same reason tests/fixtures/merge/raw-spec-base.json gives).",
+    "No plugin here has a `version`: constraint resolution needs a real (or locally faked) git",
+    "remote, and this fixture is meant to stay fully offline -- that path is",
+    "checks.resolve-semver's job instead.",
+    "This table is the accept half of docs/plans/28-validate-plugin-sources.md's URL matrix",
+    "(§3.2), and pairs with docs/architecture.md's 'lazy spec -> flake input URL mapping' table.",
+    "trailing.nvim / httpgh.nvim / upperhost.nvim exist specifically to pin the plan's §3.4",
+    "invariant: none of the three appears in any other fixture, so nothing else in the tree would",
+    "catch a regression that widened github.com classification to also match http:// or a",
+    "case-different host."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "short.nvim": {
+      "name": "short.nvim",
+      "url": "https://github.com/o/short.nvim.git"
+    },
+    "nodotgit.nvim": {
+      "name": "nodotgit.nvim",
+      "url": "https://github.com/o/nodotgit.nvim"
+    },
+    "trailing.nvim": {
+      "name": "trailing.nvim",
+      "url": "https://github.com/o/trailing.nvim/"
+    },
+    "httpgh.nvim": {
+      "name": "httpgh.nvim",
+      "url": "http://github.com/o/httpgh.nvim.git"
+    },
+    "upperhost.nvim": {
+      "name": "upperhost.nvim",
+      "url": "https://GitHub.com/o/upperhost.nvim"
+    },
+    "ghtag.nvim": {
+      "name": "ghtag.nvim",
+      "url": "https://github.com/o/ghtag.nvim.git",
+      "tag": "v1.0.0"
+    },
+    "ghe.nvim": {
+      "name": "ghe.nvim",
+      "url": "https://github.example.com/o/ghe.nvim.git"
+    },
+    "nested.nvim": {
+      "name": "nested.nvim",
+      "url": "https://gitlab.com/g/sub/nested.nvim.git"
+    },
+    "tildeuser.nvim": {
+      "name": "tildeuser.nvim",
+      "url": "https://git.sr.ht/~user/tildeuser.nvim"
+    },
+    "single.nvim": {
+      "name": "single.nvim",
+      "url": "https://git.example.com/single.nvim.git"
+    },
+    "http.nvim": {
+      "name": "http.nvim",
+      "url": "http://git.example.com/o/http.nvim.git"
+    },
+    "scp.nvim": {
+      "name": "scp.nvim",
+      "url": "git@git.example.com:o/scp.nvim.git"
+    },
+    "scpgh.nvim": {
+      "name": "scpgh.nvim",
+      "url": "git@github.com:o/scpgh.nvim.git"
+    },
+    "scpuser.nvim": {
+      "name": "scpuser.nvim",
+      "url": "forgejo@git.example.com:o/scpuser.nvim.git"
+    },
+    "scpbranch.nvim": {
+      "name": "scpbranch.nvim",
+      "url": "git@git.example.com:o/scpbranch.nvim.git",
+      "branch": "trunk"
+    },
+    "scpcommit.nvim": {
+      "name": "scpcommit.nvim",
+      "url": "git@git.example.com:o/scpcommit.nvim.git",
+      "commit": "cccccccccccccccccccccccccccccccccccccccc"
+    },
+    "ssh.nvim": {
+      "name": "ssh.nvim",
+      "url": "ssh://git@git.example.com/o/ssh.nvim.git"
+    },
+    "sshport.nvim": {
+      "name": "sshport.nvim",
+      "url": "ssh://git@git.example.com:2222/o/sshport.nvim.git"
+    },
+    "gitproto.nvim": {
+      "name": "gitproto.nvim",
+      "url": "git://git.example.com/o/gitproto.nvim.git"
+    },
+    "file.nvim": {
+      "name": "file.nvim",
+      "url": "file:///nvimx-nonexistent/file.nvim"
+    }
+  }
+}

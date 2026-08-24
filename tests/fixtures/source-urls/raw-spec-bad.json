@@ -1,0 +1,96 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json, used by checks.resolve-sources. One plugin per reject symbol in",
+    "docs/plans/28-validate-plugin-sources.md §3.3 (A-M, plus J's sub-case J'), 19 total -- D, E, I",
+    "and K each have a second plugin covering a second way to hit the same symbol.",
+    "The exact wording of each rejection is pinned in tests/source-parse-test.lua, not here --",
+    "this fixture and its check only assert the *shape* of the failure output (one line per",
+    "plugin, sorted by name, plugin name and URL both present) so a reworded message stays a",
+    "one-file change. See that file's header and checks.resolve-sources' comment in flake.nix.",
+    "nourl.nvim and emptyurl.nvim (A/B) are the two deliberate exceptions with no URL to quote.",
+    "ftp.nvim also carries a version constraint: its URL is rejected by parse_source, so it must",
+    "not be enqueued for git ls-remote (no --lazy-provided host here can reach the network at all,",
+    "so a regression would surface as a second, contradictory error line for ftp.nvim instead of",
+    "the one this fixture's line-count assertion expects)."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "nourl.nvim": {
+      "name": "nourl.nvim"
+    },
+    "emptyurl.nvim": {
+      "name": "emptyurl.nvim",
+      "url": ""
+    },
+    "space.nvim": {
+      "name": "space.nvim",
+      "url": "https://git.example.com/o/space nvim.git"
+    },
+    "query.nvim": {
+      "name": "query.nvim",
+      "url": "https://git.example.com/o/query.nvim.git?ref=main"
+    },
+    "frag.nvim": {
+      "name": "frag.nvim",
+      "url": "https://git.example.com/o/frag.nvim.git#main"
+    },
+    "barepath.nvim": {
+      "name": "barepath.nvim",
+      "url": "/home/me/repos/barepath.nvim"
+    },
+    "homepath.nvim": {
+      "name": "homepath.nvim",
+      "url": "~/repos/homepath.nvim"
+    },
+    "ftp.nvim": {
+      "name": "ftp.nvim",
+      "url": "ftp://git.example.com/o/ftp.nvim.git",
+      "version": "^1.0"
+    },
+    "relfile.nvim": {
+      "name": "relfile.nvim",
+      "url": "file://relative/relfile.nvim"
+    },
+    "nohost.nvim": {
+      "name": "nohost.nvim",
+      "url": "https:///o/nohost.nvim.git"
+    },
+    "nopath.nvim": {
+      "name": "nopath.nvim",
+      "url": "https://git.example.com"
+    },
+    "browser.nvim": {
+      "name": "browser.nvim",
+      "url": "https://github.com/o/browser.nvim/tree/main"
+    },
+    "shortform.nvim": {
+      "name": "shortform.nvim",
+      "url": "https://github.com/ssh://git@example.com/o/shortform.nvim.git"
+    },
+    "plain.nvim": {
+      "name": "plain.nvim",
+      "url": "just-a-name"
+    },
+    "usercolon.nvim": {
+      "name": "usercolon.nvim",
+      "url": "gitea.internal:8080"
+    },
+    "antiquote.nvim": {
+      "name": "antiquote.nvim",
+      "url": "https://git.example.com/o/antiquote.${var}.nvim.git"
+    },
+    "sshportmistake.nvim": {
+      "name": "sshportmistake.nvim",
+      "url": "ssh://git@github.com:o/sshportmistake.nvim.git"
+    },
+    "badchar.nvim": {
+      "name": "badchar.nvim",
+      "url": "https://h|x/o/badchar.nvim.git"
+    },
+    "trailingslash.nvim": {
+      "name": "trailingslash.nvim",
+      "url": "https://git.example.com/"
+    }
+  }
+}
