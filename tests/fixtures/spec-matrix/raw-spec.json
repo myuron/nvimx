@@ -1,0 +1,74 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json (the shape extract.lua dumps), used by checks.resolve-golden.",
+    "Hand-written rather than extracted so this fixture holds exactly the spec-field matrix #29",
+    "means to cover -- a `commit`, a `tag` and a non-GitHub URL can only name plugins that do not",
+    "exist, which no extracted config could produce (the same reason",
+    "tests/fixtures/merge/raw-spec-base.json gives).",
+    "URL *shapes* are checks.resolve-sources' matrix (#28), not this one's: there is exactly one",
+    "non-GitHub URL here (gittag.nvim), and it exists for genflake's git-type `?ref=refs/tags/`",
+    "branch, which source-urls does not cover.",
+    "versioned.nvim's url is a placeholder: checks.resolve-golden rewrites it to a local git repo",
+    "it creates itself (git ls-remote has to reach something), then rewrites the resolved output",
+    "back to this same string so the golden stays machine-independent.",
+    "devel.nvim writes an absolute `dir` on purpose: lazy would otherwise derive one from dev.path",
+    "and Util.norm would expand ~ against the extracting machine's $HOME. If #56 changes what",
+    "resolve.lua records in localPlugins, regenerate golden/matrix.plugins.json -- the check's own",
+    "two jq assertions about devel.nvim are written not to depend on the recorded value.",
+    "Regenerating the goldens: see docs/plans/29-genflake-golden.md §3.9."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "plain.nvim": {
+      "name": "plain.nvim",
+      "short": "o/plain.nvim",
+      "url": "https://github.com/o/plain.nvim.git"
+    },
+    "branchy.nvim": {
+      "name": "branchy.nvim",
+      "url": "https://github.com/o/branchy.nvim.git",
+      "branch": "trunk"
+    },
+    "tagged.nvim": {
+      "name": "tagged.nvim",
+      "url": "https://github.com/o/tagged.nvim.git",
+      "tag": "v1.0.0"
+    },
+    "committed.nvim": {
+      "name": "committed.nvim",
+      "url": "https://github.com/o/committed.nvim.git",
+      "commit": "1111111111111111111111111111111111111111"
+    },
+    "versioned.nvim": {
+      "name": "versioned.nvim",
+      "url": "file:///nvimx-fixture/versioned.nvim",
+      "version": "^1.2"
+    },
+    "gittag.nvim": {
+      "name": "gittag.nvim",
+      "url": "https://git.example.com/o/gittag.nvim.git",
+      "tag": "v2.0.0"
+    },
+    "shellbuild.nvim": {
+      "name": "shellbuild.nvim",
+      "url": "https://github.com/o/shellbuild.nvim.git",
+      "build": "make"
+    },
+    "excmdbuild.nvim": {
+      "name": "excmdbuild.nvim",
+      "url": "https://github.com/o/excmdbuild.nvim.git",
+      "build": ":TSUpdate"
+    },
+    "deps.nvim": {
+      "name": "deps.nvim",
+      "url": "https://github.com/o/deps.nvim.git",
+      "dependencies": ["z.nvim", "a.nvim"]
+    },
+    "devel.nvim": {
+      "name": "devel.nvim",
+      "dev": true,
+      "dir": "/nvimx-fixture/dev-root/devel.nvim"
+    }
+  }
+}

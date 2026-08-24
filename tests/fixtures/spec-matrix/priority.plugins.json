@@ -1,0 +1,203 @@
+{
+  "_comment": [
+    "Hand-written plugins.json, used by checks.genflake-golden as its second input (see the",
+    "plan's §3.6). This is a shape resolve.lua cannot currently emit -- one plugin carrying",
+    "`commit`, `resolvedRef`, `tag` and `branch` all at once -- so it is written directly rather",
+    "than generated: there is no regeneration procedure for this file (contrast",
+    "golden/matrix.plugins.json and golden/{matrix,priority}.flake.nix, all of which are",
+    "generated -- see docs/plans/29-genflake-golden.md §3.9). This file is never diffed against",
+    "anything; only golden/priority.flake.nix, genflake.lua's output from reading it, is.",
+    "It exists solely to pin input_url's (lua/nvimx/genflake.lua:33-76) precedence: one ladder",
+    "on the github side (commit > resolvedRef > tag > branch), and two independent slots on the",
+    "git side (rev: commit > 40-hex resolvedRef; ref: symbolic resolvedRef > tag > branch).",
+    "Every field below that is not the plugin's winning field exists only to lose: gh-commit's",
+    "resolvedRef/tag/branch, gh-resolved's tag/branch, gh-tag's branch, git-commit's resolvedRef,",
+    "git-symbolic's tag, and git-symbolic/git-tag's branch. Together they force one total order",
+    "across the ladder; individually some are redundant with another plugin's field, but which",
+    "ones are redundant shifts whenever the ladder changes, so never delete one just because it",
+    "is not the winner for its own plugin -- that is exactly the regression they exist to catch.",
+    "If plugins.json's schema grows, this file has to be updated by hand: genflake.lua only",
+    "reads a handful of keys, so a new key would otherwise pass through silently unexercised."
+  ],
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": true
+  },
+  "plugins": {
+    "gh-commit.nvim": {
+      "branch": "b",
+      "build": { "kind": "none" },
+      "commit": "1111111111111111111111111111111111111111",
+      "dependencies": [],
+      "inputName": "gh-commit-nvim",
+      "pin": null,
+      "resolvedRef": "2222222222222222222222222222222222222222",
+      "source": {
+        "owner": "o",
+        "repo": "gh-commit.nvim",
+        "type": "github"
+      },
+      "tag": "v9.9.9",
+      "version": null
+    },
+    "gh-resolved.nvim": {
+      "branch": "b",
+      "build": { "kind": "none" },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "gh-resolved-nvim",
+      "pin": null,
+      "resolvedRef": "2222222222222222222222222222222222222222",
+      "source": {
+        "owner": "o",
+        "repo": "gh-resolved.nvim",
+        "type": "github"
+      },
+      "tag": "v9.9.9",
+      "version": null
+    },
+    "gh-tag.nvim": {
+      "branch": "b",
+      "build": { "kind": "none" },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "gh-tag-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "gh-tag.nvim",
+        "type": "github"
+      },
+      "tag": "v9.9.9",
+      "version": null
+    },
+    "gh-branch.nvim": {
+      "branch": "b",
+      "build": { "kind": "none" },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "gh-branch-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "gh-branch.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "gh-plain.nvim": {
+      "branch": null,
+      "build": { "kind": "none" },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "gh-plain-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "gh-plain.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "git-commit.nvim": {
+      "branch": "b",
+      "build": { "kind": "none" },
+      "commit": "3333333333333333333333333333333333333333",
+      "dependencies": [],
+      "inputName": "git-commit-nvim",
+      "pin": null,
+      "resolvedRef": "5555555555555555555555555555555555555555",
+      "source": {
+        "type": "git",
+        "url": "https://git.example.com/o/git-commit.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "git-frozen.nvim": {
+      "branch": null,
+      "build": { "kind": "none" },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "git-frozen-nvim",
+      "pin": null,
+      "resolvedRef": "4444444444444444444444444444444444444444",
+      "source": {
+        "type": "git",
+        "url": "https://git.example.com/o/git-frozen.nvim.git"
+      },
+      "tag": "v9.9.9",
+      "version": null
+    },
+    "git-symbolic.nvim": {
+      "branch": "b",
+      "build": { "kind": "none" },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "git-symbolic-nvim",
+      "pin": null,
+      "resolvedRef": "refs/tags/v1.2.3",
+      "source": {
+        "type": "git",
+        "url": "https://git.example.com/o/git-symbolic.nvim.git"
+      },
+      "tag": "v9.9.9",
+      "version": null
+    },
+    "git-tag.nvim": {
+      "branch": "b",
+      "build": { "kind": "none" },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "git-tag-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "https://git.example.com/o/git-tag.nvim.git"
+      },
+      "tag": "v9.9.9",
+      "version": null
+    },
+    "git-branch.nvim": {
+      "branch": "b",
+      "build": { "kind": "none" },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "git-branch-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "https://git.example.com/o/git-branch.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    },
+    "git-plain.nvim": {
+      "branch": null,
+      "build": { "kind": "none" },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "git-plain-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "https://git.example.com/o/git-plain.nvim.git"
+      },
+      "tag": null,
+      "version": null
+    }
+  }
+}
