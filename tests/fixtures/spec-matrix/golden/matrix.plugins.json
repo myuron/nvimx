@@ -1,0 +1,187 @@
+{
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": true
+  },
+  "localPlugins": {
+    "devel.nvim": {
+      "dir": "/nvimx-fixture/dev-root/devel.nvim"
+    }
+  },
+  "plugins": {
+    "branchy.nvim": {
+      "branch": "trunk",
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "branchy-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "branchy.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "committed.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": "1111111111111111111111111111111111111111",
+      "dependencies": [],
+      "inputName": "committed-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "committed.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "deps.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [
+        "a.nvim",
+        "z.nvim"
+      ],
+      "inputName": "deps-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "deps.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "excmdbuild.nvim": {
+      "branch": null,
+      "build": {
+        "cmd": ":TSUpdate",
+        "kind": "excmd"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "excmdbuild-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "excmdbuild.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "gittag.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "gittag-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "type": "git",
+        "url": "https://git.example.com/o/gittag.nvim.git"
+      },
+      "tag": "v2.0.0",
+      "version": null
+    },
+    "plain.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "plain-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "plain.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "shellbuild.nvim": {
+      "branch": null,
+      "build": {
+        "cmd": "make",
+        "kind": "shell"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "shellbuild-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "shellbuild.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "tagged.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "tagged-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "o",
+        "repo": "tagged.nvim",
+        "type": "github"
+      },
+      "tag": "v1.0.0",
+      "version": null
+    },
+    "versioned.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "versioned-nvim",
+      "pin": null,
+      "resolvedRef": "refs/tags/v1.2.5",
+      "source": {
+        "type": "git",
+        "url": "file:///nvimx-fixture/versioned.nvim"
+      },
+      "tag": null,
+      "version": "^1.2"
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": [
+    "plugin \"excmdbuild.nvim\": build is a neovim command (\":TSUpdate\") and cannot be run at build time"
+  ]
+}

@@ -173,7 +173,8 @@
             narHash = "sha256-C1FpyGw0f35NdHvDUGPXxmKdOgw3SpIteK1gAjVy6Ns=";
           };
           # A git repo usable as a `version` constraint's remote with no network at all (#23),
-          # shared by checks.resolve-semver and checks.extractor-defaults-version. `git+file://`
+          # shared by checks.resolve-semver, checks.extractor-defaults-version,
+          # checks.resolve-update and checks.resolve-golden (#29). `git+file://`
           # (not a bare path) is what nix's flake ref parser accepts for a local remote, so any
           # caller building a flake input URL from one of these repos has to add that prefix
           # itself -- genflake.lua already does, since it prepends "git+" to every git-type source.
@@ -2853,6 +2854,146 @@
                 with_url=$((total - 2))
                 [ "$(wc -l < withurl.log)" -eq "$with_url" ]
                 [ "$(grep -c 'unsupported source URL "[^"]' withurl.log)" -eq "$with_url" ]
+                touch $out
+              '';
+          # The spec-field matrix, end to end but split in two: raw-spec -> resolve here, and
+          # plugins.json -> genflake in checks.genflake-golden below. The two meet on one file --
+          # tests/fixtures/spec-matrix/golden/matrix.plugins.json is this check's output and that
+          # one's input -- so "resolve's output turns into that flake" still holds transitively,
+          # while a red check names which stage broke (#29).
+          # Fully offline: every url here is unreachable except versioned.nvim's, which is
+          # rewritten to a local git repo this check creates itself (the same mkTagRepoSh
+          # checks.resolve-semver uses) and rewritten back afterwards, so the golden never records
+          # a build-directory path. URL *shapes* are checks.resolve-sources' matrix (#28), not
+          # this one's -- there is exactly one non-GitHub url here.
+          resolve-golden =
+            pkgs.runCommand "resolve-golden"
+              {
+                nativeBuildInputs = [
+                  pkgs.neovim-unwrapped
+                  pkgs.jq
+                  pkgs.git
+                ];
+              }
+              (
+                mkTagRepoSh
+                + ''
+                  export HOME=$TMPDIR
+                  lua=${./lua/nvimx}
+                  fx=${./tests/fixtures/spec-matrix}
+                  lazy=${lazy-nvim}
+                  sb=$TMPDIR/sandbox
+
+                  # v2.0.0 is deliberately outside "^1.2": without it, a classifier that simply
+                  # took the newest tag would pass.
+                  mkrepo $sb/versioned v1.0.0 v1.2.0 v1.2.5 v2.0.0
+
+                  jq --arg u "file://$sb/versioned" '.plugins["versioned.nvim"].url = $u' \
+                    $fx/raw-spec.json > injected.json
+                  nvim -l $lua/resolve.lua injected.json out.json --lazy $lazy 2> resolve.log
+                  cat resolve.log >&2
+
+                  # Put the sandbox path back to the placeholder the fixture wrote, so the golden
+                  # is the same on x86_64-linux (/build/...) and aarch64-darwin (/private/tmp/...).
+                  sed "s#file://$sb/versioned#file:///nvimx-fixture/versioned.nvim#g" out.json > got.json
+                  # ...and prove nothing else leaked. The sed above only knows about the one field
+                  # resolve writes a url into today; this catches the day that stops being true.
+                  if grep -q "$TMPDIR" got.json; then
+                    echo "the sandbox path leaked into the golden-comparable output" >&2
+                    exit 1
+                  fi
+                  diff -u $fx/golden/matrix.plugins.json got.json
+
+                  # Exactly one warning: excmdbuild.nvim. shellbuild.nvim is the quiet path, and
+                  # without it a resolve that warned about every build would pass the golden too
+                  # (the golden would just have been generated with both warnings in it).
+                  # The same wording is pinned on the *stderr* side by
+                  # checks.resolve-build-warnings, which owns the build-shape matrix; this check
+                  # owns how a warning is recorded in the lock file itself.
+                  # `|| true` is load-bearing: grep -c exits 1 on zero matches, and a bare
+                  # assignment takes the substitution's own exit status, so setup.sh's `set -e`
+                  # kills the build right here. checks.resolve-sources' `[ "$(grep -c 'unsupported
+                  # source URL …')" -eq "$with_url" ]` needs no `|| true`, because there the status
+                  # `set -e` sees is `[`'s, not the substitution's.
+                  # Without it the message below never prints in the one case it is there for --
+                  # the excmd warning going missing.
+                  n=$(grep -c '^\[nvimx\] warning: ' resolve.log || true)
+                  if [ "$n" -ne 1 ]; then
+                    echo "expected exactly 1 warning, got $n" >&2
+                    exit 1
+                  fi
+                  grep -q 'plugin "excmdbuild.nvim"' resolve.log
+
+                  # A dev plugin has no lock entry and no flake input at all -- that is the whole
+                  # contract of localPlugins, and it is the half that survives #56 whichever way
+                  # that issue goes (the recorded `dir` may stop being recorded; these two do not
+                  # read it). The golden pins the value; these two pin the structure.
+                  jq -e '.plugins["devel.nvim"] == null' got.json > /dev/null
+                  jq -e '.localPlugins | has("devel.nvim")' got.json > /dev/null
+                  touch $out
+                ''
+              );
+          # plugins.json -> flake.nix, on two inputs (#29). The first is checks.resolve-golden's
+          # own golden output, which is what makes the two checks compose into the end-to-end
+          # statement neither makes alone. The second is a hand-written plugins.json holding
+          # shapes resolve.lua cannot currently emit -- one plugin carrying `commit`,
+          # `resolvedRef`, `tag` and `branch` at once -- because that is the only way to pin
+          # input_url's precedence: one ladder on the github side (commit > resolvedRef > tag >
+          # branch), and two independent slots on the git side (rev: commit > 40-hex
+          # resolvedRef; ref: symbolic resolvedRef > tag > branch). Before this check, swapping
+          # two rungs left all 29 checks green -- no fixture in the tree carried `commit` and
+          # `resolvedRef` on the same plugin, so nothing could tell the two apart.
+          # Every field in that fixture that is not the winning one exists only to lose -- the
+          # github side (gh-commit.nvim's resolvedRef/tag/branch, gh-resolved.nvim's tag/branch,
+          # gh-tag.nvim's branch) just as much as the git side (git-commit.nvim's resolvedRef,
+          # git-symbolic.nvim's tag, git-symbolic/git-tag's branch). None of them changes a
+          # single byte of the golden, but together they enforce one total order across the
+          # ladder. Individually some are redundant with another plugin's field, but which
+          # fields are redundant shifts whenever the ladder changes, so never delete one
+          # just because it is not the winner -- that is exactly the regression they catch.
+          # No git, no jq, no network: this stage is a pure text transform.
+          genflake-golden =
+            let
+              # Same evaluation-time guard checks.resolve-sources uses (#28): a golden is a source
+              # file, so importing it is a plain readFile and never IFD, and the derivation below
+              # is what proves the generated flake still equals it. parseFlakeRef succeeding is
+              # too weak on its own -- it accepts `github:o/r/tree/main` and bare `just-a-name` --
+              # so the *type* is asserted as well: anything that is not github/git has silently
+              # degraded to an `indirect` or `path:` node that only dies later, in sources.nix.
+              goldenFlakes = {
+                matrix = import ./tests/fixtures/spec-matrix/golden/matrix.flake.nix;
+                priority = import ./tests/fixtures/spec-matrix/golden/priority.flake.nix;
+              };
+              refTypes = builtins.mapAttrs (
+                _: f: builtins.mapAttrs (_: i: (builtins.parseFlakeRef i.url).type) f.inputs
+              ) goldenFlakes;
+              badTypes = builtins.mapAttrs (
+                _: ts: pkgs.lib.filterAttrs (_: t: t != "github" && t != "git") ts
+              ) refTypes;
+              checkedRefTypes =
+                if builtins.all (v: v == { }) (builtins.attrValues badTypes) then
+                  refTypes
+                else
+                  throw "generated flake inputs are not github/git refs: ${builtins.toJSON badTypes}";
+            in
+            pkgs.runCommand "genflake-golden"
+              {
+                nativeBuildInputs = [ pkgs.neovim-unwrapped ];
+                # Forced while the derivation is instantiated, so
+                # `nix eval .#checks.aarch64-darwin.genflake-golden.drvPath` is enough to catch a
+                # degraded URL on a system this machine cannot build for.
+                refTypes = builtins.toJSON checkedRefTypes;
+              }
+              ''
+                export HOME=$TMPDIR
+                lua=${./lua/nvimx}
+                fx=${./tests/fixtures/spec-matrix}
+
+                nvim -l $lua/genflake.lua $fx/golden/matrix.plugins.json matrix.nix
+                diff -u $fx/golden/matrix.flake.nix matrix.nix
+
+                nvim -l $lua/genflake.lua $fx/priority.plugins.json priority.nix
+                diff -u $fx/golden/priority.flake.nix priority.nix
                 touch $out
               '';
           # dev.path is the one forced lazy opt that stops being a constant with #26, so this check
