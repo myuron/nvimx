@@ -22,7 +22,14 @@ local function is_null(v)
   return v == nil or v == vim.NIL
 end
 
--- lazy spec → flake input URL mapping (see docs/architecture.md)
+-- lazy spec → flake input URL mapping (see docs/architecture.md). owner/repo never containing an
+-- interior "/" -- a lone trailing "/" on repo survives, kept for the plan's §3.4 compatibility
+-- invariant -- or a "?", and src.url never carrying a query string or "${", is guaranteed by
+-- lua/nvimx/source.lua (#28) -- this file trusts that and does no validation of its own. The "${"
+-- guarantee matters here specifically: every src.owner / src.repo / src.url is written below with
+-- Lua's %q, which does not escape "${", so one slipping through would land in the generated
+-- flake.nix as a live Nix string interpolation and die with an "undefined variable" error that
+-- names neither this plugin nor its URL.
 local function input_url(p)
   local src = p.source
   if src.type == "github" then

@@ -102,6 +102,7 @@ end
 
 local json = dofile(arg[0]:gsub("resolve%.lua$", "json.lua"))
 local ver = dofile(arg[0]:gsub("resolve%.lua$", "version.lua"))
+local source = dofile(arg[0]:gsub("resolve%.lua$", "source.lua"))
 
 -- The default advice is prev-specific (checks.resolve-merge greps "is not valid JSON" and "run
 -- nvimx-lock again", so its wording must stay byte-identical); --import-lazy-lock's own advice
@@ -269,19 +270,6 @@ local function to_input_name(name)
   return (name:gsub("[^%w_-]", "-"))
 end
 
--- Convert the git URL normalized by lazy into a source struct (github gets its own type)
-local function parse_source(name, url)
-  if type(url) ~= "string" then
-    fail(("plugin %q has no url. lazy derives one from the spec, so a raw spec without it is malformed"):format(name))
-  end
-  local owner, repo = url:match("^https://github%.com/([^/]+)/(.+)$")
-  if owner then
-    repo = repo:gsub("%.git$", "")
-    return { type = "github", owner = owner, repo = repo }
-  end
-  return { type = "git", url = url }
-end
-
 -- Spec identity: the fields that decide which ref a plugin resolves to. When all of them are
 -- unchanged the previous `resolvedRef` is carried over untouched; when any of them changed the
 -- user asked for something else, so the ref goes back to null and is resolved again.
@@ -435,6 +423,35 @@ local versioned = {}
 
 local function warn_plugin(name, msg)
   plugin_warnings[#plugin_warnings + 1] = { name = name, msg = ("plugin %q: %s"):format(name, msg) }
+end
+
+-- Convert the git URL normalized by lazy into a source struct (#28). The rules live in
+-- source.lua so they can be unit-tested against the whole accept/reject matrix without a
+-- fixture (checks.source-parse), the same split lua/nvimx/version.lua has with
+-- checks.semver-select. Failures are collected rather than raised so that one lock run
+-- reports every bad URL at once -- report_resolve_errors() near the end of this file prints
+-- them, sorted, and exits before plugins.json is ever written.
+-- This has to stay *below* fail_plugin's declaration, which is why it lives here rather than
+-- next to to_input_name where it used to: fail_plugin is a local, so a call placed above it
+-- would silently resolve to a nil global and blow up on the first bad URL (luacheck flags it
+-- as an undefined variable, so `nix fmt -- --ci` catches the mistake too).
+--
+-- Second return is false iff source.parse rejected the URL. plugins.json is never written for
+-- such a run (report_resolve_errors() near the end of this file exits first), but the run is not
+-- doomed *yet* at the point this is called -- semver resolution below still runs for anything
+-- left in `pending`, so the caller has to be able to tell "no source" apart from "a source, just
+-- one nothing else should spend a git ls-remote on" (#28's own precedent, §3.8 of the plan: don't
+-- widen an already-fatal URL's blast radius into a second, contradictory ls-remote failure).
+local function parse_source(name, url)
+  local src, err = source.parse(url)
+  if err then
+    fail_plugin(name, err)
+    -- The fallback struct below is never written to plugins.json (see above), but it does flow
+    -- into `entry` regardless, so genflake.lua's #28 comment about src.url always being
+    -- guaranteed still holds for every entry that *is* written.
+    return { type = "git", url = tostring(url) }, false
+  end
+  return src, true
 end
 
 -- Classify a single build element/scalar using lazy's own dispatch order
@@ -672,9 +689,10 @@ for name, p in pairs(raw.plugins or {}) do
       warn_plugin(name, build_warning(name, build))
     end
 
+    local source_struct, source_ok = parse_source(name, p.url)
     local entry = {
       inputName = input_name,
-      source = parse_source(name, p.url),
+      source = source_struct,
       branch = p.branch or vim.NIL,
       tag = p.tag or vim.NIL,
       commit = p.commit or vim.NIL,
@@ -771,11 +789,27 @@ for name, p in pairs(raw.plugins or {}) do
     -- there is no constraint to honor, so it is what has to be tested.
     -- `commit` / `tag` win over `version` (matching lazy's own get_target dispatch order), so a
     -- plugin that also names one of those is left out of the gate even though it has a version.
-    if p.version and is_null(entry.resolvedRef) and is_null(entry.commit) and is_null(entry.tag) then
+    --
+    -- `source_ok` gates too (#28): a plugin whose URL parse_source already rejected has a
+    -- resolve_errors entry and this run is already doomed (report_resolve_errors() below exits
+    -- before plugins.json is written), so spending a git ls-remote (up to LS_REMOTE_TIMEOUT_S per
+    -- unreachable/nonexistent host) on it only wastes time and, on failure, emits a second,
+    -- contradictory error for the same plugin -- the precedent is #24's --update name validation
+    -- above (report_resolve_errors() before the main loop, for the same reason). This does not
+    -- move the flush itself: plan §7 deliberately left that as a follow-up, so plugin_warnings
+    -- emitted later in this same loop for *other*, valid plugins still make it out.
+    if source_ok and p.version and is_null(entry.resolvedRef) and is_null(entry.commit) and is_null(entry.tag) then
       pending[#pending + 1] = {
         name = name,
         entry = entry,
-        url = p.url,
+        -- The normalized URL, not the raw p.url: source_struct.url is what fetch actually uses
+        -- for a "git" source (identical to p.url except for the scp -> ssh:// rewrite), and using
+        -- the raw one there would make ls-remote enumerate tags against a *different* repository
+        -- than the one nix later fetches, on any server that treats scp-style `user@host:path`
+        -- as home-relative and `ssh://user@host/path` as absolute (docs/architecture.md's scp
+        -- migration note). A "github" source has no .url field -- p.url is exactly what fetch
+        -- uses there too, since #28 never rewrites a github-classified URL.
+        url = (source_struct.type == "git" and source_struct.url) or p.url,
         constraint = p.version,
         from_defaults = p.versionFromDefaults,
       }
@@ -808,12 +842,21 @@ end
 if #pending > 0 then
   -- Loading lazy's semver module is deferred to exactly here (not done unconditionally at the
   -- top of the file) so that a raw-spec with no version constraints at all never requires --lazy.
+  --
+  -- Both `fail()` calls below are flushed through report_resolve_errors() first: `fail()` itself
+  -- os.exit()s immediately and knows nothing about resolve_errors (it is declared long before
+  -- that table exists, at the top of this file), so calling it directly here would silently
+  -- swallow every URL error #28's source.parse already collected for *other* plugins -- only
+  -- reachable by hand (the packaged CLI's lock-app always passes --lazy), but still worth not
+  -- discarding real errors over.
   if not lazy_path or lazy_path == "" then
+    report_resolve_errors()
     fail("a version constraint needs --lazy <lazy.nvim path>")
   end
   local semver_path = lazy_path:gsub("/+$", "") .. "/lua/lazy/manage/semver.lua"
   local ok, mod = pcall(dofile, semver_path)
   if not ok or type(mod) ~= "table" then
+    report_resolve_errors()
     fail(
       ("cannot load lazy.nvim's semver module from --lazy %s (tried %s): %s"):format(
         lazy_path,
