@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json, used by checks.resolve-lazy-self's step 5b (#49). lazy.nvim as a",
+    "*local* (dev/dir) plugin that also happens to set `pin = true`. This unnatural combination is",
+    "the only guard for the `dev`/`dir` exclusion from `lazy_is_spec`: without it, `lazy_pinned`",
+    "would wrongly become true for a local lazy.nvim, and a bare `--update` would drop the",
+    "synthetic `lazy-nvim` seed input from the update-plan -- breaking #24's \"a no-names update",
+    "always includes the seed input\" contract, silently, with no other check able to catch it",
+    "(resolve.lua's own bare `--update` force-set loop already excludes dev/dir plugins on the *force*",
+    "side, so only the update-plan writer's exclusion can regress here).",
+    "",
+    "`dir` is a nonexistent path on purpose: this fixture never builds anything, only exercises",
+    "resolve.lua's routing (`p.dev or p.dir` sends it to localPlugins before is_lazy is even",
+    "consulted for the collision/build/entry-field/routing decisions)."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "lazy.nvim": {
+      "name": "lazy.nvim",
+      "dev": true,
+      "dir": "/nvimx-nonexistent/lazy.nvim",
+      "pin": true
+    },
+    "tokyonight.nvim": {
+      "name": "tokyonight.nvim",
+      "short": "folke/tokyonight.nvim",
+      "url": "https://github.com/folke/tokyonight.nvim.git"
+    }
+  }
+}

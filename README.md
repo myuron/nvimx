@@ -173,7 +173,9 @@ A few things worth knowing:
   migration then needs no network at all, because lazy already resolved those constraints for you.
   `nvimx-lock --update <name>` resolves one for real whenever you want it checked again.
 - `lazy.nvim` itself is not imported: nvimx pins it through its own flake input, so the entry
-  `lazy-lock.json` has for it is reported and skipped.
+  `lazy-lock.json` has for it is reported and skipped. This only applies when your own config does
+  not list lazy.nvim itself -- a fork included, not just `folke/lazy.nvim` (#49) -- if it does,
+  that entry is imported like any other plugin's.
 - For a plugin on a non-GitHub git URL whose spec names no `branch`, the imported commit becomes
   `git+<url>?rev=<sha>` with no ref. Most servers serve that fine, but one that refuses to serve an
   unadvertised object will fail at `nix flake lock`, naming the input. Adding `branch = "..."` to

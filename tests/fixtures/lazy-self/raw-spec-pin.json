@@ -1,0 +1,24 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json, used by checks.resolve-lazy-self's pin step (#49). lazy.nvim with",
+    "`pin = true`, so a 2-pass resolve (plain, then with --lock) can prove the freeze actually",
+    "reaches the lazyNvim slot the same way it reaches an ordinary plugin's entry.",
+    "",
+    "`build = false` is lazy's own \"do not build\" (extract.lua dumps it as the literal `false`),",
+    "and must produce *no* warning at all -- unlike raw-spec-tag.json's `:TSUpdate`, which must",
+    "produce exactly one. Without this fixture, an implementation that warns on `p.build ~= nil`",
+    "instead of `classify_build(p.build).kind ~= \"none\"` would still pass every other check: no",
+    "other fixture in this directory gives lazy.nvim a literal `build = false`."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "lazy.nvim": {
+      "name": "lazy.nvim",
+      "short": "folke/lazy.nvim",
+      "url": "https://github.com/folke/lazy.nvim.git",
+      "pin": true,
+      "build": false
+    }
+  }
+}

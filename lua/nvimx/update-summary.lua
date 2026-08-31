@@ -131,6 +131,11 @@ local function short(rev)
   return rev:sub(1, 7)
 end
 
+-- The name a spec plugin uses for lazy.nvim itself (#49). resolve.lua declares the same constant
+-- for the same reason -- not shared as a module, per this file's own header comment on why it
+-- copies rather than requires resolve.lua's helpers.
+local LAZY_NAME = "lazy.nvim"
+
 local plugins_before_doc = read_json(plugins_before_path)
 local plugins_after_doc = read_json(plugins_after_path)
 local lock_before_doc = read_json(lock_before_path)
@@ -147,14 +152,63 @@ local lazy_input_name = (type(plugins_after_doc.lazyNvim) == "table" and plugins
   or (type(plugins_before_doc.lazyNvim) == "table" and plugins_before_doc.lazyNvim.inputName)
   or "lazy-nvim"
 
+-- #49: whether either snapshot's lazyNvim came from the spec (synthetic == false) rather than
+-- nvimx's own default. Checked on both sides, not just one, so a spec lazy.nvim entry that was
+-- just added or just removed between the two snapshots is still injected below and classified
+-- normally, instead of falling through to the old synthetic-seed-only branch near the end of this
+-- file just because the side that happens to still be (or already be) synthetic looked first.
+local function is_spec_lazy(doc)
+  return type(doc.lazyNvim) == "table" and doc.lazyNvim.synthetic == false
+end
+local lazy_is_spec = is_spec_lazy(plugins_before_doc) or is_spec_lazy(plugins_after_doc)
+if lazy_is_spec then
+  -- The read-side mirror of resolve.lua's own write-side routing: lazyNvim lives outside
+  -- `plugins`, but a spec lazy.nvim entry decides the very same "lazy-nvim" input an ordinary
+  -- `plugins["lazy.nvim"]` entry would. Injecting it back in here, at the single point where both
+  -- snapshots are read, lets classify() below treat it exactly like any other plugin --
+  -- same_identity, the pin/commit gates, the "spec changed" / "unpinned" reasons, all of it --
+  -- with no dedicated branch of its own.
+  --
+  -- Each side is injected only when it is actually a table. The *after* snapshot is always
+  -- resolve.lua's own fresh output, which always writes a `lazyNvim` table -- but the *before*
+  -- snapshot is whatever plugins.json the caller already had on disk (lock-app.nix passes the
+  -- committed one, not necessarily something resolve.lua just wrote), so it gets no such guarantee
+  -- and is defended the same way every other field this file reads from either snapshot already is
+  -- (read_json, plugins_before/plugins_after themselves, lazy_input_name, is_spec_lazy above): a
+  -- `vim.NIL` or missing `lazyNvim` on an untrusted before snapshot must not reach classify() below
+  -- and crash it on `before_entry.resolvedRef` -- update-summary.lua's own non-zero exit is fatal
+  -- to the whole nvimx-lock run in lock-app.nix, so one bad before file would make an already
+  -- completed lock look like it failed.
+  --
+  -- classify()'s added/removed branches can never fire for lazy.nvim either way: they key off
+  -- `rb`/`ra`, the flake.lock "lazy-nvim" node's rev, and that node exists on both sides of every
+  -- --update run (there is no lock state to add or remove, only a spec entry). Past that point a
+  -- mixed pair (one side still synthetic, e.g. right after the spec entry was added or removed) is
+  -- just another plugin to classify(): which reason (if any) its move gets is decided entirely by
+  -- that function's existing reason chain at the bottom of classify() -- not restated here,
+  -- because a prose retelling of that chain is what got this comment wrong twice already as the
+  -- chain grew cases (and a line number for it went stale the moment this very comment grew).
+  -- The one case worth spelling out is the simplest: a bare `{ "folke/lazy.nvim" }` with no ref
+  -- fields of its own is field-for-field identical to the synthetic literal, so same_identity is
+  -- true and it reports plain `unchanged` (or an unannotated move, if the rev moved anyway).
+  if type(plugins_before_doc.lazyNvim) == "table" then
+    plugins_before[LAZY_NAME] = plugins_before_doc.lazyNvim
+  end
+  if type(plugins_after_doc.lazyNvim) == "table" then
+    plugins_after[LAZY_NAME] = plugins_after_doc.lazyNvim
+  end
+end
+
 -- mode_all: a bare --update (argv has no names at all). requested_set / lazy_requested: the
--- parsed argv, same split resolve.lua's own name validation uses (§3.1 of the plan: "lazy.nvim"
--- is a name for the synthetic seed input, never a spec plugin).
+-- parsed argv, same split resolve.lua's own name validation uses. #49: "lazy.nvim" is only routed
+-- to the separate lazy_requested flag when it is *not* a spec plugin -- lazy_is_spec routes it
+-- into requested_set like any other name instead, since classify() (used for every other plugin)
+-- only ever consults requested_set, never lazy_requested.
 local mode_all = #requested == 0
 local requested_set = {}
 local lazy_requested = false
 for _, n in ipairs(requested) do
-  if n == "lazy.nvim" then
+  if n == LAZY_NAME and not lazy_is_spec then
     lazy_requested = true
   else
     requested_set[n] = true
@@ -294,18 +348,26 @@ end
 -- other): named mode with lazy.nvim neither requested nor mentioned still has to surface it if it
 -- moved anyway, exactly as an unrequested plugin would -- lazy has no spec to check a reason
 -- against, so an unrequested move is always unexplained.
-local lazy_rb, lazy_ra = locked_rev_before(lazy_input_name), locked_rev_after(lazy_input_name)
-local lazy_moved = lazy_rb ~= lazy_ra
-if mode_all or lazy_requested or lazy_moved then
-  if lazy_moved then
-    lines[#lines + 1] = ("updated: lazy.nvim (seed) %s -> %s"):format(short(lazy_rb), short(lazy_ra))
-    counts.updated = counts.updated + 1
-    if not mode_all and not lazy_requested then
-      warn_names[#warn_names + 1] = "lazy.nvim"
+--
+-- #49: this whole block only applies when `not lazy_is_spec`. When the spec has its own lazy.nvim,
+-- the injection above already put it in plugins_before/plugins_after under the name "lazy.nvim",
+-- so the main classify() loop already reported it -- with a real reason to check against
+-- ("spec changed" and the rest), not the "always unexplained" rule this block hard-codes. Running
+-- both would print lazy.nvim twice.
+if not lazy_is_spec then
+  local lazy_rb, lazy_ra = locked_rev_before(lazy_input_name), locked_rev_after(lazy_input_name)
+  local lazy_moved = lazy_rb ~= lazy_ra
+  if mode_all or lazy_requested or lazy_moved then
+    if lazy_moved then
+      lines[#lines + 1] = ("updated: lazy.nvim (seed) %s -> %s"):format(short(lazy_rb), short(lazy_ra))
+      counts.updated = counts.updated + 1
+      if not mode_all and not lazy_requested then
+        warn_names[#warn_names + 1] = "lazy.nvim"
+      end
+    else
+      lines[#lines + 1] = "unchanged: lazy.nvim (seed)"
+      counts.unchanged = counts.unchanged + 1
     end
-  else
-    lines[#lines + 1] = "unchanged: lazy.nvim (seed)"
-    counts.unchanged = counts.unchanged + 1
   end
 end
 

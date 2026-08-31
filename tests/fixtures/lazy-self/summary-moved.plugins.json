@@ -1,0 +1,33 @@
+{
+  "_comment": [
+    "Hand-written plugins.json, the `after` half of checks.update-summary's case (b) (#49), paired",
+    "with summary-pinned.plugins.json as `before` and flake.lock.summary-{before,after}.json (from",
+    "tests/fixtures/update/) as the locks -- so the lazy-nvim node's rev really does move",
+    "(9c9c...9c9c -> 3f3f...3f3f) between the two passed-in snapshots.",
+    "",
+    "`pin` stays `true` (must NOT be dropped): update-summary.lua's classify() checks its",
+    "\"unpinned\" reason *before* \"spec changed\", gated on `is_true(before.pin) and",
+    "not is_true(after.pin)`. Dropping pin here would make the move classify as `(unpinned)`",
+    "instead of `(spec changed)`, defeating the point of this fixture (the plan's finding 2: an",
+    "unnamed, unrequested spec edit must not trigger the 'moved without being named' false",
+    "positive). `resolvedRef` goes back to null, the same way resolve.lua's own merge would react",
+    "to a spec identity change (a different `tag`) with no rev yet decided for it.",
+    "`same_identity` (branch/tag/commit/version) differs from summary-pinned.plugins.json only in",
+    "`tag`, which is what makes `same_identity` false and the reason `spec changed`."
+  ],
+  "schemaVersion": 1,
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "synthetic": false,
+    "source": { "type": "github", "owner": "folke", "repo": "lazy.nvim" },
+    "branch": null,
+    "tag": "v11.14.9",
+    "commit": null,
+    "version": null,
+    "pin": true,
+    "resolvedRef": null
+  },
+  "plugins": {},
+  "localPlugins": {},
+  "warnings": []
+}

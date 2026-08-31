@@ -1,0 +1,42 @@
+{
+  "lazyNvim": {
+    "branch": null,
+    "commit": null,
+    "inputName": "lazy-nvim",
+    "pin": null,
+    "resolvedRef": null,
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": false,
+    "tag": "v11.14.1",
+    "version": null
+  },
+  "localPlugins": {},
+  "plugins": {
+    "tokyonight.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "tokyonight-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "folke",
+        "repo": "tokyonight.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": [
+    "plugin \"lazy.nvim\": `build` is ignored: nvimx installs lazy.nvim itself, not as a spec plugin"
+  ]
+}

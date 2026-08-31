@@ -1,0 +1,31 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json, used by checks.resolve-lazy-self's version step (#49): a",
+    "git-type lazy.nvim fork with a `version` constraint, exercising the semver gate for the",
+    "lazyNvim slot (docs/plans/23-resolve-semver.md:235's discharged follow-up).",
+    "",
+    "`url` here is a placeholder -- the check overwrites .plugins[\"lazy.nvim\"].url with `jq`",
+    "before every use, pointing it at a local git repo it creates itself (mkTagRepoSh), so the",
+    "constraint can be resolved with no network at all. This has to be git type, not github: a",
+    "github-type version constraint does `git ls-remote` against the literal `p.url` in resolve.lua's",
+    "semver-resolution ls-remote loop, which cannot be redirected to a local repo -- see",
+    "docs/plans/29-genflake-golden.md's own note on the same constraint.",
+    "",
+    "This fixture's `lazy.nvim` key is itself a hand-written-only shape: extracting a real",
+    "`{ url = \"file:///.../lazy\" }` spec entry would derive the plugin name from the URL's",
+    "basename (\"lazy\"), never \"lazy.nvim\" -- lazy only derives \"lazy.nvim\" from a URL whose last",
+    "path segment literally ends in \"lazy.nvim\" (e.g. a GitHub fork URL, see the plan's §1.5). A",
+    "hand-written fixture can set the raw.plugins key directly, bypassing that derivation, which is",
+    "exactly what is needed here to test the lazyNvim merge path against a fork with no real",
+    "\"...lazy.nvim\"-suffixed URL to give it."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "lazy.nvim": {
+      "name": "lazy.nvim",
+      "url": "file:///nvimx-placeholder/lazy",
+      "version": "^11.14"
+    }
+  }
+}

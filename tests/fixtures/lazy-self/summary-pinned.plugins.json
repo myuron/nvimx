@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "Hand-written plugins.json, used by checks.update-summary's #49 cases. A spec-derived",
+    "(`synthetic: false`) lazyNvim, frozen by `pin = true` onto the rev",
+    "tests/fixtures/update/flake.lock.summary-before.json's lazy-nvim node records",
+    "(9c9c...9c9c). `inputName` and `source` are required: update-summary.lua's classify() drops",
+    "the whole plugin if `inputName` is missing, and same_identity compares `source` field by",
+    "field.",
+    "",
+    "Passed as *both* the before and after plugins.json (with flake.lock.summary-before.json as",
+    "both locks too) for case (a): the rev must not move for the `pinned: lazy.nvim (skipped ...)`",
+    "branch to be reached at all (update-summary.lua's classify() gates that branch on rb == ra).",
+    "",
+    "Also used as the *before* half of case (b) -- see summary-moved.plugins.json, its `after`",
+    "counterpart."
+  ],
+  "schemaVersion": 1,
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "synthetic": false,
+    "source": { "type": "github", "owner": "folke", "repo": "lazy.nvim" },
+    "branch": null,
+    "tag": "v11.14.1",
+    "commit": null,
+    "version": null,
+    "pin": true,
+    "resolvedRef": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c"
+  },
+  "plugins": {},
+  "localPlugins": {},
+  "warnings": []
+}

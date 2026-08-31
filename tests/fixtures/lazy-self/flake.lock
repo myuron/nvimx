@@ -1,0 +1,29 @@
+{
+  "_comment": [
+    "A hand-written stand-in for the flake.lock nvimx-lock produces, used by",
+    "checks.resolve-lazy-self's pin step (#49). Only the shape resolve.lua reads matters",
+    "(root -> inputs.<inputName> -> nodes.<n>.locked.rev), so the rev is an obvious placeholder",
+    "and is never fetched. One input only: lazy-nvim, since this step is only about proving",
+    "`pin = true` freezes lazyNvim onto whatever rev this file records, the same way it already",
+    "does for an ordinary plugin (tests/fixtures/merge/flake.lock)."
+  ],
+  "nodes": {
+    "lazy-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1700000000,
+        "narHash": "sha256-FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA=",
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "rev": "ffffffffffffffffffffffffffffffffffffffff",
+        "type": "github"
+      },
+      "original": { "owner": "folke", "repo": "lazy.nvim", "type": "github" }
+    },
+    "root": {
+      "inputs": { "lazy-nvim": "lazy-nvim" }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

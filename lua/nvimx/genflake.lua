@@ -76,7 +76,14 @@ local function input_url(p)
 end
 
 local inputs = {}
-inputs[#inputs + 1] = { name = db.lazyNvim.inputName, url = input_url({ source = db.lazyNvim.source }) }
+-- #49: lazyNvim goes through the same input_url ladder every ordinary plugin entry does, not a
+-- struct built with only `source`. Before #49, lazyNvim never carried a ref field at all (it was
+-- always the synthetic literal resolve.lua wrote), so this line only ever produced
+-- "github:folke/lazy.nvim" -- passing the whole table changes nothing for that case (input_url's
+-- `is_null` guards on every ref field just fall through to the same base URL), but lets a spec
+-- lazy.nvim entry's own `branch` / `tag` / `commit` / `resolvedRef` (or a git-type `source`, for a
+-- fork) decide the URL exactly the way it would for any other plugin.
+inputs[#inputs + 1] = { name = db.lazyNvim.inputName, url = input_url(db.lazyNvim) }
 local names = vim.tbl_keys(db.plugins or {})
 table.sort(names)
 for _, name in ipairs(names) do
