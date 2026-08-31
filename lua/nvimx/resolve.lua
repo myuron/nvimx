@@ -156,6 +156,22 @@ local function is_tag_ref(v)
   return type(v) == "string" and v:sub(1, 10) == "refs/tags/"
 end
 
+-- The name a spec plugin uses for lazy.nvim itself, and the flake input name it always
+-- normalizes to (to_input_name, below, would derive the same string, but that function is not
+-- declared yet at this point in the file, and hard-coding the dash form here avoids a forward
+-- reference). #49: a spec is allowed to list lazy.nvim -- lazy's own docs tell people to -- but
+-- lazy.nvim can never become an ordinary entry in `plugins`: make-env.nix's farm
+-- (nix/lib/make-env.nix:122-133) always puts one `lazy.nvim` entry in front of pluginDrvs, and
+-- linkFarm is last-wins, so a second `lazy.nvim` plugin entry would silently replace nvimx's own
+-- foundation -- exactly the state make-env.nix:47-48 and docs/architecture.md's plugin-derivation
+-- section say never happens. So a spec lazy.nvim entry decides the *existing* `lazy-nvim` input
+-- instead of adding a second one; these two constants are shared by every place below that needs
+-- to know "is this the lazy.nvim entry?" (the --prev injection just below, the collision guard,
+-- the build-warning suppression, the entry-field exclusion, and the plugins/lazyNvim routing) so
+-- that fixing one of those spots can never leave another one out of sync.
+local LAZY_NAME = "lazy.nvim"
+local LAZY_INPUT_NAME = "lazy-nvim"
+
 -- The previous lock, when one was passed. Nothing else in this file reads plugins.json.
 local prev_plugins = nil
 if prev_path then
@@ -173,6 +189,26 @@ if prev_path then
     )
   end
   prev_plugins = type(prev.plugins) == "table" and prev.plugins or {}
+  -- lazyNvim lives outside `plugins` (it decides the *existing* lazy-nvim input rather than
+  -- becoming a second plugin -- see LAZY_NAME's comment above), but the merge step in the main
+  -- loop below only ever reads prev_plugins[name]. Without this injection, prev_plugins["lazy.nvim"]
+  -- would stay nil whenever the previous plugins.json has nothing under that key in `plugins`, so a
+  -- spec lazy.nvim entry could never inherit a carried resolvedRef or a pin freeze from a prior
+  -- lazyNvim -- same_identity and the pin-freeze check further down would simply never fire for it,
+  -- no matter how many times nvimx-lock reruns. This is the read-side mirror of the write-side
+  -- routing near the end of this file (`result.lazyNvim = lazy_entry or ...`): the main loop itself
+  -- stays completely oblivious to lazyNvim's different destination.
+  --
+  -- Guarded by `prev_plugins[LAZY_NAME] == nil`: a plugins.json written by a pre-#49 nvimx that hit
+  -- this very bug (spec lazy.nvim written into `plugins["lazy.nvim"]`, then genflake's duplicate
+  -- `lazy-nvim` attribute killed the lock before it could be fixed) can leave a real entry there,
+  -- carrying a resolvedRef of its own (from import-seed or a resolved `version`). That entry is a
+  -- plugin decision like any other and must win over the synthetic-literal fallback this injects --
+  -- overwriting it unconditionally would silently discard exactly the carried ref a #49 upgrade is
+  -- supposed to preserve, for the population of users who hit #49's bug in the first place.
+  if prev_plugins[LAZY_NAME] == nil and type(prev.lazyNvim) == "table" then
+    prev_plugins[LAZY_NAME] = prev.lazyNvim
+  end
 end
 
 -- --import-lazy-lock (#25): lazy.nvim's own lock file, parsed up front like --prev / --lock so
@@ -408,7 +444,23 @@ end
 
 local plugins = {}
 local local_plugins = {}
+-- #49: the spec's own lazy.nvim entry, if it has one and it is not local (dev/dir) -- kept
+-- separate from `plugins` all the way to the final result (see LAZY_NAME's comment). nil stays nil
+-- (the synthetic literal wins at the end) unless the main loop below finds and fills it in.
+local lazy_entry = nil
 local seen_inputs = {}
+-- Reserve lazy.nvim's own input name before the main loop below ever runs, so the collision check
+-- there sees "lazy-nvim" as already claimed by lazy.nvim itself. Guarded by `not is_lazy` inside
+-- the loop (see there): without that guard, to_input_name("lazy.nvim") == "lazy-nvim" would make
+-- lazy.nvim collide with its own reservation, turning #49's main case (a spec listing
+-- folke/lazy.nvim) into a fatal error instead of the ordinary merge it is supposed to be.
+seen_inputs[LAZY_INPUT_NAME] = LAZY_NAME
+-- Plugin-vs-plugin input-name collisions only (input_name -> plugin names, in discovery order
+-- until the report step below sorts them); a collision with the reserved lazy-nvim name is
+-- reported immediately instead (see the loop). Kept apart from seen_inputs because that table
+-- only ever needs to remember the *first* claimant -- everyone who collides with it, including a
+-- third or fourth plugin normalizing to the same input name, keeps landing in the same list here.
+local collisions = {}
 -- Per-plugin warnings are collected rather than emitted inline: raw.plugins is traversed with
 -- pairs(), so emitting as we go would give the warnings array a different order on every run and
 -- churn the user's committed plugins.json. Sorted by plugin name below.
@@ -617,6 +669,20 @@ local function build_warning(name, build)
   return msg .. build_pointer(name, build)
 end
 
+-- #49: whether the spec has its own lazy.nvim entry that is not local (dev/dir), and whether that
+-- entry is pinned. Declared here, at file scope -- deliberately *outside* the
+-- `if update_all or #update_names > 0 then` block below -- because both the force set built in
+-- that block and the update-plan writer near the end of this file need it, and the latter runs
+-- whenever --update-plan was passed regardless of whether this block ran at all. Nesting these two
+-- lines inside the block would happen to still work today, since lock-app.nix only ever passes
+-- --update-plan together with --update (see this file's own argument-parsing comment at the top for
+-- why), but only by that accident -- nothing at this file's own layer enforces the pairing, and a
+-- future caller that passed --update-plan alone would then see lazy_is_spec/lazy_pinned silently
+-- disappear (nil, not false) rather than fail loudly.
+local lazy_p = (raw.plugins or {})[LAZY_NAME]
+local lazy_is_spec = lazy_p ~= nil and not (lazy_p.dev or lazy_p.dir)
+local lazy_pinned = lazy_is_spec and is_true(lazy_p.pin)
+
 -- #24: `--update [name...]`'s name validation and force-set construction. Every requested name
 -- is checked, and any problem is collected via fail_plugin, *before* the main loop below ever
 -- gets a chance to run -- an unknown name must not survive long enough to spend a git ls-remote
@@ -632,10 +698,18 @@ if update_all or #update_names > 0 then
   end
 
   for _, name in ipairs(update_names) do
-    if name == "lazy.nvim" then
-      -- Accepted, but it is not a spec plugin: it becomes an update-plan entry for the synthetic
-      -- lazy-nvim input directly (below), never a `force` entry.
+    if name == LAZY_NAME then
+      -- Accepted either way: it always becomes an update-plan entry for the lazy-nvim input
+      -- (below). Whether it is *also* a `force` entry now depends on whether the spec has its own
+      -- lazy.nvim (#49): if it does, force[LAZY_NAME] has to be set too, or the merge step further
+      -- down this same loop would carry the previous resolvedRef/pin freeze over unchanged and
+      -- `--update lazy.nvim` would silently do nothing to it. When the spec has no lazy.nvim (or
+      -- it is dev/dir), lazyNvim stays the synthetic literal that only the update-plan entry below
+      -- can move -- the pre-#49 behavior this comment used to describe as the *only* case.
       lazy_requested = true
+      if lazy_is_spec then
+        force[LAZY_NAME] = true
+      end
     else
       local p = (raw.plugins or {})[name]
       if p == nil then
@@ -667,14 +741,57 @@ if update_all or #update_names > 0 then
 end
 
 for name, p in pairs(raw.plugins or {}) do
+  -- #49: decided once, right here, at the very top of each iteration -- before the dev/dir branch
+  -- below, and before anything else this file does with `name`. Four separate places downstream
+  -- (the collision guard just below, the build-warning suppression, the entry-field exclusion, and
+  -- the plugins/lazyNvim routing at the bottom of this iteration) all need the same answer to "is
+  -- this the lazy.nvim entry?", and computing it once here rather than re-deriving `name ==
+  -- LAZY_NAME` four times means fixing one of those spots can never leave another out of sync.
+  local is_lazy = name == LAZY_NAME
   if p.dev or p.dir then
+    -- dev/dir wins over is_lazy: `{ "folke/lazy.nvim", dev = true }` is a local lazy.nvim, and the
+    -- lazyNvim slot for it stays the synthetic literal (untouched, not even reserved -- see below).
+    -- This is #49's explicit scope boundary, not an oversight: make-env.nix's devDirs already
+    -- resolves a dev/dir lazy.nvim to a working tree, independent of what lazyNvim says, and
+    -- teaching lazyNvim about it would not fix the mismatch bootstrap.lua.in's farm-fixed rtp path
+    -- has with that (a pre-existing, separate bug -- see the plan's risk list).
     local_plugins[name] = { dir = p.dir }
   else
     local input_name = to_input_name(name)
-    if seen_inputs[input_name] then
-      error(("input name collision: %s (%s / %s)"):format(input_name, name, seen_inputs[input_name]))
+    -- #49: lazy.nvim never enters the collision check below. seen_inputs[LAZY_INPUT_NAME] was
+    -- seeded to LAZY_NAME before this loop started specifically so that a plugin colliding with
+    -- lazy.nvim's reserved name can be reported deterministically (the `claimed == LAZY_NAME`
+    -- branch below); lazy.nvim itself must never be tested against its own reservation, or
+    -- to_input_name("lazy.nvim") == "lazy-nvim" would make the main case of #49 -- a spec
+    -- listing folke/lazy.nvim -- fail as if it collided with itself.
+    local collided = false
+    if not is_lazy then
+      local claimed = seen_inputs[input_name]
+      if claimed == LAZY_NAME then
+        -- The reserved name itself: claimant is fixed by the seed above, so this is fully
+        -- deterministic and can be reported the moment it is found (unlike the plugin-vs-plugin
+        -- case below, whose claimant depends on pairs() order -- see collisions' own comment).
+        fail_plugin(
+          name,
+          ("flake input name %q is reserved for lazy.nvim itself; give this plugin a different `name` in the spec"):format(
+            input_name
+          )
+        )
+        collided = true
+      elseif claimed then
+        -- Two ordinary plugins normalizing to the same input name. Which one `pairs()` visits
+        -- first (and so becomes `claimed`) is not deterministic, so *both* names are collected
+        -- here and reported together after the loop, sorted, rather than reporting only the
+        -- "second" one found -- the old `error()` this replaced picked whichever pairs() saw
+        -- second and printed only that pair, which changed message on about 1 run in 8.
+        collisions[input_name] = collisions[input_name] or { claimed }
+        local c = collisions[input_name]
+        c[#c + 1] = name
+        collided = true
+      else
+        seen_inputs[input_name] = name
+      end
     end
-    seen_inputs[input_name] = name
 
     local build = classify_build(p.build)
 
@@ -684,7 +801,22 @@ for name, p in pairs(raw.plugins or {}) do
     -- nothing at all.
     local has_unrunnable = (build.kind ~= "none" and build.kind ~= "shell" and build.kind ~= "steps")
       or (build.kind == "steps" and #unrunnable_steps(build) > 0)
-    if has_unrunnable then
+    if is_lazy then
+      -- #49: lazy.nvim's own `build` is never recorded (see the entry construction below) and
+      -- never gets the ordinary unrunnable-step treatment -- the three escape hatches
+      -- has_unrunnable's warning points at (overrides / nixpkgsFallback / nix/build-registry) are
+      -- all plugin-only (make-env.nix's lazyNvimDrv never even looks at a `build` field), so
+      -- printing that warning for lazy.nvim would be pure misdirection. What is said instead is
+      -- just "ignored" -- and only when there is something to ignore: `build.kind ~= "none"`
+      -- rather than `p.build ~= nil`, because `build = false` is lazy's own "do not build" (dumped
+      -- as the literal `false` by extract.lua, classified to `{ kind = "none" }` by classify_build
+      -- just like an absent build), and calling *that* "ignored" would be a lie about a build the
+      -- user deliberately turned off. classify_build is pure, so calling it here (via `build`,
+      -- already computed above) to decide whether to warn has no effect beyond the warning itself.
+      if build.kind ~= "none" then
+        warn_plugin(name, "`build` is ignored: nvimx installs lazy.nvim itself, not as a spec plugin")
+      end
+    elseif has_unrunnable then
       unbuildable = true
       warn_plugin(name, build_warning(name, build))
     end
@@ -698,10 +830,22 @@ for name, p in pairs(raw.plugins or {}) do
       commit = p.commit or vim.NIL,
       version = p.version or vim.NIL,
       pin = p.pin or vim.NIL,
-      dependencies = json.array(sorted_deps(p.dependencies)),
       resolvedRef = vim.NIL,
-      build = build,
     }
+    if is_lazy then
+      -- #49: `build` and `dependencies` are deliberately never written into lazyNvim. Nothing
+      -- downstream reads either for lazy.nvim (make-env.nix's lazyNvimDrv is not even passed a
+      -- `build`; `dependencies` is "for reference only" for every plugin, per sorted_deps' own
+      -- comment, and lazy has already expanded lazy.nvim's own `dependencies` into independent
+      -- raw.plugins entries by the time extract.lua dumps the spec -- see §1.5 of the plan).
+      -- `synthetic = false` is the one field only a spec-derived lazyNvim carries: it records that
+      -- this run's lazyNvim came from the spec rather than nvimx's own default (the literal at the
+      -- bottom of this file), for #32 and for a human reading plugins.json to tell apart.
+      entry.synthetic = false
+    else
+      entry.dependencies = json.array(sorted_deps(p.dependencies))
+      entry.build = build
+    end
 
     -- Merge with the previous lock. A plugin that is new, that was removed and re-added, or
     -- whose spec identity changed has no decision to inherit and starts over at null.
@@ -798,7 +942,19 @@ for name, p in pairs(raw.plugins or {}) do
     -- above (report_resolve_errors() before the main loop, for the same reason). This does not
     -- move the flush itself: plan §7 deliberately left that as a follow-up, so plugin_warnings
     -- emitted later in this same loop for *other*, valid plugins still make it out.
-    if source_ok and p.version and is_null(entry.resolvedRef) and is_null(entry.commit) and is_null(entry.tag) then
+    --
+    -- `not collided` is the same idea, for #49: a plugin whose input name collided (either with
+    -- lazy.nvim's reserved name or with another plugin) already has a resolve_errors entry too,
+    -- for the identical reason -- ls-remote against a doomed run's plugin is wasted work at best,
+    -- and a second, contradictory failure at worst.
+    if
+      source_ok
+      and p.version
+      and is_null(entry.resolvedRef)
+      and is_null(entry.commit)
+      and is_null(entry.tag)
+      and not collided
+    then
       pending[#pending + 1] = {
         name = name,
         entry = entry,
@@ -821,7 +977,49 @@ for name, p in pairs(raw.plugins or {}) do
         { name = name, entry = entry, constraint = p.version, from_defaults = p.versionFromDefaults }
     end
 
-    plugins[name] = entry
+    -- #49: three-way routing, the one place is_lazy and collided both matter. A collided plugin
+    -- (either kind) lands in neither `plugins` nor `lazy_entry` -- but everything above it in this
+    -- iteration (entry construction, the merge, the pin freeze, the import seed, the semver gate)
+    -- still ran unconditionally, exactly like #28's source_ok precedent: a plugin whose URL was
+    -- rejected still runs the whole iteration too, and is kept out of plugins.json only because
+    -- report_resolve_errors() below exits before any output is written, not because its entry was
+    -- never built. Skipping straight to the next iteration instead (a `goto continue` or
+    -- equivalent) would make the semver gate's own `not collided` guard above dead code -- nothing
+    -- would ever reach it collided, so a colliding plugin's `version` could never be proven to
+    -- have been kept out of ls-remote.
+    if is_lazy then
+      lazy_entry = entry
+    elseif not collided then
+      plugins[name] = entry
+    end
+  end
+end
+
+-- #49: plugin-vs-plugin input-name collisions, reported after the main loop rather than inline
+-- (unlike the reserved-name case above, whose claimant is fixed by the seed and so can be reported
+-- immediately). Sorted by input name, and each collision's own plugin names sorted too, so the
+-- message is reproducible regardless of pairs() traversal order -- table.sort(names)'s first
+-- element is what fail_plugin's own name argument uses, since fail_plugin needs one plugin name to
+-- key the error on and "whichever pairs() visited first" is exactly the non-determinism being
+-- fixed. The final order these errors print in is decided later anyway, by
+-- report_resolve_errors()'s own table.sort(resolve_errors, ...) -- so it does not matter that this
+-- loop runs after the reserved-name fail_plugin calls above; both kinds are sorted together there.
+do
+  local input_names = {}
+  for n in pairs(collisions) do
+    input_names[#input_names + 1] = n
+  end
+  table.sort(input_names)
+  for _, n in ipairs(input_names) do
+    local names = collisions[n]
+    table.sort(names)
+    fail_plugin(
+      names[1],
+      ("flake input name %q is derived from more than one plugin (%s); give all but one of them a different `name` in the spec"):format(
+        n,
+        table.concat(names, ", ")
+      )
+    )
   end
 end
 
@@ -1096,12 +1294,19 @@ if import_db then
   for _, n in ipairs(lock_names) do
     local p = raw_plugins[n]
     if p == nil then
-      if n == "lazy.nvim" then
-        -- nvimx pins lazy.nvim through its own synthetic flake input, never through a config
-        -- plugin entry (raw.plugins has no "lazy.nvim" key at all -- extract.lua never adds
-        -- one), so lazy-lock.json's own entry for itself is always unmatched. Called out with
-        -- its own message (classification 8) rather than folded into "not in the config": it is
-        -- not a config mistake, every lazy-lock.json has this entry.
+      if n == LAZY_NAME then
+        -- This branch is only reached when `p == nil`, i.e. raw.plugins has no "lazy.nvim" key --
+        -- the ordinary case, and the only one before #49. It is not true in general any more that
+        -- raw.plugins never has one: a spec is allowed to list lazy.nvim (§1.1/§3.8 of #49's
+        -- plan), and extract.lua dumps it like any other plugin when it does. When it does, `p` is
+        -- non-nil here and this whole `if p == nil` branch is skipped -- lazy.nvim is then handled
+        -- as an ordinary matched plugin by the ordinary branches below, and its `resolvedRef` gets
+        -- seeded from lazy-lock.json's own "lazy.nvim" entry exactly the way any other plugin's
+        -- would (the main merge loop already did this; see the `import_db` step there). This
+        -- branch exists for the remaining case -- no spec lazy.nvim entry -- where lazy-lock.json's
+        -- own entry for itself is unmatched. Called out with its own message (classification 8)
+        -- rather than folded into "not in the config": it is not a config mistake, every
+        -- lazy-lock.json has this entry.
         lazy_self = true
       elseif disabled_set[n] then
         ignored_disabled[#ignored_disabled + 1] = n
@@ -1292,10 +1497,16 @@ if unbuildable then
   note('See docs/architecture.md ("Plugin derivations").')
 end
 
+-- #49: lazy_entry is non-nil exactly when the spec has its own, non-local lazy.nvim entry (the
+-- main loop above set it); the literal below is nvimx's own default, unchanged from before #49,
+-- for every other config. lazy_entry already carries `inputName = LAZY_INPUT_NAME` (set the same
+-- way any plugin's is, from `to_input_name(name)`, which is the identity function on "lazy.nvim"),
+-- so this is not "replace the input name" -- it is "let the spec's own ref fields decide the URL
+-- genflake.lua builds for the input both cases still share".
 local result = {
   schemaVersion = 1,
-  lazyNvim = {
-    inputName = "lazy-nvim",
+  lazyNvim = lazy_entry or {
+    inputName = LAZY_INPUT_NAME,
     synthetic = true,
     source = { type = "github", owner = "folke", repo = "lazy.nvim" },
   },
@@ -1313,6 +1524,17 @@ f:close()
 -- force set that passed name validation above -- lock-app never recomputes it -- plus the
 -- synthetic lazy-nvim input whenever a full update or an explicit `--update lazy.nvim` asked
 -- for it (§3.3 / §3.6 of the plan).
+--
+-- #49's addition is `not lazy_pinned`: a bare --update must respect a spec lazy.nvim's own
+-- `pin = true` the same way it already respects `pin = true` on any other plugin (the bare
+-- `--update`'s own force-set loop, up near this file's --update argument handling, has always
+-- excluded `is_true(p.pin)` plugins from the bare-update force set -- this is that same
+-- exclusion, applied here to the one entry that lives outside `plugins` and so was never covered
+-- by that loop). `lazy_pinned` is false whenever `lazy_is_spec` is false (no spec lazy.nvim, or
+-- it is dev/dir), so a config that predates #49 keeps the old, unconditional behavior: a bare
+-- --update always includes the synthetic seed input, exactly as docs/architecture.md's #24
+-- section describes. Naming it explicitly (`lazy_requested`) still overrides `pin`, same as
+-- naming any other plugin does.
 if update_plan_path then
   local plan_names = {}
   for name, entry in pairs(plugins) do
@@ -1320,7 +1542,7 @@ if update_plan_path then
       plan_names[#plan_names + 1] = entry.inputName
     end
   end
-  if update_all or lazy_requested then
+  if (update_all and not lazy_pinned) or lazy_requested then
     plan_names[#plan_names + 1] = result.lazyNvim.inputName
   end
   table.sort(plan_names)

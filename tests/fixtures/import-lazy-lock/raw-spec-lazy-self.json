@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json, used by checks.resolve-import-lazy-lock's #49 case: exercises",
+    "classification 8's *non*-firing path -- the spec itself lists lazy.nvim, so lazy-lock.json's",
+    "own \"lazy.nvim\" entry is a genuine match instead of the default hands-off case",
+    "raw-spec.json / golden/imported.plugins.json already cover.",
+    "",
+    "lazy.nvim here must not carry `commit` (that closes seedable()'s first early return,",
+    "classification 2) and must not carry a `branch` other than \"main\" (that closes its second,",
+    "classification 3) -- either would keep resolvedRef null instead of seeding lazy-lock.json's",
+    "own commit for it. `version` is likewise omitted entirely: this check deliberately has",
+    "neither git nor --lazy on its PATH/argv (see its own header comment), so any unresolved",
+    "version constraint would make the whole run fail outright rather than proving anything about",
+    "the import path.",
+    "",
+    "plain.nvim is the one ordinary plugin: it matches lazy-lock.json's own",
+    "{ \"commit\": \"7777...\" } entry (no `branch`, no `version`), so \"import: N pinned\" counts two",
+    "-- proving lazy.nvim really is counted alongside a normal seed rather than being the only",
+    "thing pinned."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "lazy.nvim": {
+      "name": "lazy.nvim",
+      "short": "folke/lazy.nvim",
+      "url": "https://github.com/folke/lazy.nvim.git"
+    },
+    "plain.nvim": {
+      "name": "plain.nvim",
+      "short": "o/plain.nvim",
+      "url": "https://github.com/o/plain.nvim.git"
+    }
+  }
+}

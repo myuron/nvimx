@@ -1,0 +1,45 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json, used by checks.resolve-lazy-self's collide step (#49). Two",
+    "independent input-name collisions, not involving the real lazy.nvim:",
+    "",
+    "  - \"lazy-nvim\": a plugin whose *name itself* is \"lazy-nvim\" (e.g. extracted from",
+    "    { \"someone/lazy-nvim\" }) normalizes to the reserved input name \"lazy-nvim\" and must be",
+    "    fatal, naming the plugin, never a raw Nix duplicate-attribute error.",
+    "  - \"foo.nvim\" / \"foo-nvim\": two ordinary plugin names that both normalize to the input name",
+    "    \"foo-nvim\" (to_input_name maps \".\" and \"-\" the same way) -- the plugin-vs-plugin",
+    "    collision the reserved-name check does not cover.",
+    "",
+    "The \"lazy-nvim\" entry deliberately carries `version = \"^1.0\"` and an unreachable",
+    "`url = \"file:///nvimx-nonexistent/lazy-nvim\"`: this is what proves a plugin that lost the",
+    "reserved-name collision is kept out of the semver gate (§3.9-4 of the plan) rather than still",
+    "being queued for `git ls-remote` after resolve.lua already knows the whole run is doomed. Do",
+    "not remove either field -- without them, a regression that stops suppressing the gate for a",
+    "collided plugin would still pass every other check in this file (nothing else here gives a",
+    "collided plugin a `version`).",
+    "",
+    "This check step passes --lazy, unlike most of the other steps here: the version constraint",
+    "would otherwise fail resolve.lua's own \"needs --lazy\" precondition before ever reaching the",
+    "collision logic, which would make the whole point of these two fields moot."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "lazy-nvim": {
+      "name": "lazy-nvim",
+      "short": "someone/lazy-nvim",
+      "url": "file:///nvimx-nonexistent/lazy-nvim",
+      "version": "^1.0"
+    },
+    "foo.nvim": {
+      "name": "foo.nvim",
+      "short": "a/foo.nvim",
+      "url": "file:///nvimx-nonexistent/foo.nvim"
+    },
+    "foo-nvim": {
+      "name": "foo-nvim",
+      "short": "b/foo-nvim",
+      "url": "file:///nvimx-nonexistent/foo-nvim"
+    }
+  }
+}

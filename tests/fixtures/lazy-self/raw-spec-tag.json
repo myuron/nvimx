@@ -1,0 +1,44 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json (the shape extract.lua dumps), used by checks.resolve-lazy-self.",
+    "#49: lazy.nvim listed in the spec with a `tag`, `build`, and `dependencies` -- the",
+    "reserve-name-and-merge path (see raw-spec-collide.json for the collision path instead).",
+    "",
+    "`build` is a `kind ~= \"none\"` value on purpose: it is recorded nowhere in lazyNvim",
+    "(build/dependencies are dropped entirely for lazy.nvim) but does have to produce exactly one",
+    "warning saying so, and the golden `lazyNvim` entry must not carry a `build` key at all --",
+    "this fixture is the only one that can prove that (raw-spec-pin.json's `build = false` proves",
+    "the opposite: that a *deliberately disabled* build must never be warned about).",
+    "",
+    "`dependencies` similarly must vanish silently: lazy already expanded it into tokyonight.nvim",
+    "as its own raw.plugins entry (this is what a real extract.lua run produces -- see the plan's",
+    "§1.5), so tokyonight.nvim is listed here too, as an ordinary plugin, and nothing is lost by",
+    "dropping the `dependencies` array itself.",
+    "",
+    "Regenerate golden/tag.plugins.json and golden/tag.flake.nix with:",
+    "  seed=$(nix eval --impure --raw --expr",
+    "    '(builtins.getFlake (toString ./.)).inputs.lazy-nvim.outPath')",
+    "  nvim -l lua/nvimx/resolve.lua tests/fixtures/lazy-self/raw-spec-tag.json \\",
+    "    tests/fixtures/lazy-self/golden/tag.plugins.json --lazy \"$seed\"",
+    "  nvim -l lua/nvimx/genflake.lua tests/fixtures/lazy-self/golden/tag.plugins.json \\",
+    "    tests/fixtures/lazy-self/golden/tag.flake.nix",
+    "Never hand-edit the golden files."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "lazy.nvim": {
+      "name": "lazy.nvim",
+      "short": "folke/lazy.nvim",
+      "url": "https://github.com/folke/lazy.nvim.git",
+      "tag": "v11.14.1",
+      "build": ":TSUpdate",
+      "dependencies": ["tokyonight.nvim"]
+    },
+    "tokyonight.nvim": {
+      "name": "tokyonight.nvim",
+      "short": "folke/tokyonight.nvim",
+      "url": "https://github.com/folke/tokyonight.nvim.git"
+    }
+  }
+}
