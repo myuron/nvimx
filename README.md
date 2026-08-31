@@ -210,7 +210,7 @@ All options live under `programs.nvimx`.
 | `extraPackages` | `listOf package` | `[ ]` | Packages prepended to the wrapper's `PATH` (ripgrep, language servers, etc.). |
 | `extraLuaPackages` | `functionTo (listOf package)` | `ps: [ ]` | Lua rocks to put on the wrapper's `LUA_PATH` / `LUA_CPATH`, as a function over the Lua package set of the Neovim you chose. luarocks itself stays disabled. See [Lua rocks](#lua-rocks). |
 | `devPlugins` | `listOf str` | `[ ]` | Plugin names to load from a working tree under `devPath` instead of the Nix store. See [Local plugin development](#local-plugin-development). |
-| `devPath` | `str` | `"~/projects"` | Where dev working trees live. A locally developed plugin — named in `devPlugins`, or marked `dev = true` by your own spec — resolves to `<devPath>/<name>`, unless that spec entry also sets `dir`, which lazy uses directly instead. Replaces lazy.nvim's own `dev.path`. A `str`, not a `path`: a path would copy the tree into the store. |
+| `devPath` | `str` | `"~/projects"` | Where dev working trees live. A locally developed plugin — named in `devPlugins`, or marked `dev = true` by your own spec — resolves to `<devPath>/<name>`, unless that spec entry writes `dir` itself, which lazy uses directly instead. Replaces lazy.nvim's own `dev.path`. A `str`, not a `path`: a path would copy the tree into the store. |
 | `plugins.overrides` | `attrsOf (functionTo package)` | `{ }` | Per-plugin derivation overrides, keyed by the plugin name lazy derived. See [Escape hatches](#escape-hatches). |
 | `plugins.nixpkgsFallback` | `listOf str` | `[ ]` | Plugin names to take from `pkgs.vimPlugins` as-is instead of building from the lock. Opt-in per plugin. See [Escape hatches](#escape-hatches). |
 | `treesitter.grammars` | `nullOr (either (enum [ "all" ]) (listOf str))` | `null` | Tree-sitter grammars to merge into the locked `nvim-treesitter`, so no `:TSInstall` ever runs. See [Tree-sitter grammars](#tree-sitter-grammars). |
@@ -388,12 +388,13 @@ comes from the store exactly as before. The name is the one lazy derived — the
 `nvimx-lock/plugins.json` — and a name that matches nothing there is reported as a warning during
 `home-manager switch` rather than silently doing nothing.
 
-Plugins your lazy spec already marks `dev = true` need no entry here: `nvimx-lock` records them
-and nvimx wires them up on its own, under `devPath` just the same. The exception is a spec entry
-that also sets `dir` — lazy uses that path directly and never consults `devPath` for it, so
-changing `devPath` will not move it. Short of that, `devPath` is the one place that decides where
-dev working trees live. If you were setting lazy.nvim's own `dev.path`, set `devPath` instead —
-nvimx overrides `dev.path` along with the rest of `dev`.
+Plugins your lazy spec already marks `dev = true` need no entry here, and neither does a plugin
+whose spec sets `dir` without `dev` at all: `nvimx-lock` records both kinds and nvimx wires them up
+on its own, under `devPath` just the same. A spec entry that writes `dir` itself is the exception —
+lazy uses that path directly and never consults `devPath` for it, so changing `devPath` will not
+move it. Short of that, `devPath` is the one place that decides where dev working trees live. If
+you were setting lazy.nvim's own `dev.path`, set `devPath` instead — nvimx overrides `dev.path`
+along with the rest of `dev`.
 
 Three things are deliberate:
 
