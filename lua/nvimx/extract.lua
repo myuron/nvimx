@@ -58,11 +58,15 @@ local safe_opts = {
 -- default, so this tests for nil, not for falsy. `tag` and `commit` are typed string?, so a falsy
 -- value there is a type error rather than an idiom -- treating it as unset is deliberately not
 -- symmetric with lazy, whose early returns test for truthiness.
--- Local plugins are excluded by lazy first of all (git.lua:119-123). `dev` ones need no guard here
--- because resolve.lua routes them to localPlugins, but a plugin with an explicit `dir` and no
--- `dev` is a different story: dump_plugin only records `dir` for dev plugins, so resolve treats it
--- as remote and this constraint reaches plugins.json even though lazy would never consult it.
--- Routing those to localPlugins is a pre-existing gap, tracked separately.
+-- Local plugins are excluded by lazy first of all: git.lua's get_target returns at its very first
+-- branch (:118-123), before commit (:127), tag (:133) or defaults.version (:141) are ever
+-- consulted. No guard is needed here for that exclusion, because local_dir below captures both
+-- `dev = true` plugins and a spec's own explicit `dir` under the same predicate and dump_plugin
+-- routes them to resolve.lua's localPlugins branch, which never reads `version` (#47). The one
+-- exception is a pathological `dev = true` whose dev.path points back under lazy's own root:
+-- local_dir returns nil for that dir, and resolve.lua's `p.dev or p.dir` test falls back to `dev`
+-- alone to keep it local -- so `dev` is still dumped below even though `dir` now covers the
+-- ordinary cases on its own.
 --
 -- dump_plugin records whether the returned version came from here (defaults.version) rather than
 -- from p.version itself, in a `versionFromDefaults` flag on the raw-spec only (#23). resolve.lua's
@@ -91,9 +95,35 @@ local function dump_build_step(v)
   return type(v) == "string" and v or ("<" .. type(v) .. ">")
 end
 
+-- lazy fills in `dir` for *every* plugin, so `p.dir ~= nil` says nothing about whether the user
+-- keeps this plugin in a working tree: Meta:_rebuild short-circuits on a dir the spec wrote
+-- (lua/lazy/core/meta.lua:216-217), derives one for `dev = true` (:229-237), and otherwise falls
+-- back to `<root>/<name>` (:238). Dumping p.dir unconditionally would therefore send the entire
+-- spec down resolve.lua's localPlugins branch and leave `plugins` empty -- silently, with exit 0.
+-- What separates the two is the root itself, the same axis lazy uses for `_.is_local`
+-- (lua/lazy/core/plugin.lua:244-252): a dir under Config.options.root is one lazy manages.
+-- Testing the prefix meta.lua:238 itself builds is what makes that fallback value come back nil,
+-- so a `dir` with no `dev` keeps its dir here instead of being locked, fetched and farmed as an
+-- ordinary remote plugin (#47).
+-- This is deliberately not a promise that nvimx and lazy always classify a plugin the same way:
+-- the lock app extracts inside a throwaway XDG sandbox, so a dir written as a literal path under
+-- the *user's* runtime root looks local here and remote to lazy at runtime. Nothing available at
+-- extraction time closes that gap -- `_.is_local` least of all, since lazy sets it in
+-- update_state(), which only the real lazy.setup runs, never Plugin.Spec.new.
+---@param p table the plugin object normalized by lazy
+---@param root_prefix string Config.options.root .. "/", the same expression meta.lua:238 uses
+---@return string|nil the plugin's directory, or nil when lazy would manage it under its own root
+local function local_dir(p, root_prefix)
+  if type(p.dir) ~= "string" or p.dir:find(root_prefix, 1, true) == 1 then
+    return nil
+  end
+  return p.dir
+end
+
 ---@param p table the plugin object normalized by lazy
 ---@param default_version string|nil Config.options.defaults.version, false normalized to nil
-local function dump_plugin(p, default_version)
+---@param root_prefix string Config.options.root .. "/", the same expression meta.lua:238 uses
+local function dump_plugin(p, default_version, root_prefix)
   local build = nil
   if p.build == false then
     build = false
@@ -111,7 +141,7 @@ local function dump_plugin(p, default_version)
     name = p.name,
     short = p[1],
     url = p.url,
-    dir = p.dev and p.dir or nil,
+    dir = local_dir(p, root_prefix),
     dev = p.dev or nil,
     branch = p.branch,
     tag = p.tag,
@@ -142,13 +172,15 @@ local function capture(spec, opts)
   Config.setup(vim.tbl_deep_extend("force", {}, opts, safe_opts))
   -- false means "do not use tags", which git.lua:141 folds into the same nil as "unset"
   local default_version = Config.options.defaults.version or nil
+  -- meta.lua:238's own fallback expression, captured once: it decides local vs remote below.
+  local root_prefix = Config.options.root .. "/"
 
   local Plugin = require("lazy.core.plugin")
   local s = Plugin.Spec.new(spec, { pkg = false })
 
   local plugins = {}
   for name, p in pairs(s.plugins) do
-    plugins[name] = dump_plugin(p, default_version)
+    plugins[name] = dump_plugin(p, default_version, root_prefix)
   end
 
   local notifs = {}

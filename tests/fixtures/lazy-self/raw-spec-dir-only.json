@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json for checks.resolve-lazy-self's #47 case: a spec lazy.nvim with a",
+    "`dir` and NO `dev`. Before #47 extract.lua dropped that dir, so this entry reached resolve as",
+    "an ordinary spec lazy.nvim and decided the lazy-nvim input -- tag, pin and all. Now it is a",
+    "local plugin like `dev = true` + dir already was, so lazyNvim falls back to the synthetic",
+    "literal and the seed input moves on a bare --update again (#49's own rule for a dev/dir",
+    "lazy.nvim).",
+    "tag and pin are here precisely because they are what stops applying: without them the case",
+    "would only prove that lazyNvim went synthetic, not that the ref fields a user wrote stopped",
+    "deciding the input. tokyonight.nvim is the control -- it must keep its inputName and its",
+    "update-plan entry throughout.",
+    "Next to raw-spec-devpin.json, which covers the dev = true + dir + pin form: this one drops",
+    "dev and adds short / url / tag, so that genflake has a source to build a tagged URL from and",
+    "the case can show that URL going bare. devpin needs none of that -- it never reaches",
+    "genflake, so it has no URL to show going bare -- so the two fixtures are not one key apart."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "lazy.nvim": {
+      "name": "lazy.nvim",
+      "short": "folke/lazy.nvim",
+      "url": "https://github.com/folke/lazy.nvim.git",
+      "dir": "/nvimx-fixture/lazy.nvim",
+      "tag": "v11.0.0",
+      "pin": true
+    },
+    "tokyonight.nvim": {
+      "name": "tokyonight.nvim",
+      "short": "folke/tokyonight.nvim",
+      "url": "https://github.com/folke/tokyonight.nvim.git"
+    }
+  }
+}
