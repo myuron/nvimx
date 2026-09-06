@@ -132,7 +132,10 @@ in
 
         Plugins your lazy spec itself marks `dev = true` are handled automatically and need
         no entry here; they follow devPath just the same -- unless that same spec entry also
-        sets `dir`, in which case lazy uses the `dir` you wrote and devPath does not apply.
+        sets `dir`, in which case lazy uses the `dir` you wrote and devPath does not apply. A
+        plugin whose spec sets `dir` without `dev` at all is handled automatically too, and
+        falls into that same exception from the start: it needs no entry here, but devPath
+        never applies to it either.
       '';
     };
 
@@ -142,8 +145,8 @@ in
       example = "~/src";
       description = ''
         Where dev working trees live. A plugin nvimx develops locally -- named in devPlugins,
-        or marked `dev = true` by your own lazy spec -- resolves to <devPath>/<name>. A
-        leading `~` is expanded by lazy.nvim at runtime, not here.
+        or marked `dev = true` by your own lazy spec, with no `dir` of its own -- resolves to
+        <devPath>/<name>. A leading `~` is expanded by lazy.nvim at runtime, not here.
 
         The one exception is a spec entry that sets `dir` itself: lazy uses that path directly
         and never consults devPath for it. Short of that, devPath is the only thing deciding

@@ -1,0 +1,37 @@
+{
+  "_comment": [
+    "Hand-written raw-spec.json, used by checks.resolve-import-lazy-lock's #47 case: local.nvim",
+    "here sets `dir` and deliberately does NOT set `dev` -- write `dev` too and this becomes the",
+    "same shape raw-spec.json's own local.nvim already covers. Reusing the existing raw-spec.json",
+    "would also mean touching golden/imported.plugins.json and the check's three counts of 19",
+    "(docs/plans/49-lazy-nvim-collision.md SS5.6 records the same trap), so this case gets its own",
+    "file instead.",
+    "local.nvim carries `url`: without one, a routing regression would die on source.parse's",
+    "\"has no url\" before reaching the assertion this case actually wants, which is whether",
+    "classification 3L fires -- not a second way to fail on a missing url that",
+    "checks.extractor-local-dir already owns. It also carries the materialized",
+    "`defaults.version = \"*\"` (`versionFromDefaults = true`) that a routing regression would pin",
+    "from lazy-lock.json and then report as \"is not validated\"; that line's absence is itself part",
+    "of the assertion, not a semver-gate guard -- --import-lazy-lock seeds resolvedRef before #23's",
+    "gate runs, so the gate never fires here either way.",
+    "plain.nvim is copied verbatim from raw-spec.json's own entry: lazy-lock.json already has a",
+    "{ \"commit\": \"7777...\" } entry for it, so it pins normally and gives the case a plugin the",
+    "regression must NOT touch."
+  ],
+  "disabled": [],
+  "notifs": [],
+  "plugins": {
+    "local.nvim": {
+      "name": "local.nvim",
+      "dir": "/some/local/path",
+      "url": "file:///nvimx-nonexistent/local.nvim",
+      "version": "*",
+      "versionFromDefaults": true
+    },
+    "plain.nvim": {
+      "name": "plain.nvim",
+      "short": "o/plain.nvim",
+      "url": "https://github.com/o/plain.nvim.git"
+    }
+  }
+}
