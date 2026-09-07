@@ -409,8 +409,8 @@ Three things are deliberate:
   nvimx does to the store copy applies only to the store copy.
 - **`devPath` is per-machine, and it is yours.** Nothing about where your working trees live is
   read back out of `nvimx-lock/`, so a lock you commit never *decides* where another machine
-  loads a dev plugin from. (The lock does still *record* the directory lazy resolved on the
-  machine that ran it; nvimx simply never reads it.) Point `devPath` wherever you keep your
+  loads a dev plugin from. (Only the plugin's name goes into the lock; the directory lazy
+  resolved on the machine that ran it is never recorded.) Point `devPath` wherever you keep your
   projects.
 
 ### Lua rocks
