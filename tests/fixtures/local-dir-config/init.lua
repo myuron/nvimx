@@ -6,10 +6,10 @@
 -- dirabs / dirtilde / dirrel are the three ways Util.norm can leave a dir the spec wrote
 -- (lua/lazy/core/meta.lua:216-217): an absolute path verbatim, a "~" expanded against the
 -- extracting machine's $HOME, and a relative path left relative. nvimx records exactly what lazy
--- produced and absolutizes nothing -- doing otherwise would make nvimx point somewhere lazy does
--- not. dirnoname and sibling.nvim below are not shapes but separate axes (no url at all; a path
--- that only the trailing slash in the predicate keeps out of lazy's root). None of the
--- directories has to exist: lazy's dev.fallback is false and nothing checks.
+-- produced in the raw-spec and absolutizes nothing -- doing otherwise would make nvimx point
+-- somewhere lazy does not. dirnoname and sibling.nvim below are not shapes but separate axes
+-- (no url at all; a path that only the trailing slash in the predicate keeps out of lazy's root).
+-- None of the directories has to exist: lazy's dev.fallback is false and nothing checks.
 --
 -- tokyonight.nvim carries a tag so that the defaults.version below never reaches it (extract.lua's
 -- effective_version stops at tag). That leaves the local plugins as the only carriers of a version
