@@ -116,8 +116,10 @@ $ echo $?
 nvimx のモジュールは 1 箇所も使っていない。**本件の description でも使わない(§3.1)。
 `mkOption` / `mkIf` を**`let` の `inherit (lib) …` で引き込んで裸書きしている**点も同様である
 (`modules/programs/neovim/default.nix:10-18` / `vim.nix:8-13` / `helix.nix:9-14`。
-3 ファイルとも `with lib;` は使っていない —— 唯一の `with` は `neovim/default.nix:50` の
-`with lib.maintainers` で、無関係である)。nvimx 側は `lib.mkIf` / `lib.mkOption` と
+3 ファイルとも `lib` 全体を開く `with lib;` はどこにも無い —— `with types;`(`vim.nix:100`、
+`helix.nix:31` / `:91`)や `with lib.maintainers;`(`neovim/default.nix:50`)、
+`with pkgs.…`(`neovim/default.nix:348`、`helix.nix:98`)はあるが、いずれも局所的である)。
+nvimx 側は `lib.mkIf` / `lib.mkOption` と
 **その場で書き切る**規約である(`nix/home-manager/default.nix:332` の
 `xdg.configFile = lib.mkIf cfg.manageConfig`)。
 **ただしこの対比は upstream 側でも一様ではない** —— `vim.nix` は `mkIf` を `inherit` していないので、
