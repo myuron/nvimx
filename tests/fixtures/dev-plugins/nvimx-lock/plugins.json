@@ -30,9 +30,9 @@
     "  resolve.lua that omits the key outright, and now for every entry a real lock writes, and it",
     "  is what makes `v.dir` reintroduced without an `or` fallback fail here rather than in a",
     "  user's config.",
-    "dirred.nvim therefore stands for a plugins.json committed before #56 -- though its literal `~`",
-    "is unrealistic even for one: Util.norm expands `~` before extract.lua ever sees it, so no real",
-    "lock ever wrote this exact string. It is kept because it contrasts so visibly with devPath."
+    "dirred.nvim's literal `~` could not have come out of any real lock, pre-#56 ones included:",
+    "Util.norm expands `~` before extract.lua ever sees it. It is kept because it contrasts so",
+    "visibly with devPath."
   ],
   "lazyNvim": {
     "inputName": "lazy-nvim",

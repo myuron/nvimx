@@ -2983,7 +2983,9 @@
                 ! grep -q 'is not validated' dir-only.log
                 jq -e '.plugins["local.nvim"] == null' dir-only.json > /dev/null
                 # Keys only, never the recorded dir: #56 did stop recording it, and this line did not move.
-                # The value side is pinned by golden/imported.plugins.json's byte-for-byte diff (step 1 above).
+                # Step 1's golden pins the value for the `dev = true` route -- its local.nvim writes both dev
+                # and dir. This dir-only route (#47) has no golden of its own, so what pins its value is
+                # checks.extractor-local-dir's `select(. != { })` assertion, not the diff above.
                 jq -e '.localPlugins | has("local.nvim")' dir-only.json > /dev/null
 
                 touch $out
@@ -3499,9 +3501,12 @@
             let
               inherit (pkgs) lib;
               devRoot = ./tests/fixtures/dev-plugins/dev-root;
-              # Same evaluation-time guard checks.resolve-sources and checks.genflake-golden use:
-              # the fixture is a source file, so reading it is a plain readFile and never IFD, and
-              # the assertion below is what proves the value it holds still matters. #56 made
+              # Same evaluation-time *read* checks.resolve-sources and checks.genflake-golden use:
+              # the fixture is a source file, so reading it is a plain readFile and never IFD. The
+              # guard half does not carry over -- those two throw while the derivation is
+              # instantiated, so `nix eval .#checks....drvPath` catches them, while this one lands
+              # in `failures` like every other assertion here and surfaces on build instead. The
+              # assertion below is what proves the value it holds still matters. #56 made
               # resolve.lua record `{ }` for every local plugin, so no lock this repo produces
               # still carries a dir here at all, and two edits then make the "recorded dir must be
               # ignored" assertion pass for the wrong reason: strip the fixture's dir to "match
