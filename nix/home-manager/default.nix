@@ -355,7 +355,6 @@ in
     );
 
     home.packages = [ cfg.env.wrapped ] ++ lib.optional cfg.lock.installCommand lockCommand;
-
     home.sessionVariables = lib.mkIf cfg.defaultEditor { EDITOR = "nvim"; };
 
     xdg.configFile = lib.mkIf cfg.manageConfig {
