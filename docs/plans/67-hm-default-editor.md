@@ -896,10 +896,10 @@ pinned nixpkgs の `nixfmt` を掛け、差分ゼロになることを確認済�
               # that notices the declared default ceasing to be false, which every behavioural
               # assertion here misses once `off` is handed an explicit value; the fourth the only
               # one that notices a VISUAL set unconditionally, which cancels out of the fifth's
-              # difference; the fifth the only one that notices some other variable being added;
-              # the sixth the only one that notices mkDefault or mkForce; and the seventh the only
-              # one that notices this check quietly ceasing to test anything. Only `off ? EDITOR`
-              # is a duplicate, and it is kept for the sake of its message.
+              # difference; the fifth the only one that notices some other variable being added
+              # conditionally; the sixth the only one that notices mkDefault or mkForce; and the
+              # seventh the only one that notices this check quietly ceasing to test anything.
+              # Only `off ? EDITOR` is a duplicate, and it is kept for the sake of its message.
               failures =
                 lib.optional (
                   (on.EDITOR or null) != "nvim"
