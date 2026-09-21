@@ -62,6 +62,6 @@ If `stylua.toml` or `.luacheckrc` changed, run `nix fmt -- --clear-cache` first 
 
 Branch as `<type>/<slug>`. Conventional Commits, English, lowercase, imperative, no trailing period, scope = subsystem (`lock`, `resolve`, `hm`, `dev`, `extract`, `build-registry`, `plugin-drv`, `treesitter`, `wrapper`, `ci`). Write the PR body in English. Never push to main.
 
-## 6. Review the PR — `model: "fable"`
+## 6. Review the PR — `model: "opus"`
 
-Run `/review` on the PR in a fable subagent. Address every finding, re-review with a fresh fable subagent, repeat until zero findings.
+Run `/review` on the PR in an opus subagent. Address every finding, re-review with a fresh opus subagent, repeat until zero findings.
