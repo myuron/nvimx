@@ -85,6 +85,33 @@ in
       description = "Add a symlink so that the `vi` command launches the wrapped neovim";
     };
 
+    defaultEditor = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Set EDITOR to `nvim` in home.sessionVariables.
+
+        EDITOR only. home-manager's own programs.neovim.defaultEditor sets VISUAL as well;
+        nvimx does not, so a VISUAL you set yourself stays yours.
+
+        The value is the bare command name rather than a path into the Nix store. It resolves
+        through PATH, which home.packages already covers, and hm-session-vars.sh exports it
+        into the session, where a store path would outlive the generation that set it in every
+        shell still running.
+
+        Anything else that sets home.sessionVariables.EDITOR meets this the way home-manager
+        merges any two definitions: the same value merges in silence, a different one fails the
+        evaluation, and nvimx neither yields to it nor overrides it. programs.neovim, enabled
+        and with its own defaultEditor on, is the silent case -- the same bare "nvim", plus a
+        VISUAL of its own. programs.vim / programs.helix, likewise enabled with theirs on, are
+        the failing one (any of those modules with defaultEditor off, or not enabled at all,
+        contributes nothing here), and so is a hand-written EDITOR line whose value is anything
+        but "nvim" -- delete that line rather than keep both, since replacing it is what this
+        option is for. The error names home-manager's module file but never nvimx's, and between
+        nvimx and a hand-written line inside a flake it names neither.
+      '';
+    };
+
     extraPackages = lib.mkOption {
       type = lib.types.listOf lib.types.package;
       default = [ ];
@@ -328,6 +355,8 @@ in
     );
 
     home.packages = [ cfg.env.wrapped ] ++ lib.optional cfg.lock.installCommand lockCommand;
+
+    home.sessionVariables = lib.mkIf cfg.defaultEditor { EDITOR = "nvim"; };
 
     xdg.configFile = lib.mkIf cfg.manageConfig {
       nvim.source = cfg.configDir;

@@ -45,6 +45,7 @@
               # extraPackages = [ pkgs.ripgrep ];
 
               # vimAlias = true;  # if you also want to launch it with `vim`
+              # defaultEditor = true;  # export EDITOR=nvim
             };
           }
         ];

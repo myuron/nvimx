@@ -207,6 +207,7 @@ All options live under `programs.nvimx`.
 | `manageConfig` | `bool` | `true` | `true`: deploy `configDir` from the Nix store via `xdg.configFile` (reproducibility first, the default). `false`: `~/.config/nvim` is managed by you (fast iteration). |
 | `vimAlias` | `bool` | `false` | Add a symlink so that the `vim` command launches the wrapped Neovim. |
 | `viAlias` | `bool` | `false` | Add a symlink so that the `vi` command launches the wrapped Neovim. |
+| `defaultEditor` | `bool` | `false` | Set `EDITOR` to `nvim` in `home.sessionVariables`. `EDITOR` only — unlike home-manager's own `programs.neovim.defaultEditor`, `VISUAL` is left alone — and the value is the bare command name, resolved through the `PATH` that `home.packages` already provides. |
 | `extraPackages` | `listOf package` | `[ ]` | Packages prepended to the wrapper's `PATH` (ripgrep, language servers, etc.). |
 | `extraLuaPackages` | `functionTo (listOf package)` | `ps: [ ]` | Lua rocks to put on the wrapper's `LUA_PATH` / `LUA_CPATH`, as a function over the Lua package set of the Neovim you chose. luarocks itself stays disabled. See [Lua rocks](#lua-rocks). |
 | `devPlugins` | `listOf str` | `[ ]` | Plugin names to load from a working tree under `devPath` instead of the Nix store. See [Local plugin development](#local-plugin-development). |
