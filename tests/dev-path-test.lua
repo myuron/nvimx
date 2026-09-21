@@ -53,9 +53,10 @@ eq(plugins["bare.nvim"].dir, want_bare, "bare.nvim")
 
 -- The fact make-env's whole devDirs design rests on, pinned at runtime rather than merely argued
 -- for in the plan: a spec-level `dir` short-circuits lazy before dev.path is consulted, so this
--- plugin ignores its dev_dirs entry entirely. If a seed bump ever stopped short-circuiting, the
--- rationale for not reading localPlugins[*].dir would collapse -- and this line would go red
--- instead of nix flake check staying green.
+-- plugin ignores its dev_dirs entry entirely. If a seed bump ever stopped short-circuiting,
+-- devPath would start overriding a spec-level dir, breaking the exception the option
+-- descriptions promise (a spec entry that writes `dir` is not subject to devPath) -- and this
+-- line would go red instead of nix flake check staying green.
 eq(plugins["dirred.nvim"].dir, DIRRED_DIR, "dirred.nvim (spec dir must beat dev.path)")
 
 -- A different contract, not a third case of the one above: lazy.nvim's own dir never comes from

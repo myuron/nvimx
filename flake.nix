@@ -1570,8 +1570,22 @@
                   plugins.json > /dev/null
                 jq -e '(.plugins | keys) == ["tokyonight.nvim"]' plugins.json > /dev/null
                 jq -e '.warnings == []' plugins.json > /dev/null
-                # Only the *keys* of localPlugins are asserted on, never the recorded dir: nothing in nix/lib
-                # reads it (#26), and #56 is free to stop recording it without touching this check.
+                # The keys above are the whole of what nix/lib reads: make-env.nix only ever asks this map for
+                # its names (builtins.attrNames for devDirs, `? name` for unknownDevPluginNames), never for a
+                # value (#26). So #56 stopped writing anything else down -- for three of these six the dir lazy
+                # resolved came off the machine that ran the lock (bare.nvim's from dev.path, dirtilde's from a
+                # `~`, sibling's from stdpath), and this file gets committed. This is the only fixture whose
+                # resolve fills localPlugins with six entries at once -- a bare `dev`, three dir spellings
+                # (absolute, "~", relative), a shorthand-less dir, and a sibling of lazy's root -- so it is the
+                # one place "no matter which of those made a plugin local, the entry carries no value" can be
+                # said. It is deliberately not a list of every way in: a spec that writes `dev = true` *and* a
+                # dir (that shape is in checks.resolve-golden's fixture, whose golden pins its exact bytes),
+                # lazy's `virtual = true`, a dev.path aimed back under lazy's own root, and anything
+                # dev.patterns routes here off a plugin's url alone are all outside this fixture -- which is why
+                # the assertion is written over whatever localPlugins ended up holding rather than over a set of
+                # names. A plugins.json committed before #56 still carries the dirs it wrote then, and make-env
+                # still ignores those -- checks.dev-plugins' fixture is what holds *that* down.
+                jq -e '[.localPlugins[] | select(. != { })] | length == 0' plugins.json > /dev/null
 
                 # (3) The lock's own statement of the fix: no flake input for a plugin that lives on disk.
                 nvim -l ${./lua/nvimx}/genflake.lua plugins.json flake.nix
@@ -2968,7 +2982,10 @@
                 grep -q 'import: 1 pinned, 1 skipped,' dir-only.log
                 ! grep -q 'is not validated' dir-only.log
                 jq -e '.plugins["local.nvim"] == null' dir-only.json > /dev/null
-                # Keys only, never the recorded dir: #56 must be able to stop recording it without touching this.
+                # Keys only, never the recorded dir: #56 did stop recording it, and this line did not move.
+                # Step 1's golden pins the value for the `dev = true` route -- its local.nvim writes both dev
+                # and dir. This dir-only route (#47) has no golden of its own, so what pins its value is
+                # checks.extractor-local-dir's `select(. != { })` assertion, not the diff above.
                 jq -e '.localPlugins | has("local.nvim")' dir-only.json > /dev/null
 
                 touch $out
@@ -3151,9 +3168,10 @@
                   grep -q 'plugin "excmdbuild.nvim"' resolve.log
 
                   # A dev plugin has no lock entry and no flake input at all -- that is the whole
-                  # contract of localPlugins, and it is the half that survives #56 whichever way
-                  # that issue goes (the recorded `dir` may stop being recorded; these two do not
-                  # read it). The golden pins the value; these two pin the structure.
+                  # contract of localPlugins. resolve.lua stopped recording the dir it resolved
+                  # (#56), so what the golden now pins here is an empty object. These two lines
+                  # never read that value either way, so #56 left them alone; they pin the
+                  # structure, and the golden's byte-for-byte diff pins the value.
                   jq -e '.plugins["devel.nvim"] == null' got.json > /dev/null
                   jq -e '.localPlugins | has("devel.nvim")' got.json > /dev/null
                   touch $out
@@ -3483,6 +3501,22 @@
             let
               inherit (pkgs) lib;
               devRoot = ./tests/fixtures/dev-plugins/dev-root;
+              # Same evaluation-time *read* checks.resolve-sources and checks.genflake-golden use:
+              # the fixture is a source file, so reading it is a plain readFile and never IFD. The
+              # guard half does not carry over -- those two throw while the derivation is
+              # instantiated, so `nix eval .#checks....drvPath` catches them, while this one lands
+              # in `failures` like every other assertion here and surfaces on build instead. The
+              # assertion below is what proves the value it holds still matters. #56 made
+              # resolve.lua record `{ }` for every local plugin, so no lock this repo produces
+              # still carries a dir here at all, and two edits then make the "recorded dir must be
+              # ignored" assertion pass for the wrong reason: strip the fixture's dir to "match
+              # reality" and there is nothing left to ignore, or set it to what devPath would
+              # produce and reading it would give the same answer as ignoring it. What the dir
+              # stands for is a plugins.json committed before #56, a shape make-env has to keep
+              # tolerating for as long as anyone still has one checked in.
+              dirredRecordedDir =
+                (builtins.fromJSON (builtins.readFile ./tests/fixtures/dev-plugins/nvimx-lock/plugins.json))
+                .localPlugins."dirred.nvim".dir or null;
               # Evaluation half. A lock with a non-empty localPlugins -- one entry with no `dir`
               # and one whose recorded `dir` points somewhere devPath would never produce -- plus
               # one devPlugins name that matches a locked plugin and one that matches nothing.
@@ -3571,14 +3605,21 @@
                   (locked.devDirs."bare.nvim" or null) != "~/proj/bare.nvim"
                 ) "a localPlugins key must route to <devPath>/<name>"
                 # The fixture records dir = "~/elsewhere/dirred.nvim" for this one precisely so that
-                # reading it back would produce a different answer. It is ignored not because it is
-                # machine-specific -- a dir the user wrote absolute is kept verbatim -- but because
-                # a spec-level dir short-circuits lazy before dev.path is ever consulted
-                # (lua/lazy/core/meta.lua:214-217), so reading it could not change any resolved
-                # directory. devPath decides, and stays the only thing that does.
+                # reading it back would produce a different answer. Since #56 resolve.lua records no
+                # dir at all, a value here means a plugins.json committed before that change; back
+                # then a dir the spec wrote absolute came through unchanged, which is why this one
+                # is ignored not for being machine-specific but because a spec-level dir
+                # short-circuits lazy before dev.path is ever consulted (lua/lazy/core/meta.lua:214-217)
+                # -- reading it could not change any resolved directory. devPath decides,
+                # and stays the only thing that does. dirredRecordedDir above is what keeps this
+                # value from being "tidied up" into something devPath could produce, which would
+                # leave this assertion passing with nothing left to ignore.
                 ++ lib.optional (
                   (locked.devDirs."dirred.nvim" or null) != "~/proj/dirred.nvim"
                 ) "a localPlugins entry's recorded dir must be ignored: devPath decides"
+                ++ lib.optional (
+                  dirredRecordedDir == null || dirredRecordedDir == "~/proj/dirred.nvim"
+                ) "the fixture's dirred.nvim needs a recorded dir devPath could never produce"
                 # typo.nvim is in this list on purpose. A devPlugins name that matches nothing in
                 # the lock still gets a devDirs entry: it is inert (no plugin carries that name, so
                 # lazy never looks it up), unknownDevPluginNames is what reports the typo, and

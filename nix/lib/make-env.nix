@@ -98,14 +98,14 @@ let
   # used; the recorded localPlugins[*].dir is deliberately NOT -- reading it could not change a
   # single resolved directory. A `dir` the user wrote in the spec short-circuits lazy before
   # dev.path is ever consulted (lua/lazy/core/meta.lua:214-217), so the only entries this map can
-  # actually decide are the bare `dev = true` ones, which is exactly what devPath is for. That
-  # also spares us having to care what the recorded value even is: `dev = true` alone records the
-  # path lazy derived from the user's own dev.path (defaulting to ~/projects) and `dir = "~/x"`
-  # records a norm'd one, both absolute and both carrying the $HOME of whoever ran the lock,
-  # while `dir = "/abs/x"` is kept verbatim. Every value here is therefore <devPath>/<name>, and
-  # nothing machine-specific out of plugins.json reaches bootstrap.lua. (Which is not the same as
-  # devPath deciding where every dev plugin loads from: for a spec entry that sets `dir`, lazy
-  # short-circuits on that dir and never reaches this map. The option descriptions say so.)
+  # actually decide are the bare `dev = true` ones, which is exactly what devPath is for. Since
+  # #56, an entry here carries no value at all -- the key is the only information localPlugins
+  # holds. A plugins.json committed before #56 may still carry a dir, but this map has never read
+  # that value, whatever shape it was in. Every value here is therefore <devPath>/<name>, and
+  # nothing machine-specific out of plugins.json reaches bootstrap.lua.
+  # (Which is not the same as devPath deciding where every dev plugin loads from: for a spec
+  # entry that sets `dir`, lazy short-circuits on that dir and never reaches this map. The option
+  # descriptions say so.)
   devDirs = lib.genAttrs (lib.unique (devPlugins ++ builtins.attrNames localPlugins)) (
     n: "${devPath}/${n}"
   );

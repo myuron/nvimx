@@ -9,9 +9,7 @@
     "synthetic": true
   },
   "localPlugins": {
-    "local.nvim": {
-      "dir": "/some/local/path"
-    }
+    "local.nvim": {}
   },
   "plugins": {
     "branchy.nvim": {

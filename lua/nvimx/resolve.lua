@@ -755,7 +755,25 @@ for name, p in pairs(raw.plugins or {}) do
     -- resolves a dev/dir lazy.nvim to a working tree, independent of what lazyNvim says, and
     -- teaching lazyNvim about it would not fix the mismatch bootstrap.lua.in's farm-fixed rtp path
     -- has with that (a pre-existing, separate bug -- see the plan's risk list).
-    local_plugins[name] = { dir = p.dir }
+    -- #56: the entry is deliberately empty. make-env.nix only ever asks this map for its names --
+    -- builtins.attrNames for devDirs, `? name` for unknownDevPluginNames -- and never for a
+    -- value, so the dir lazy resolved never decided anything, while recording it put a path off
+    -- the machine that ran the lock into a file users commit. Several separate pieces of code can
+    -- put one there, which is why this is fixed by writing nothing rather than by filtering: a
+    -- dir the spec wrote is normed at lua/lazy/core/meta.lua:217, whatever its spelling
+    -- (absolute, "~", relative, or built out of stdpath); a string dev.path -- `~/projects` by
+    -- default -- is normed back at config.lua:287-288 and meta.lua:230 only appends `/<name>` to
+    -- it; and a *function* dev.path skips that guard entirely and is normed at meta.lua:231.
+    -- Nor does the spec entry decide who is subject to those: dev.patterns turns a plugin that
+    -- wrote neither dir nor dev, but whose url matches, into a `dev = true` one
+    -- (meta.lua:221-228) with the entry untouched. Treat that as the set this file knows of
+    -- rather than an exhaustive one -- it is the reason not to keep a list.
+    -- An empty object rather than `true` or a bare list of names: it keeps localPlugins an object
+    -- keyed by name, the one shape make-env.nix already reads, and it leaves room for a field
+    -- that is actually machine-independent should one ever be needed.
+    -- The raw-spec `dir` still does its other job -- it is half of the `p.dev or p.dir` test just
+    -- above, which is what routed this plugin here (#47) -- it simply stops being written down.
+    local_plugins[name] = json.object({})
   else
     local input_name = to_input_name(name)
     -- #49: lazy.nvim never enters the collision check below. seen_inputs[LAZY_INPUT_NAME] was

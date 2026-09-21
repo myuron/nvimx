@@ -9,9 +9,7 @@
     "synthetic": true
   },
   "localPlugins": {
-    "devel.nvim": {
-      "dir": "/nvimx-fixture/dev-root/devel.nvim"
-    }
+    "devel.nvim": {}
   },
   "plugins": {
     "branchy.nvim": {
