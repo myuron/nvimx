@@ -172,6 +172,7 @@ flowchart LR
         extraPackages on PATH and extraLuaPackages' rock env on LUA_PATH / LUA_CPATH
 [6] hm deployment:
       home.packages = [ wrapped-nvim, nvimx-lock ]
+      home.sessionVariables.EDITOR = "nvim"        (when defaultEditor = true)
       xdg.configFile."nvim" = configDir            (when manageConfig = true)
       xdg.dataFile."nvim/lazy/lazy.nvim" → farm/lazy.nvim
         (neutralizes the git clone in the user's existing bootstrap snippet)
@@ -513,7 +514,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, extractor-local-dir, semver-select, source-parse, resolve-merge, resolve-semver, resolve-sources, resolve-golden, genflake-golden, resolve-lazy-self, resolve-update, update-summary, resolve-import-lazy-lock, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, dev-plugins, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, hm-module-dev, hm-module-lua-packages, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases, extra-lua-packages}`
+- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, extractor-local-dir, semver-select, source-parse, resolve-merge, resolve-semver, resolve-sources, resolve-golden, genflake-golden, resolve-lazy-self, resolve-update, update-summary, resolve-import-lazy-lock, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, dev-plugins, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, hm-module-dev, hm-module-lua-packages, hm-module-default-editor, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases, extra-lua-packages}`
   - planned, not yet implemented: `e2e-offline` (#30)
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
