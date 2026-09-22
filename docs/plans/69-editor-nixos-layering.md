@@ -2023,14 +2023,23 @@ pinned rev 2 本)—— **形だけ見れば「コメントに期待値、コー
 ```
 P=docs/plans/69-editor-nixos-layering.md
 awk '/^## 8\./{s=1} s&&/^```bash$/{f=1;next} f&&/^```$/{exit} f' "$P" > /tmp/s8.sh
-grep -v '^#' /tmp/s8.sh | grep -c 'exit 1; }'                      # → 49
+grep -v '^#' /tmp/s8.sh | grep -cE 'exit 1; \}|\|\| exit 1$'       # → 50(ガードの実数)
+grep -v '^#' /tmp/s8.sh | grep -c 'exit 1; }'                      # → 49(形を 1 つしか見ない数え方)
 awk '/^# \(6[a-e]\)/{sec=substr($0,3,4)} /^# --- [0-9]/{sec="step"substr($0,7,2)} \
      !/^#/ && /exit 1; }/{n[sec]++} END{for(x in n) printf "%3d %s\n", n[x], x}' /tmp/s8.sh | sort -k2
 #   → 3 step1 / 1 step2 / 1 step3 / 3 step4 / 15 (6a) / 3 (6b) / 11 (6c) / 8 (6d) / 2 (6e) / 2 step7
 ```
 
-**この 2 本が数える範囲の外に、ガードが 1 本ある** —— 6e の `perl … || exit 1` は
-`exit 1; }` の形をしていないので文字列では出ない。**49 + 1 = 50 が実数**である。
+**フェンスの内側にあるガードは 50 本で、そのすべてが実行される行である —— 散文は 1 行も無い。**
+`exit 1; }` だけを数えると 49 になるのは、**6e の `perl … || exit 1` が別の形**だからで、
+§8 自身の注意 (c) が既に名指ししているとおりである。**上の 1 本目が実数、2 本目が形を 1 つしか
+見ない数え方**で、節ごとの内訳(下の awk)は後者で数えるので 49 に分かれる。
+**「50 と 49 の差は散文である」と書いていたのは誤りだった**(round-25 の指摘)——
+散文が混じるのは**スコープを外したとき**の話で(上の段落)、**フェンスの内側の話ではない**。
+**2 つの落とし穴を 1 つの説明に混ぜていた。**
+**これで数え違いは 4 回目、そのうち 2 回は「数え違いの原因」の説明自体が間違っていた** ——
+round-23(コメント行を除いていなかった)と round-25(散文とガードの形を混同した)。
+**数を直すときは、原因の説明も同じ強さで確かめること。**
 **数が合わない内訳は、次に数える人に「ガードが 1 本消えたのか」を調べさせる。**
 **この 49 本のうち、最初から在ったのは 0 本である。** 全部が
 「印字して目で見る」を fail-open として指摘されて足したもので、
@@ -2103,8 +2112,16 @@ cd /home/myuron/ghq/github.com/myuron/nvimx
 # 「まだコミットしていない」でも「base を間違えた」でも**何も出さず exit 0** する ——
 # 手順 4 の git stash と同じ穴なので、行数を数えて明示的に落とす:
 BASE=74aa086b98d349a718c6a8d70f192804d617b319
-if git rev-parse --verify -q HEAD >/dev/null && [ "$(git rev-parse HEAD)" != "$BASE" ]
-then RANGE="$BASE..HEAD"; else RANGE="HEAD"; fi     # コミット済みなら範囲、未コミットなら HEAD 比較
+# **分岐の条件は「HEAD が BASE と違うか」ではなく「ワーキングツリーが汚れているか」である。**
+# round-25 まで `[ "$(git rev-parse HEAD)" != "$BASE" ]` で分岐していたが、**このパイプラインでは
+# 本計画書が実装より先に単独でコミットされる**(`.claude/skills/nvimx-change/SKILL.md:14`。
+# 2 行上のコメントが `':!docs/plans/'` の理由としてまさにそれを引いている)ので、
+# **3 ファイルが未コミットの段階で既に `HEAD != BASE` が真**になる。すると
+# `RANGE="$BASE..HEAD"` になり、`':!docs/plans/'` を掛けた差分は**空** ——
+# **正しいツリーで 3 本とも誤爆した**(実装レビューが実測: `n=0` / shortstat 空 / `exp=0` 対 実際 3)。
+# `exp` の連動も同じ誤った前提を引き継いでいたので、**porcelain と逆向きに食い違っていた**。
+if [ -n "$(git status --porcelain -- ':!docs/plans/')" ]
+then RANGE="HEAD"; else RANGE="$BASE..HEAD"; fi     # 汚れていれば HEAD 比較、clean なら範囲
 # **`RANGE=""` にしないこと** —— 裸の `git diff` は index と比較するので、`git add -A` 済みだと
 # n=0 で FAIL し、下の porcelain は 3 を返して**両者が食い違う**(実測)。`HEAD` なら両方 3 になる。
 n=$(git diff --stat $RANGE -- ':!docs/plans/' | tee /dev/stderr | grep -c '|')
@@ -2120,8 +2137,10 @@ git diff --shortstat $RANGE -- ':!docs/plans/' \
 # **untracked も見ること** —— `git diff` は見ないので、§1.7 の作業ファイルを
 # リポジトリ内に置いてしまうと goal 5 が通ったまま `git add -A` 一発で PR に入る
 # (だから §1.7 は `mktemp -d` の中で作業する)。**期待値は上の分岐と連動する** ——
-# 未コミットなら 3 行(` M README.md` / ` M docs/...` / ` M nix/...`)、
-# **コミット済みならツリーは clean なので 0 行**が正しい:
+# **ツリーが汚れていれば 3 行**(` M README.md` / ` M docs/...` / ` M nix/...`。
+# `git add -A` 済みでも `M ` として 3 行出る)、**実装がコミット済みなら clean で 0 行**が正しい。
+# **上の分岐と同じ条件から導くこと** —— round-25 まで `[ "$RANGE" = HEAD ]` を
+# 「未コミット」の代理に使っていたが、その代理が壊れていたので `exp` も一緒に壊れていた:
 git status --porcelain -- ':!docs/plans/'
 [ "$RANGE" = HEAD ] && exp=3 || exp=0   # 未コミットなら 3 行、コミット済みならツリーは clean で 0
 a=$(git status --porcelain -- ':!docs/plans/' | grep -c .)
