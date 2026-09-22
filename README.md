@@ -221,7 +221,13 @@ All options live under `programs.nvimx`.
 | `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | Path to `lockDir`, relative to `projectDir`. |
 | `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
 
-`lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module.
+`lockDir` is the only option without a default, so it must always be set. `configDir` is also
+required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the
+module. On NixOS, `defaultEditor` can also look like it does nothing: NixOS itself sets
+`EDITOR=nano`, with no enable option behind it, and in a shell home-manager does not manage,
+NixOS's default is usually the only definition left — see
+[Edge cases and explicit limitations](docs/architecture.md#edge-cases-and-explicit-limitations)
+for why nvimx cannot resolve it, and what resolves it.
 
 ### Escape hatches
 
