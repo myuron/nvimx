@@ -1117,7 +1117,7 @@ rc=1
 | `architecture.md` の 90 / 156 / 555 行、517 行、Edge cases 522–528 行 | 90 / 156 / 555 / 517 は**正しい**。表は `:524-539`、該当行は `:528`。加えて `:287` / `:288` / `:470` も `nix flake lock` / `update` / `git add` に言及しており更新対象(§5.4) |
 | 「lock app が working-tree の差分を検出して警告する」は実装に存在しない | **正しい。** さらに同じ行の前半「missed during extraction」も誤りで、`README.md:74-75` に同じ誤りがある(§1.5)。当初の前提はここまで指摘していなかった |
 | lock が成功しても `git add` しないと `hasLock` が false で縮退する | **ほぼ正しい。** `hasLock` が見るのは `plugins.json` と `flake.lock` だけなので、`flake.nix` だけが untracked なら縮退しない(R4) |
-| README の更新は Usage 3 / Migrating 4 | これに加えて Usage 1(`:74-75`)の訂正を入れた(**当初挙げていた範囲を 1 箇所超える。この PR に含めると決定済み。R8**) |
+| README の更新は Usage 3 / Migrating 4 | これに加えて Usage 1(`:74-75`)の訂正を入れた(**当初挙げていた範囲を超える。この PR に含めると決定済み。R8**)。その後のレビューで Updating の段落(`:109-112`)/ Migrating 1(`:122` 付近)/ Migrating 3(`:136` 付近)も対象に加えた(§5.3 の 4〜6) |
 
 ### R2: check が「緑のまま何も守っていない」可能性、および掲載版と検証版の乖離
 
