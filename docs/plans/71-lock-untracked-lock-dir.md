@@ -1163,6 +1163,7 @@ rc=1
 
 - `flake.nix` だけが untracked(`plugins.json` / `flake.lock` は tracked)の場合、`hasLock` は true で
   縮退しないが、案内は「cannot see it」と言う。3 ファイルを揃えて commit させるのが目的なので許容。
+  **→ PR レビュー後に修正した(R13)。この場合は縮退を言わない別の案内を出す。**
 - flake を使わない home-manager(channels)では untracked でも見える。案内は誤警報になるが無害。
 - lockDir が `.gitignore` 対象だと、案内のコマンドは `-f` なしでは通らない。そこまでは面倒を見ない。
 - `GIT_DIR` を export したシェルから実行すると、lockDir が git 管理外でも 1 段目が `true`、
@@ -1176,6 +1177,7 @@ rc=1
   実行されない)終了コードが化ける(§6.2 (e) T5)。**今日も同じ**であり、今回は直さない。
 - Ctrl-C(SIGINT)では trap 内の `$?` が 0 になりうる(T7)。その場合失敗行は出ない。
   ユーザー自身が止めたので許容。終了コード(130)は変わらない。
+  `$?` が 130 のまま trap に入った場合の最終行は、PR レビュー後に専用の文言へ変えた(R13)。
 
 ### R6: untracked な lua の検出は実装しない(別 issue の候補)
 
@@ -1276,6 +1278,27 @@ tracked なら nix が面倒を見る」という前提を置くと縮退を見�
 (`grep -n 'intent\|automatically' README.md docs/architecture.md templates/default/README.md` に出るのは
 `env` / `nixpkgsFallback` / `--update` / build / `devPlugins` に関する無関係な `automatically` だけ)、
 §5.3〜§5.5 の文言はいずれも「lock の後に `git add nvim/nvimx-lock`」と書いているので、変更不要。
+
+### R13: PR レビュー後に加えた修正(§3 / §5 / §6 の掲載コードはこの修正より前の姿)
+
+PR #80 のコードレビューで出た指摘のうち、今回追加したメッセージとコメントの誤り 3 件を同じ PR で直した。
+**§3.2 / §3.3 / §5.1 / §5.2 / §6.2 に載せたコードと出力は、この修正を入れる前のものである**
+(§5.2 と `flake.nix` のバイト一致も、この修正の前までの話)。差分は次の 3 点だけ。
+
+| 対象 | 修正前 | 修正後 |
+|---|---|---|
+| `flake.nix` だけが untracked のときの案内(R4 の 1 点目) | 3 行の案内が「縮退する」と言う。`hasLock` は `flake.nix` を見ないので誤り | 縮退を言う 3 行は `plugins.json` / `flake.lock` のどちらかが untracked のときだけ。`flake.nix` だけなら `flake.nix is not tracked by git. The build does not read it, but it belongs with plugins.json and flake.lock:` と `git -C "<out>" add flake.nix` の 2 行 |
+| 案内の上のコメント | home-manager が「silently」縮退ビルドする、と書いていた | module は `hasLock` が false のとき warning を出す(`nix/home-manager/default.nix`)ので「silently」を削り、「switch 時にしか出ず原因も言わないので lock の時点で知らせる」に直した |
+| 終了コードが 128 を超えるときの最終行(R5 の 2 点目) | `failed (exit 130) -- look for the error above; ...`。探すべきエラーは無い | `nvimx-lock: stopped by a signal (exit N)`。終了コードはそのまま |
+
+check `lock-app` には step 4c(スタブ `nix` が 130 で終わる)を足し、step 7 の 1 ファイルずつのループを
+「`flake.nix` だけ → 2 行の案内で `degraded` を含まない / 他の 2 つ → 3 行の案内」に分けた。
+変異 3 種(128 の分岐を無効化 / 縮退側の判定に `flake.nix` を戻す / `flake.nix` 用の案内を消す)は
+いずれも check が赤になることを実測した。
+
+同じレビューで出た残りの指摘(`.gitignore` 対象の lockDir、`update-summary.lua` 失敗時に案内が出ない、
+trap 内の EPIPE、`path:.` が lockDir 全体をコピーする、スタブ `nix` の粒度、import レポートの 2 重出力)は
+R4 / R5 / R9 / R2 / R11 に既に書いた制限と同じか、その延長であり、別 issue に回す。
 
 ## 8. 検証手順(実装完了時に必ず全部通す)
 

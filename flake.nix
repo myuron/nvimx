@@ -3284,6 +3284,17 @@
                 [ "$err_at" -lt "$import_first" ]
                 [ "$import_last" -lt "$(wc -l < failed-import.log)" ]
 
+                # 4c. An exit code above 128 is a signal (Ctrl-C on `nix` comes back as 130). There
+                # is usually no error to scroll up to then, so the last line says so instead of
+                # pointing at one. The code itself is kept, as in step 4.
+                reset
+                rc=0
+                NVIMX_STUB_FAIL=130 nvimx-lock --config pincfg --out signalled 2> signalled.log || rc=$?
+                [ "$rc" -eq 130 ]
+                [ "$(tail -n 1 signalled.log)" = 'nvimx-lock: stopped by a signal (exit 130)' ]
+                absent '^nvimx-lock: failed' signalled.log
+                no_leftover
+
                 # 5. A failure before `nix` is ever reached ends the same way (the trap is what
                 # prints the line, not the nix step).
                 mkdir nosetup
@@ -3303,8 +3314,7 @@
                 absent 'nvimx-lock: failed' usage.log
 
                 # 7. The `git add` note. Inside a work tree, with any of the three files untracked,
-                # the lock still succeeds and says what is missing; once all three are tracked it
-                # says nothing. Read-only throughout: the index is whatever the user left it as.
+                # the lock still succeeds and says so; once all three are tracked it says nothing. Read-only throughout: the index is whatever the user left it as.
                 git init -q -b main repo
                 mkdir repo/nvim
                 cp $fx/init.lua repo/nvim/
@@ -3325,14 +3335,24 @@
                 grep -qxF "$note_cmd" untracked-update.log
                 [ "$(tail -n 1 untracked-update.log)" = 'nvimx-lock: note: home-manager switch cannot see it and builds the degraded (lazy.nvim-only) neovim instead' ]
                 [ "$(git -C repo status --porcelain)" = "?? nvim/" ]
-                # Each of the three files on its own is enough to trigger the note: one state per
+                # Each of the three files on its own is enough to trigger a note: one state per
                 # file, with only that file missing from the index. A single partial state would
-                # let a check narrowed to one file (whichever) pass unnoticed.
+                # let a check narrowed to one file (whichever) pass unnoticed. Which note differs:
+                # the build reads plugins.json and flake.lock (hasLock) but never flake.nix, so
+                # only the first two may claim a degraded build -- an untracked flake.nix alone
+                # gets the two-line note that just asks for it to be added.
                 for missing in plugins.json flake.nix flake.lock; do
                   git -C repo add nvim/nvimx-lock
                   git -C repo rm -q --cached nvim/nvimx-lock/$missing
                   nvimx-lock --config repo/nvim --out repo/nvim/nvimx-lock 2> partial-$missing.log
-                  grep -qxF "$note_cmd" partial-$missing.log
+                  if [ "$missing" = flake.nix ]; then
+                    [ "$(grep -c '^nvimx-lock: note:' partial-$missing.log)" -eq 2 ]
+                    [ "$(tail -n 1 partial-$missing.log)" = "nvimx-lock: note:   git -C \"$lockdir\" add flake.nix" ]
+                    absent 'degraded' partial-$missing.log
+                  else
+                    [ "$(grep -c '^nvimx-lock: note:' partial-$missing.log)" -eq 3 ]
+                    grep -qxF "$note_cmd" partial-$missing.log
+                  fi
                 done
                 git -C repo add nvim/nvimx-lock
                 git -C repo status --porcelain > status.before
