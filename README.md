@@ -143,8 +143,8 @@ and you decide when to move forward.
    fallback — a fallback would move every plugin to today's HEAD, which is what this flag exists
    to prevent.
 
-3. Read the import report before committing. It is printed at the very end of the run and accounts
-   for every entry in `lazy-lock.json`:
+3. Read the import report before committing. It is printed at the end of the run, after
+   `nix flake lock`'s output, and accounts for every entry in `lazy-lock.json`:
 
    - `import: pinned <name> to <sha>` — locked to exactly the commit lazy recorded
    - `import: <name> is not in lazy-lock.json; it will resolve normally` — the only plugins that

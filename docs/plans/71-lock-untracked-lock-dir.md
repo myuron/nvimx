@@ -772,6 +772,7 @@ check の作りで決めたこと(いずれもレビューで「緑のまま通�
    Neovim; `nvimx-lock` reminds you if it is not.」
 4. `:109-112`(Updating の段落)は、lock app が実行するコマンドの記述なので**直す**: 前半を `nix flake update --flake path:. <inputName>...` にし、手動フォールバックの `nix flake lock --update-input <name>` には「git リポジトリ内では lockDir が untracked の間は参照なしの形が落ちるので、先に追跡するか flake 参照に `path:.` を渡すこと」(README の文言は ``and inside a git repository that bare form fails while the lock directory is untracked, so track it first or pass `path:.` as the flake reference``)を足す(古い Nix での `path:.` 付き構文は手元で確かめられないので断定しない)。当初は「必要 Nix バージョンの説明として正しく、`--flake path:.` は実装の詳細」として据え置いたが、これは誤分類だった(実装・architecture.md `:287` とずれる)。
 5. Migrating 1(`:122` 付近)「and `git add` all of it. Nix only sees git-tracked files.」は**直す**: 直後が lock の手順なので「git add しないと lock / import が拾わない」と読めてしまう。実際には `nvimx-lock` は `--config` も `lazy-lock.json` も working tree から読み、追跡が効くのはビルド時の deploy だけ。Usage 1 と同じ区別(`nvimx-lock` and the import read your working tree either way, but a flake only sees git-tracked files, so anything you leave untracked would be missing from the config home-manager deploys)に書き換える。当初は「一般論として正しい」として据え置いたが、同じ PR の Usage 1 と食い違うため訂正した。`git add` する手順自体は残す。
+6. Migrating 3(`:136` 付近)「It is printed at the very end of the run」は**直す**: 今回の変更で、import レポートの後ろに `done` 行に加えて案内 3 行が続くようになり、「very end」が実態から離れた。「at the end of the run, after `nix flake lock`'s output,」にする。
 
 lock 前に lockDir を `git add` しろという注記は**足さない**(不要になったので)。
 
@@ -977,7 +978,7 @@ lock-app> nvimx-lock: note: home-manager switch cannot see it and builds the deg
 `nix/lib/lock-app.nix` を 1 箇所ずつ壊して確認した。§5.1 の diff を当てない(main のままの)lock app では
 step 1 の `[ 'flake lock' = 'flake lock path:.' ]` で赤になる。
 §8 手順 5 の変異 (a)〜(s) を **1 つずつ、すべて掲載版の check に対して**ビルドした
-((m) は 3 通りなので計 21 ビルド)。**21 通りとも rc=1(赤)**で、`set -x` のログで止まった assert は次のとおり:
+((m) は 3 通りなので計 21 ビルド)。**21 通りとも rc=1(赤)** で、`set -x` のログで止まった assert は次のとおり:
 
 | 変異 | 止まった step と assert |
 |---|---|
