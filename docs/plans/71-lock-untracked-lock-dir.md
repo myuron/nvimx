@@ -494,7 +494,7 @@ check の作りで決めたこと(いずれもレビューで「緑のまま通�
 3. `:251` の上の既存コメント(`:241-246`)の末尾に、`--flake "path:."` は上と同じ理由であることを 1 行。
    `:292` は「上と同じ」の 1 行で足りる。
 4. 案内の `if` の上: 2 段判定の理由(`rev-parse` は bare / `.git` 内で `false` を rc=0 で返すので
-   出力を比較する)、読み取りだけで index に触れないこと(#71 で `--intent-to-add` を却下した理由)、
+   出力を比較する)、読み取りだけで index に触れないこと(#71 の計画が `--intent-to-add` を却下した理由)、
    `make-env.nix` の `hasLock` が untracked な lock を見られないこと。加えて、3 ファイルとも見る理由:
    `path:` にしたので nix はもう `flake.lock` を intent-to-add しない。`flake.nix` が tracked でも
    `flake.lock` は untracked のまま残りうるので、判定を 1〜2 ファイルに縮めてはいけない(§7 R12)。
@@ -620,7 +620,7 @@ check の作りで決めたこと(いずれもレビューで「緑のまま通�
                 # 4. #71's actual symptom. When `nix` fails, the held-back warnings still come out
                 # (#22) -- after nix's own error, which is how the error got buried. The exit code
                 # survives the trap, and the very last line now says the run failed. The stub exits 7,
-                # not 1: every other failure in this check is a 1, so only this tells "the original
+                # not 1: the other failures in this check are 1 and 2, so only this tells "the original
                 # code is kept" apart from "anything non-zero becomes 1" -- in the exit status and
                 # in the number the last line prints.
                 reset
@@ -782,7 +782,7 @@ lock 前に lockDir を `git add` しろという注記は**足さない**(不�
 | `:90` | `L->>F: cd lockDir && nix flake lock` | `L->>F: cd lockDir && nix flake lock path:.` |
 | `:156` | `[5] Place it in lockDir and run (cd lockDir && nix flake lock)` | `(cd lockDir && nix flake lock "path:.")` にし、`:157` の後に「`path:.` ignores git tracking: lockDir usually sits inside the user's git repository, where a bare `nix flake lock` would resolve it as a git+file flake and not see the just-generated, untracked flake.nix (#71)」を 2 行で足す |
 | `:287` | `followed by `nix flake update <inputName...>`` | `nix flake update --flake path:. <inputName...>` |
-| `:288` | `Back door: plain `nix flake update <inputName>` in lockDir also works` | 「once lockDir is tracked by git (or with `--flake path:.`)」を足す。untracked だと落ちることは §1.1 で実測済み |
+| `:288` | `Back door: plain `nix flake update <inputName>` in lockDir also works` | 「(same as twist) once lockDir is tracked by git -- an untracked lockDir makes the bare form fail (#71), so add `--flake path:.` there --」の形に整理する。untracked だと落ちることは §1.1 で実測済み |
 | `:470` | `→ `git add` → `home-manager switch`.` | 「(`nvimx-lock` says so when the lock it wrote is still untracked)」を足す |
 | `:517` | checks 一覧 | **`resolve-import-lazy-lock,` の直後、`resolve-build-warnings` の前に `lock-app,` を足す**(lock パイプライン系の並びの末尾) |
 | `:528` | Edge cases「lua files not tracked by git」 | 下記に置き換える |

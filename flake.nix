@@ -3246,7 +3246,7 @@
                 # 4. #71's actual symptom. When `nix` fails, the held-back warnings still come out
                 # (#22) -- after nix's own error, which is how the error got buried. The exit code
                 # survives the trap, and the very last line now says the run failed. The stub exits 7,
-                # not 1: every other failure in this check is a 1, so only this tells "the original
+                # not 1: the other failures in this check are 1 and 2, so only this tells "the original
                 # code is kept" apart from "anything non-zero becomes 1" -- in the exit status and
                 # in the number the last line prints.
                 reset

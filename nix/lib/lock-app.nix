@@ -336,7 +336,7 @@ pkgs.writeShellApplication {
     # prints "false" with exit 0 inside a bare repository or .git/ (and fails with 128 outside git
     # altogether), so its output is compared rather than its exit code; only then does
     # `ls-files --error-unmatch` (non-zero if any of the files is not in the index) mean anything.
-    # Read-only on purpose -- no `git add --intent-to-add`, which was rejected in #71 because it
+    # Read-only on purpose -- no `git add --intent-to-add`, which #71's plan rejected because it
     # rewrites the user's index. All three files are checked because "path:" means nix no longer
     # intent-to-adds flake.lock for us: flake.nix can be tracked while flake.lock is still
     # untracked, so narrowing this to one or two files would miss a degraded build.
