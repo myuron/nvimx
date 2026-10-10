@@ -126,7 +126,9 @@ migration does not move a single plugin: you get the plugin set you are running 
 and you decide when to move forward.
 
 1. Copy your existing config into the repo — `init.lua`, the `lua/` tree, **and `lazy-lock.json`** —
-   and `git add` all of it. Nix only sees git-tracked files.
+   and `git add` all of it. `nvimx-lock` and the import read your working tree either way, but a
+   flake only sees git-tracked files, so home-manager would deploy your config without anything left
+   untracked.
 
 2. Lock with the import. `lazy-lock.json` sits inside your config directory, so the path can be
    omitted:
