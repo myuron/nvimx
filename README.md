@@ -113,10 +113,11 @@ Either form prints a summary of what moved, what was skipped because it is pinne
 added or removed. `--update` with no names is the most expensive form: it re-resolves every
 plugin's version constraint, so it is worth reserving for when you actually mean "update
 everything" rather than running it out of habit. `--update <name>...` moves the named inputs with
-`nix flake update --flake path:. <inputName>...` — the input name derived from the plugin's, not the name you
-type — whose positional-argument form needs Nix ≥ 2.19; older Nix would need
-`nix flake lock --update-input <name>` by hand instead, which only works once the lock directory
-is tracked by git or is given a `path:.` flake reference.
+`nix flake update --flake path:. <inputName>...` — the input name derived from the plugin's, not
+the name you type — whose positional-argument form needs Nix ≥ 2.19; older Nix would need
+`nix flake lock --update-input <name>` by hand instead — and inside a git repository that bare form
+fails while the lock directory is untracked, so track it first or pass `path:.` as the flake
+reference.
 
 ## Migrating from lazy.nvim
 
@@ -127,8 +128,8 @@ and you decide when to move forward.
 
 1. Copy your existing config into the repo — `init.lua`, the `lua/` tree, **and `lazy-lock.json`** —
    and `git add` all of it. `nvimx-lock` and the import read your working tree either way, but a
-   flake only sees git-tracked files, so home-manager would deploy your config without anything left
-   untracked.
+   flake only sees git-tracked files, so anything you leave untracked would be missing from the
+   config home-manager deploys.
 
 2. Lock with the import. `lazy-lock.json` sits inside your config directory, so the path can be
    omitted:
