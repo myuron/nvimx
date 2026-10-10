@@ -72,7 +72,8 @@ nvimx is a home-manager module. You integrate it into your dotfiles to use it.
 ## Usage
 
 1. Write your Lua config using the same definition method as lazy.nvim, then `git add` it.
-   Nix only sees git-tracked files, so an untracked Lua file is silently skipped during extraction.
+   `nvimx-lock` reads your working tree, so it locks an untracked Lua file just the same — but a
+   flake only sees git-tracked files, so home-manager would then deploy your config without it.
 
 2. Lock the plugins.
 
@@ -94,6 +95,11 @@ nvimx is a home-manager module. You integrate it into your dotfiles to use it.
    home-manager switch --flake .
    ```
 
+   Do not skip the `git add`. A flake only sees git-tracked files, so an untracked lock
+   directory is invisible to home-manager and the build degrades exactly as if you had never
+   locked. `nvimx-lock` prints a note when the lock it just wrote is not tracked yet. Locking
+   itself does not need the directory to be tracked.
+
 The order is not actually rigid. Switching without a lock does not fail: the build *degrades* to a
 lazy.nvim-only Neovim and warns you, while still installing the `nvimx-lock` command. Running
 `nvimx-lock` → commit → switching again gets you to the full state either way.
@@ -107,9 +113,11 @@ Either form prints a summary of what moved, what was skipped because it is pinne
 added or removed. `--update` with no names is the most expensive form: it re-resolves every
 plugin's version constraint, so it is worth reserving for when you actually mean "update
 everything" rather than running it out of habit. `--update <name>...` moves the named inputs with
-`nix flake update <inputName>...` — the input name derived from the plugin's, not the name you
-type — whose positional-argument form needs Nix ≥ 2.19; older Nix would need
-`nix flake lock --update-input <name>` by hand instead.
+`nix flake update --flake path:. <inputName>...` — the input name derived from the plugin's, not
+the name you type — whose positional-argument form needs Nix ≥ 2.19; older Nix would need
+`nix flake lock --update-input <name>` by hand instead — and inside a git repository that bare form
+fails while the lock directory is untracked, so track it first or pass `path:.` as the flake
+reference.
 
 ## Migrating from lazy.nvim
 
@@ -119,7 +127,9 @@ migration does not move a single plugin: you get the plugin set you are running 
 and you decide when to move forward.
 
 1. Copy your existing config into the repo — `init.lua`, the `lua/` tree, **and `lazy-lock.json`** —
-   and `git add` all of it. Nix only sees git-tracked files.
+   and `git add` all of it. `nvimx-lock` and the import read your working tree either way, but a
+   flake only sees git-tracked files, so anything you leave untracked would be missing from the
+   config home-manager deploys.
 
 2. Lock with the import. `lazy-lock.json` sits inside your config directory, so the path can be
    omitted:
@@ -133,8 +143,8 @@ and you decide when to move forward.
    fallback — a fallback would move every plugin to today's HEAD, which is what this flag exists
    to prevent.
 
-3. Read the import report before committing. It is printed at the very end of the run and accounts
-   for every entry in `lazy-lock.json`:
+3. Read the import report before committing. It is printed at the end of the run, after
+   `nix flake lock`'s output, and accounts for every entry in `lazy-lock.json`:
 
    - `import: pinned <name> to <sha>` — locked to exactly the commit lazy recorded
    - `import: <name> is not in lazy-lock.json; it will resolve normally` — the only plugins that
@@ -155,6 +165,9 @@ and you decide when to move forward.
 
    Each `resolvedRef` should be the commit `lazy-lock.json` has under the same name, and each
    `locked.rev` in `nvim/nvimx-lock/flake.lock` should be that same commit again.
+
+   Until the lock directory is tracked, home-manager cannot see it and builds the degraded
+   Neovim; `nvimx-lock` reminds you if it is not.
 
 5. From here on, run plain `nvimx-lock`. `--import-lazy-lock` is a one-shot migration: once
    `plugins.json` exists, every decision in it wins over the imported file, so a second import is a

@@ -13,6 +13,9 @@ A dotfiles template with nvimx integrated.
    git add nvim/nvimx-lock
    ```
 
+   Do not skip the `git add`: a flake only sees git-tracked files, so until the lock directory is
+   tracked home-manager builds the degraded (lazy.nvim-only) Neovim. `nvimx-lock` says so if it is not.
+
 4. Deploy with `home-manager switch --flake .`
 
 If you switch before locking, you still get a degraded build (lazy.nvim only) and nvim starts,
@@ -27,6 +30,6 @@ lock → commit → switch again.
 - Update one plugin: `nvimx-lock --update tokyonight.nvim` (any number of names) → commit → switch.
   Every other plugin's lock entry is left untouched
 - Either form prints a summary of what moved (and what was skipped) before exiting
-- Coming from plain lazy.nvim: put your `lazy-lock.json` next to `init.lua`, `git add` it, and run
-  the first lock with `--import-lazy-lock` — every plugin is then pinned to the commit lazy already
-  had, so nothing moves during the migration. See "Migrating from lazy.nvim" in the nvimx README
+- Coming from plain lazy.nvim: put your `lazy-lock.json` next to `init.lua`, `git add` it (the lock reads the working
+  tree either way, but a flake only sees tracked files), and run the first lock with
+  `--import-lazy-lock` — every plugin is then pinned to the commit lazy already had, so nothing moves during the migration. See "Migrating from lazy.nvim" in the nvimx README

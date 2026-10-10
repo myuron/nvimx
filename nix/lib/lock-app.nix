@@ -157,9 +157,31 @@ pkgs.writeShellApplication {
         cat "$sandbox/resolve.log" >&2
       fi
     }
+    #
+    # cleanup() runs on every exit after this point. `exit_code=$?` has to be its very first
+    # statement: any command run before it (flush_logs included) replaces $?. The failure line is
+    # an `if`, not `[ ... ] && echo`: the && form makes cleanup() return 1 when the test is false,
+    # and errexit is still in force inside the trap, so that aborts it with status 1 and turns a
+    # successful lock into exit 1. It does not `exit`,
+    # so the original exit code stays the process's exit code. The line comes last on purpose
+    # (#71): nix's own error used to sit above flush_logs' output, buried under the import report
+    # and warnings, and the last line of a failed run looked just like a successful one. The
+    # sandbox is removed before it so that a failing echo cannot leave it behind. Argument errors
+    # (exit 2) leave before the trap is installed, so they get no failure line. An exit code above
+    # 128 means a child was killed by a signal that this shell did not receive itself (137 from the
+    # OOM killer, 139 from a crash): it died without printing an error, so that case gets a line of
+    # its own instead of sending the user scrolling for one. Ctrl-C does not come this way: nix
+    # catches it, prints "error: interrupted by the user" and exits 1, and when bash itself takes
+    # the signal the trap sees $? = 0 and prints neither line.
     cleanup() {
+      exit_code=$?
       flush_logs
       rm -rf "$sandbox"
+      if [ "$exit_code" -gt 128 ]; then
+        echo "nvimx-lock: stopped by a signal (exit $exit_code)" >&2
+      elif [ "$exit_code" -ne 0 ]; then
+        echo "nvimx-lock: failed (exit $exit_code) -- look for the error above; it may sit above the import report and warnings" >&2
+      fi
     }
     trap cleanup EXIT
     mkdir -p "$sandbox/config" "$sandbox/data/nvim/lazy" "$sandbox/state" "$sandbox/cache"
@@ -235,20 +257,27 @@ pkgs.writeShellApplication {
     nvim -l "${luaDir}/genflake.lua" "$out/plugins.json" "$out/flake.nix"
     nixfmt "$out/flake.nix"
 
+    # "path:." on purpose (#71). With no flake ref nix resolves a directory inside a git work tree
+    # as a git+file flake, which only sees tracked files -- and the flake.nix written a few lines
+    # up is untracked on every first lock. A path: flake ignores git entirely. The ref stays
+    # relative and `cd "$out"` stays: an absolute "path:$out" would hand `#` / `?` in the path to
+    # the flake ref parser as a fragment / query. flake.lock does not record how the flake itself
+    # was referred to (its root node has only `inputs`), so the file is byte-identical either way.
     echo "nvimx-lock: pinning with nix flake lock" >&2
-    (cd "$out" && nix flake lock)
+    (cd "$out" && nix flake lock "path:.")
 
     # --update (#24): the plan resolve.lua wrote above is exactly the inputs whose previous
     # decision was force-discarded, so this is what actually walks them forward -- `nix flake
     # lock` just ran above and cannot move an input whose URL did not change (a branch/tag
     # tracker whose ref carries no rev). `xargs` is deliberately not used here: it comes from
     # findutils, which is not in runtimeInputs (only coreutils is), so a plain `mapfile` reads
-    # the plan instead.
+    # the plan instead. `--flake "path:."` is there for the same reason as the "path:." above
+    # (#71).
     if [ "$update_mode" -eq 1 ]; then
       mapfile -t update_inputs < "$sandbox/update-plan.txt"
       if [ "''${#update_inputs[@]}" -gt 0 ]; then
         echo "nvimx-lock: updating ''${#update_inputs[@]} input(s) with nix flake update" >&2
-        (cd "$out" && nix flake update "''${update_inputs[@]}")
+        (cd "$out" && nix flake update --flake "path:." "''${update_inputs[@]}")
       fi
     fi
 
@@ -289,7 +318,8 @@ pkgs.writeShellApplication {
       mv "$sandbox/plugins2.json" "$out/plugins.json"
       nvim -l "${luaDir}/genflake.lua" "$out/plugins.json" "$out/flake.nix"
       nixfmt "$out/flake.nix"
-      (cd "$out" && nix flake lock)
+      # "path:." for the same reason as the first lock above (#71).
+      (cd "$out" && nix flake lock "path:.")
     fi
 
     flush_logs
@@ -308,5 +338,29 @@ pkgs.writeShellApplication {
     fi
 
     echo "nvimx-lock: done. commit $out/{plugins.json,flake.nix,flake.lock}" >&2
+    # A flake only sees git-tracked files, and make-env.nix's hasLock cannot see an untracked
+    # plugins.json / flake.lock either: home-manager would build the degraded (lazy.nvim-only)
+    # neovim (#71). The module does warn about that, but only at switch time and without naming
+    # the cause, so say so here, while the user is still looking at the lock. Two stages: `rev-parse --is-inside-work-tree`
+    # prints "false" with exit 0 inside a bare repository or .git/ (and fails with 128 outside git
+    # altogether), so its output is compared rather than its exit code; only then does
+    # `ls-files --error-unmatch` (non-zero if any of the files is not in the index) mean anything.
+    # Read-only on purpose -- no `git add --intent-to-add`, which #71's plan rejected because it
+    # rewrites the user's index.
+    # flake.lock is checked on its own because "path:" means nix no longer intent-to-adds it for us:
+    # flake.nix can be tracked while flake.lock is still untracked, so dropping flake.lock from this
+    # list would miss a degraded build. flake.nix is not read by the build (hasLock only looks at the
+    # other two), so an untracked flake.nix alone does not degrade anything: it gets a note of its
+    # own that only asks for the three files to be committed together, instead of a false alarm.
+    if [ "$(git -C "$out" rev-parse --is-inside-work-tree 2> /dev/null)" = "true" ]; then
+      if ! git -C "$out" ls-files --error-unmatch -- plugins.json flake.lock > /dev/null 2>&1; then
+        echo "nvimx-lock: note: this lock is not fully tracked by git. A flake only sees git-tracked files, so until you run" >&2
+        echo "nvimx-lock: note:   git -C \"$out\" add plugins.json flake.nix flake.lock" >&2
+        echo "nvimx-lock: note: home-manager switch cannot see it and builds the degraded (lazy.nvim-only) neovim instead" >&2
+      elif ! git -C "$out" ls-files --error-unmatch -- flake.nix > /dev/null 2>&1; then
+        echo "nvimx-lock: note: flake.nix is not tracked by git. The build does not read it, but it belongs with plugins.json and flake.lock:" >&2
+        echo "nvimx-lock: note:   git -C \"$out\" add flake.nix" >&2
+      fi
+    fi
   '';
 }
