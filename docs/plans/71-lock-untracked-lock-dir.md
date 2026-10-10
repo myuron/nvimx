@@ -769,7 +769,7 @@ check の作りで決めたこと(いずれもレビューで「緑のまま通�
 3. **Migrating 4(`:149-157`)** —— `git add nvim/nvimx-lock && git commit ...` の後の段落に 1 文:
    「Until the lock directory is tracked, home-manager cannot see it and builds the degraded
    Neovim; `nvimx-lock` reminds you if it is not.」
-4. `:109-112`(Updating の段落)は、lock app が実行するコマンドの記述なので**直す**: 前半を `nix flake update --flake path:. <inputName>...` にし、手動フォールバックの `nix flake lock --update-input <name>` には「git リポジトリ内では lockDir が untracked の間は参照なしの形が落ちるので、先に追跡するか flake 参照に `path:.` を渡すこと」(README の文言は `and inside a git repository that bare form fails while the lock directory is untracked, so track it first or pass `path:.` as the flake reference`)を足す(古い Nix での `path:.` 付き構文は手元で確かめられないので断定しない)。当初は「必要 Nix バージョンの説明として正しく、`--flake path:.` は実装の詳細」として据え置いたが、これは誤分類だった(実装・architecture.md `:287` とずれる)。
+4. `:109-112`(Updating の段落)は、lock app が実行するコマンドの記述なので**直す**: 前半を `nix flake update --flake path:. <inputName>...` にし、手動フォールバックの `nix flake lock --update-input <name>` には「git リポジトリ内では lockDir が untracked の間は参照なしの形が落ちるので、先に追跡するか flake 参照に `path:.` を渡すこと」(README の文言は ``and inside a git repository that bare form fails while the lock directory is untracked, so track it first or pass `path:.` as the flake reference``)を足す(古い Nix での `path:.` 付き構文は手元で確かめられないので断定しない)。当初は「必要 Nix バージョンの説明として正しく、`--flake path:.` は実装の詳細」として据え置いたが、これは誤分類だった(実装・architecture.md `:287` とずれる)。
 5. Migrating 1(`:122` 付近)「and `git add` all of it. Nix only sees git-tracked files.」は**直す**: 直後が lock の手順なので「git add しないと lock / import が拾わない」と読めてしまう。実際には `nvimx-lock` は `--config` も `lazy-lock.json` も working tree から読み、追跡が効くのはビルド時の deploy だけ。Usage 1 と同じ区別(`nvimx-lock` and the import read your working tree either way, but a flake only sees git-tracked files, so anything you leave untracked would be missing from the config home-manager deploys)に書き換える。当初は「一般論として正しい」として据え置いたが、同じ PR の Usage 1 と食い違うため訂正した。`git add` する手順自体は残す。
 
 lock 前に lockDir を `git add` しろという注記は**足さない**(不要になったので)。
@@ -780,7 +780,7 @@ lock 前に lockDir を `git add` しろという注記は**足さない**(不�
 |---|---|---|
 | `:90` | `L->>F: cd lockDir && nix flake lock` | `L->>F: cd lockDir && nix flake lock path:.` |
 | `:156` | `[5] Place it in lockDir and run (cd lockDir && nix flake lock)` | `(cd lockDir && nix flake lock "path:.")` にし、`:157` の後に「`path:.` ignores git tracking: lockDir usually sits inside the user's git repository, where a bare `nix flake lock` would resolve it as a git+file flake and not see the just-generated, untracked flake.nix (#71)」を 2 行で足す |
-| `:287` | `then runs `nix flake lock` ... followed by `nix flake update <inputName...>`` | 前半を `then runs `nix flake lock "path:."``、後半を `nix flake update --flake path:. <inputName...>` にする(同じ文の中で表記を揃える。当初この行は後半しか挙げていなかった) |
+| `:287` | ``then runs `nix flake lock` ... followed by `nix flake update <inputName...>` `` | 前半を ``then runs `nix flake lock "path:."` ``、後半を `nix flake update --flake path:. <inputName...>` にする(同じ文の中で表記を揃える。当初この行は後半しか挙げていなかった) |
 | `:288` | `Back door: plain `nix flake update <inputName>` in lockDir also works` | 「(same as twist) once lockDir is tracked by git -- an untracked lockDir makes the bare form fail (#71), so add `--flake path:.` there --」の形に整理する。untracked だと落ちることは §1.1 で実測済み |
 | `:470` | `→ `git add` → `home-manager switch`.` | 「(`nvimx-lock` says so when the lock it wrote is still untracked)」を足す |
 | `:517` | checks 一覧 | **`resolve-import-lazy-lock,` の直後、`resolve-build-warnings` の前に `lock-app,` を足す**(lock パイプライン系の並びの末尾) |
