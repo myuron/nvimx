@@ -13,6 +13,9 @@ A dotfiles template with nvimx integrated.
    git add nvim/nvimx-lock
    ```
 
+   Do not skip the `git add`: a flake only sees git-tracked files, so until the lock directory is
+   tracked home-manager builds the degraded (lazy.nvim-only) Neovim. `nvimx-lock` says so if it is not.
+
 4. Deploy with `home-manager switch --flake .`
 
 If you switch before locking, you still get a degraded build (lazy.nvim only) and nvim starts,

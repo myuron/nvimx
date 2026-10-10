@@ -72,7 +72,8 @@ nvimx is a home-manager module. You integrate it into your dotfiles to use it.
 ## Usage
 
 1. Write your Lua config using the same definition method as lazy.nvim, then `git add` it.
-   Nix only sees git-tracked files, so an untracked Lua file is silently skipped during extraction.
+   `nvimx-lock` reads your working tree, so it locks an untracked Lua file just the same — but a
+   flake only sees git-tracked files, so home-manager would then deploy your config without it.
 
 2. Lock the plugins.
 
@@ -93,6 +94,11 @@ nvimx is a home-manager module. You integrate it into your dotfiles to use it.
    git add nvim/nvimx-lock
    home-manager switch --flake .
    ```
+
+   Do not skip the `git add`. A flake only sees git-tracked files, so an untracked lock
+   directory is invisible to home-manager and the build degrades exactly as if you had never
+   locked. `nvimx-lock` prints a note when the lock it just wrote is not tracked yet. Locking
+   itself does not need the directory to be tracked.
 
 The order is not actually rigid. Switching without a lock does not fail: the build *degrades* to a
 lazy.nvim-only Neovim and warns you, while still installing the `nvimx-lock` command. Running
@@ -155,6 +161,9 @@ and you decide when to move forward.
 
    Each `resolvedRef` should be the commit `lazy-lock.json` has under the same name, and each
    `locked.rev` in `nvim/nvimx-lock/flake.lock` should be that same commit again.
+
+   Until the lock directory is tracked, home-manager cannot see it and builds the degraded
+   Neovim; `nvimx-lock` reminds you if it is not.
 
 5. From here on, run plain `nvimx-lock`. `--import-lazy-lock` is a one-shot migration: once
    `plugins.json` exists, every decision in it wins over the imported file, so a second import is a
