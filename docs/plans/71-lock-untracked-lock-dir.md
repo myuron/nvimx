@@ -203,7 +203,7 @@ lock app 全体をオフラインで最後まで走らせられる(§6.2 (d) で
   ディレクトリ名 `a b#c?d%20e` の下で `path:.` は通り、`path:$PWD` は
   `error: getting status of ".../lock/path:/.../a b": No such file or directory` で落ちた。
 - `nix flake update --flake <ref> <input...>` は、既存コードが前提にしている位置引数形式と同じ
-  Nix ≥ 2.19 の構文なので、要求バージョンは変わらない(`README.md:109-112` の注記のまま)。
+  Nix ≥ 2.19 の構文なので、要求バージョンは変わらない(`README.md` の Nix ≥ 2.19 の注記は変わらない)。
 - 副次効果として、tracked だが未コミットの lockDir で毎回出ていた
   `warning: Git tree '...' is dirty` が出なくなる(§1.1 の出力と §6.2 (c) の出力の差)。
 - もう 1 つの副次効果: 参照なしの `nix flake lock` は、`flake.nix` が tracked なら書いた `flake.lock` を
@@ -768,8 +768,7 @@ check の作りで決めたこと(いずれもレビューで「緑のまま通�
 3. **Migrating 4(`:149-157`)** —— `git add nvim/nvimx-lock && git commit ...` の後の段落に 1 文:
    「Until the lock directory is tracked, home-manager cannot see it and builds the degraded
    Neovim; `nvimx-lock` reminds you if it is not.」
-4. `:109-112`(`nix flake update <inputName>...` の説明)は**触らない**。必要 Nix バージョンの説明として
-   今も正しく、`--flake path:.` は実装の詳細である。
+4. `:115-118`(Updating の段落。計画時は `:109-112` と書いていた)は、lock app が実行するコマンドの記述なので**直す**: 前半を `nix flake update --flake path:. <inputName>...` にし、手動フォールバックの `nix flake lock --update-input <name>` には「lockDir が git 追跡済み、または `path:.` を渡すこと」を一言足す(古い Nix での `path:.` 付き構文は手元で確かめられないので断定しない)。当初は「必要 Nix バージョンの説明として正しく、`--flake path:.` は実装の詳細」として据え置いたが、これは誤分類だった(実装・architecture.md:289 とずれる)。
 5. `:122`「Nix only sees git-tracked files.」は**触らない**(一般論として正しく、
    抽出について何も主張していない)。
 

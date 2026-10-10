@@ -113,9 +113,10 @@ Either form prints a summary of what moved, what was skipped because it is pinne
 added or removed. `--update` with no names is the most expensive form: it re-resolves every
 plugin's version constraint, so it is worth reserving for when you actually mean "update
 everything" rather than running it out of habit. `--update <name>...` moves the named inputs with
-`nix flake update <inputName>...` — the input name derived from the plugin's, not the name you
+`nix flake update --flake path:. <inputName>...` — the input name derived from the plugin's, not the name you
 type — whose positional-argument form needs Nix ≥ 2.19; older Nix would need
-`nix flake lock --update-input <name>` by hand instead.
+`nix flake lock --update-input <name>` by hand instead, which only works once the lock directory
+is tracked by git or is given a `path:.` flake reference.
 
 ## Migrating from lazy.nvim
 
