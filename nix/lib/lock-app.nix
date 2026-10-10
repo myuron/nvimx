@@ -168,8 +168,11 @@ pkgs.writeShellApplication {
     # and warnings, and the last line of a failed run looked just like a successful one. The
     # sandbox is removed before it so that a failing echo cannot leave it behind. Argument errors
     # (exit 2) leave before the trap is installed, so they get no failure line. An exit code above
-    # 128 is a signal (Ctrl-C is 130), ours or a child's: there is usually no error to look for
-    # then, so that case gets a line of its own instead of sending the user scrolling for one.
+    # 128 means a child was killed by a signal that this shell did not receive itself (137 from the
+    # OOM killer, 139 from a crash): it died without printing an error, so that case gets a line of
+    # its own instead of sending the user scrolling for one. Ctrl-C does not come this way: nix
+    # catches it, prints "error: interrupted by the user" and exits 1, and when bash itself takes
+    # the signal the trap sees $? = 0 and prints neither line.
     cleanup() {
       exit_code=$?
       flush_logs

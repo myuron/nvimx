@@ -1177,7 +1177,7 @@ rc=1
   実行されない)終了コードが化ける(§6.2 (e) T5)。**今日も同じ**であり、今回は直さない。
 - Ctrl-C(SIGINT)では trap 内の `$?` が 0 になりうる(T7)。その場合失敗行は出ない。
   ユーザー自身が止めたので許容。終了コード(130)は変わらない。
-  `$?` が 130 のまま trap に入った場合の最終行は、PR レビュー後に専用の文言へ変えた(R13)。
+  子プロセスだけがシグナルで死んで `$?` が 128 を超えたまま trap に入った場合の最終行は、PR レビュー後に専用の文言へ変えた(R13)。
 
 ### R6: untracked な lua の検出は実装しない(別 issue の候補)
 
@@ -1289,7 +1289,7 @@ PR #80 のコードレビューで出た指摘のうち、今回追加したメ�
 |---|---|---|
 | `flake.nix` だけが untracked のときの案内(R4 の 1 点目) | 3 行の案内が「縮退する」と言う。`hasLock` は `flake.nix` を見ないので誤り | 縮退を言う 3 行は `plugins.json` / `flake.lock` のどちらかが untracked のときだけ。`flake.nix` だけなら `flake.nix is not tracked by git. The build does not read it, but it belongs with plugins.json and flake.lock:` と `git -C "<out>" add flake.nix` の 2 行 |
 | 案内の上のコメント | home-manager が「silently」縮退ビルドする、と書いていた | module は `hasLock` が false のとき warning を出す(`nix/home-manager/default.nix`)ので「silently」を削り、「switch 時にしか出ず原因も言わないので lock の時点で知らせる」に直した |
-| 終了コードが 128 を超えるときの最終行(R5 の 2 点目) | `failed (exit 130) -- look for the error above; ...`。探すべきエラーは無い | `nvimx-lock: stopped by a signal (exit N)`。終了コードはそのまま |
+| 終了コードが 128 を超えるときの最終行 | `failed (exit 137) -- look for the error above; ...`。シグナルで殺された子はエラーを出さないので、探すべきエラーが無い | `nvimx-lock: stopped by a signal (exit N)`。終了コードはそのまま。**Ctrl-C はこの分岐に来ない**(実測: nix 2.34.8 は SIGINT で `error: interrupted by the user` を出して 1 で終わる。bash 自身がシグナルを受けたときは R5 のとおり trap 内の `$?` が 0)。届くのは、bash が受けていないシグナルで子だけが死んだとき(OOM killer の 137、クラッシュの 139 など) |
 
 check `lock-app` には step 4c(スタブ `nix` が 130 で終わる)を足し、step 7 の 1 ファイルずつのループを
 「`flake.nix` だけ → 2 行の案内で `degraded` を含まない / 他の 2 つ → 3 行の案内」に分けた。

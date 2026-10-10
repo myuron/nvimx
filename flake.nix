@@ -3284,8 +3284,9 @@
                 [ "$err_at" -lt "$import_first" ]
                 [ "$import_last" -lt "$(wc -l < failed-import.log)" ]
 
-                # 4c. An exit code above 128 is a signal (Ctrl-C on `nix` comes back as 130). There
-                # is usually no error to scroll up to then, so the last line says so instead of
+                # 4c. An exit code above 128 means the child was killed by a signal (the stub's 130
+                # stands in for nix dying of one; a real Ctrl-C makes nix exit 1 instead). A killed
+                # process leaves no error to scroll up to, so the last line says so instead of
                 # pointing at one. The code itself is kept, as in step 4.
                 reset
                 rc=0
