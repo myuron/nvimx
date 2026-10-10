@@ -160,8 +160,9 @@ pkgs.writeShellApplication {
     #
     # cleanup() runs on every exit after this point. `exit_code=$?` has to be its very first
     # statement: any command run before it (flush_logs included) replaces $?. The failure line is
-    # an `if`, not `[ ... ] && echo`: the && form returns 1 when the test is false, which would
-    # become the trap's last status and turn a successful lock into exit 1. It does not `exit`,
+    # an `if`, not `[ ... ] && echo`: the && form makes cleanup() return 1 when the test is false,
+    # and errexit is still in force inside the trap, so that aborts it with status 1 and turns a
+    # successful lock into exit 1. It does not `exit`,
     # so the original exit code stays the process's exit code. The line comes last on purpose
     # (#71): nix's own error used to sit above flush_logs' output, buried under the import report
     # and warnings, and the last line of a failed run looked just like a successful one. The
