@@ -319,7 +319,7 @@ nvimx-lock: note: home-manager switch cannot see it and builds the degraded (laz
   | work tree 内、3 ファイルとも tracked(未コミットでも可) | `true` | rc=0 | 出ない |
   | work tree 内、1 つ以上 untracked | `true` | rc=1 | **出る** |
   | work tree 内、`.gitignore` 対象 | `true` | rc=1 | 出る(`git add` には `-f` が要る。§7 R4) |
-  | submodule 内 | `true`(submodule が対象) | submodule の index で判定 | 同上 |
+  | submodule 内 | `true`(submodule が対象) | submodule の index で判定 | work tree 内の行と同じ(3 ファイルとも tracked なら出ない、1 つ以上 untracked なら出る) |
   | linked worktree(`git worktree add`)内、untracked | `true` | rc=1 | **出る**(その worktree の index で判定) |
   | `git add -N`(intent-to-add)済み | `true` | rc=0 | 出ない(index にエントリがあり、nix からも見える) |
   | lockDir が repo 外への symlink | 出力なし / rc=128 | — | 出ない(`$out` は `realpath` 済みなので実体側で判定される) |
@@ -835,7 +835,7 @@ Repository layout の `tests/fixtures/` 行(`:508`)は変更不要(fixture を�
 | 3 | `:292` の argv と **cwd(lockDir)**。収束パスの再 lock も `cd "$out"` して `path:.` | 3 箇所目だけ直し忘れる / 3 箇所目の `cd "$out" &&` を落とす |
 | 4 | `nix` が **7** で失敗したとき: **rc=7(trap を通っても元の終了コードのまま)**、error → warning の順、**最終行が `failed (exit 7)` の失敗行**、失敗行は 1 回、`done` は出ない、sandbox が残らない | 失敗行を `flush_logs` の前に出す / trap で `exit 0` する / #22 を壊して warning を消す / trap が終了コードを 1 に丸める(失敗行の後で `exit 1`)/ 文言の `N` を `1` に固定する |
 | 4b | issue の再現コマンドの経路(`--import-lazy-lock` + `nix` が 7 で失敗): rc=7、error → import 行 → **最終行が失敗行**、失敗行は 1 回。import 行の回数には依存しない(最初の import 行が error より後、最後の import 行が最終行より前) | import レポートを失敗行の後に出す / `nix` より前に出す |
-| 5 | `nix` 以前の失敗(extract が rc=1)でも最終行が `failed (exit 1)` の失敗行。`nix` は呼ばれない。sandbox が残らない | 失敗行を `nix` 呼び出しの `||` に付ける |
+| 5 | `nix` 以前の失敗(extract が rc=1)でも最終行が `failed (exit 1)` の失敗行。`nix` は呼ばれない。sandbox が残らない | 失敗行を `nix` 呼び出しの `\|\|` に付ける |
 | 6 | exit 2 には失敗行が出ない | trap を引数パースより前に移す |
 | 7 | untracked で案内 3 行(コマンド行は逐語、最終行は逐語)。**判定に使う git の出力が漏れない**(untracked 時の stderr に `pathspec` が無い、tracked 時の stdout が空)。**`--update` でもサマリの後、最終行まで案内が出る**。**3 ファイルのどれか 1 つだけが untracked な 3 状態すべてで出る**。全部 tracked で出ない。**index が不変** | `git add -N` を入れる / 判定を 3 ファイルのうち 1 つだけに縮める(どの 1 つでも赤) / 判定コマンドの `> /dev/null 2>&1` を外す / `--update` のとき案内を出さない |
 | 8 | bare リポジトリ内で案内が出ない | 1 段目を終了コード判定にする |
