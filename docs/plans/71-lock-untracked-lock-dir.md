@@ -495,9 +495,10 @@ check の作りで決めたこと(いずれもレビューで「緑のまま通�
    `:292` は「上と同じ」の 1 行で足りる。
 4. 案内の `if` の上: 2 段判定の理由(`rev-parse` は bare / `.git` 内で `false` を rc=0 で返すので
    出力を比較する)、読み取りだけで index に触れないこと(#71 の計画が `--intent-to-add` を却下した理由)、
-   `make-env.nix` の `hasLock` が untracked な lock を見られないこと。加えて、3 ファイルとも見る理由:
+   `make-env.nix` の `hasLock` が untracked な lock を見られないこと。加えて、3 ファイルを並べる理由:
    `path:` にしたので nix はもう `flake.lock` を intent-to-add しない。`flake.nix` が tracked でも
-   `flake.lock` は untracked のまま残りうるので、判定を 1〜2 ファイルに縮めてはいけない(§7 R12)。
+   `flake.lock` は untracked のまま残りうるので、外してはいけないのは `flake.lock`(と `plugins.json`)である(§7 R12)。
+   `flake.nix` はビルドに読まれない(`hasLock` は他の 2 つしか見ない)が、3 ファイルを一緒にコミットさせるために並べている。
 
 ファイル冒頭のコメント(`:1-2`)は変更不要。
 
@@ -1261,8 +1262,11 @@ A  nvim/lk/flake.nix
 影響は小さいと判断する: 初回 lock 以外では 3 ファイルとも既に tracked なのが普通で、tracked な
 `flake.lock` の書き換えにはどちらの方式でも `git add` は関係しない。そして新しい状態は黙って縮退しない ——
 案内は 3 ファイルを個別に見ており、`flake.lock` だけが index に無い状態は check step 7 の
-`missing=flake.lock` が固定している。**案内の判定を「`flake.nix` が tracked なら nix が面倒を見る」という
-前提で 1〜2 ファイルに縮めてはいけない**理由がこれである(§5.1 のコメント 4 に残す)。
+`missing=flake.lock` が固定している。**案内の判定から `flake.lock` を外してはいけない**(「`flake.nix` が
+tracked なら nix が面倒を見る」という前提を置くと縮退を見逃す)理由がこれである(§5.1 のコメント 4 に残す)。
+`flake.nix` 自体はビルドに読まれない(`hasLock` は `plugins.json` と `flake.lock` しか見ない)ので、
+縮退を見逃さないだけなら `{plugins.json, flake.lock}` の 2 つで足りる。`flake.nix` を並べるのは、
+3 ファイルを一緒にコミットさせるためである。
 
 「ユーザーの index に触れない」という方針(§2 の 3)から見れば、nix が代わりに index を書き換えていた
 副作用が消えるのは一貫した方向の変化でもある。README / `docs/architecture.md` /

@@ -337,9 +337,11 @@ pkgs.writeShellApplication {
     # altogether), so its output is compared rather than its exit code; only then does
     # `ls-files --error-unmatch` (non-zero if any of the files is not in the index) mean anything.
     # Read-only on purpose -- no `git add --intent-to-add`, which #71's plan rejected because it
-    # rewrites the user's index. All three files are checked because "path:" means nix no longer
-    # intent-to-adds flake.lock for us: flake.nix can be tracked while flake.lock is still
-    # untracked, so narrowing this to one or two files would miss a degraded build.
+    # rewrites the user's index.
+    # flake.lock is checked on its own because "path:" means nix no longer intent-to-adds it for us:
+    # flake.nix can be tracked while flake.lock is still untracked, so dropping flake.lock from this
+    # list would miss a degraded build. flake.nix is not read by the build (hasLock only looks at the
+    # other two); it is listed so that the three files get committed together.
     if [ "$(git -C "$out" rev-parse --is-inside-work-tree 2> /dev/null)" = "true" ] \
       && ! git -C "$out" ls-files --error-unmatch -- plugins.json flake.nix flake.lock > /dev/null 2>&1; then
       echo "nvimx-lock: note: this lock is not fully tracked by git. A flake only sees git-tracked files, so until you run" >&2
