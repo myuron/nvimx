@@ -251,8 +251,9 @@ nvimx-lock: failed (exit N) -- look for the error above; it may sit above the im
 - **`exit_code=$?` は関数の 1 文目でなければならない。** 先に `flush_logs` を呼ぶと `$?` は
   その戻り値(0)に置き換わる(T6: `f; ec=$?` → `ec=0`)。
 - **`[ "$exit_code" -ne 0 ] && echo ...` と書いてはいけない。`if ... fi` にする。**
-  `&&` 形は成功時にテストが偽で関数が 1 を返し、trap の最後のコマンドが非ゼロになって
-  **成功した lock の終了コードが 1 に化ける**(T3: rc=1)。`if` 形は条件が偽でも 0 を返す(T2: rc=0)。
+  `&&` 形は成功時にテストが偽で `cleanup()` が 1 を返す。trap の中でも `errexit` は生きているので、
+  その非ゼロで trap が打ち切られ、**成功した lock の終了コードが 1 に化ける**(T3: rc=1。
+  `errexit` が無ければ rc=0 のまま)。`if` 形は条件が偽でも 0 を返す(T2: rc=0)。
 - **trap 内で `exit` を呼ばない。** EXIT trap が `exit` しなければ元の終了コードがそのまま
   プロセスの終了コードになる(T1: `exit 3` → 失敗行を出したうえで rc=3)。
 - **trap の中でも `set -e` は生きている。** trap 内のコマンドが失敗すると、そこで trap が打ち切られ、
@@ -781,12 +782,12 @@ lock 前に lockDir を `git add` しろという注記は**足さない**(不�
 | `:90` | `L->>F: cd lockDir && nix flake lock` | `L->>F: cd lockDir && nix flake lock path:.` |
 | `:156` | `[5] Place it in lockDir and run (cd lockDir && nix flake lock)` | `(cd lockDir && nix flake lock "path:.")` にし、`:157` の後に「`path:.` ignores git tracking: lockDir usually sits inside the user's git repository, where a bare `nix flake lock` would resolve it as a git+file flake and not see the just-generated, untracked flake.nix (#71)」を 2 行で足す |
 | `:287` | ``then runs `nix flake lock` ... followed by `nix flake update <inputName...>` `` | 前半を ``then runs `nix flake lock "path:."` ``、後半を `nix flake update --flake path:. <inputName...>` にする(同じ文の中で表記を揃える。当初この行は後半しか挙げていなかった) |
-| `:288` | `Back door: plain `nix flake update <inputName>` in lockDir also works` | 「(same as twist) once lockDir is tracked by git -- an untracked lockDir makes the bare form fail (#71), so add `--flake path:.` there --」の形に整理する。untracked だと落ちることは §1.1 で実測済み |
-| `:470` | `→ `git add` → `home-manager switch`.` | 「(`nvimx-lock` says so when the lock it wrote is still untracked)」を足す |
+| `:288` | ``Back door: plain `nix flake update <inputName>` in lockDir also works`` | 「(same as twist) once lockDir is tracked by git -- an untracked lockDir makes the bare form fail (#71), so add `--flake path:.` there --」の形に整理する。untracked だと落ちることは §1.1 で実測済み |
+| `:470` | ``→ `git add` → `home-manager switch`.`` | 「(`nvimx-lock` says so when the lock it wrote is still untracked)」を足す |
 | `:517` | checks 一覧 | **`resolve-import-lazy-lock,` の直後、`resolve-build-warnings` の前に `lock-app,` を足す**(lock パイプライン系の並びの末尾) |
 | `:528` | Edge cases「lua files not tracked by git」 | 下記に置き換える |
 | `:528` の後 | — | 下記の新しい行を足す |
-| `:555` | `After `nix run .#lock`, `cd lockDir && nix flake lock` must succeed` | `cd lockDir && nix flake lock "path:."` |
+| `:555` | ``After `nix run .#lock`, `cd lockDir && nix flake lock` must succeed`` | `cd lockDir && nix flake lock "path:."` |
 
 Edge cases 表(`:528`)の置き換えと追加:
 
