@@ -186,7 +186,8 @@ home-manager 自身もこのオプションを `--add-flags` の運搬に使っ�
 
 差は下 2 行だけである。home-manager では `extraPackages` が最後に来るので、ユーザーの `--set PATH` は
 `extraPackages` を消せない。nvimx ではユーザーが最後なので消せる。これは合意済みの
-「ユーザーが最終決定権を持つ」の帰結であり、README とオプション説明に適用順を明記して埋める(§5.3 / §5.5)。
+「ユーザーが最終決定権を持つ」の帰結であり、README とオプション説明に適用順と、それが home-manager と
+逆であること(`PATH` に触れるリストを移植すると挙動が変わりうること)を明記して埋める(§5.3 / §5.5)。
 `--prefix` と `--suffix` の差は本件以前からのもので、**本件はそれを変えない** —— issue の言う
 「`--prefix` でなく `--suffix PATH`」は、そのパッケージを `extraPackages` から外して
 `extraWrapperArgs` に `--suffix` で書くことで実現する(README に書く。§5.5)。
@@ -289,6 +290,12 @@ require("inspect") → 失敗    require("jit.dump") → 失敗    require("lua-
 neovim 自体は起動する
 (`package.preload.lazy` は残る —— `vim.*` と rtp は `package.path` を使わない。#27 計画 §1.4(1))。
 合意済みの「`--set LUA_PATH` で `;;` の仕掛けを潰せる」の実際の姿である。
+
+既定の `package.path` まで消えるのは、新しい値に `;;` が無いからである。同じ構成で値を
+`"/user/?.lua;;"` にすると(PR #82 のレビュー後に実測)、`package.path` は
+`/user/?.lua;./?.lua;<luajit>/share/luajit-2.1/?.lua;…` と既定が残り、`require("jit.dump")` と
+`require("lua-utf8")` は成功、`require("inspect")` は失敗する —— rock の Lua モジュールが消えるのは
+値によらない。オプション説明と README はこの条件つきで書く(§5.3 / §5.5)。
 
 **(6) ★ `extraLuaPackages` を使わずに `--prefix LUA_PATH` だけを書くと、既定値が消える。**
 `extraWrapperArgs = [ "--prefix" "LUA_PATH" ";" "/user/?.lua" ]` のみ:
@@ -571,7 +578,7 @@ makeWrapper のフラグ表の複製になる。
 | `--set PATH X` | **`extraPackages` ごと置き換わる** | §1.4(3) |
 | `--prefix LUA_PATH ';' X`(rock あり) | rock の**前**に入る。起動時に `LUA_PATH` が未設定なら `;;` と既定値は残る(`;;` なしで export 済みなら既定値は入らない) | §1.4(4) |
 | `--prefix LUA_PATH ';' X`(rock なし) | **既定の `package.path` が消える**(Lua の仕様) | §1.4(6) |
-| `--set LUA_PATH X` | **rock の Lua モジュール(`LUA_PATH` 側)と既定の `package.path` が消える。** `LUA_CPATH` は別の変数なので C rock は残る | §1.4(5) |
+| `--set LUA_PATH X` | **rock の Lua モジュール(`LUA_PATH` 側)が消える。X に `;;` が無ければ既定の `package.path` も消える**(`;;` があれば既定は残る)。`LUA_CPATH` は別の変数なので C rock は残る | §1.4(5) |
 | `--add-flags F` | nvimx の `--cmd 'luafile <bootstrap>'` の**後ろ**に並ぶ | §1.4(7) |
 
 **保護はしない**(合意どおり)。`PATH` / `LUA_PATH` / `LUA_CPATH` を名指しする引数を弾く、
@@ -811,20 +818,22 @@ pkgs.symlinkJoin {
            extraPackages, then LUA_PATH / LUA_CPATH for extraLuaPackages, then these. They
            therefore act on what nvimx set up: a --prefix PATH here lands in front of
            extraPackages, an --add-flags here follows nvimx's --cmd, and a --set replaces the
-           variable outright.
+           variable outright. home-manager orders this differently: it applies extraPackages (as
+           --suffix PATH) after your arguments, so a list ported from programs.neovim.extraWrapperArgs
+           that touches PATH can behave differently here.
 
            nvimx protects none of its own arguments from them. `--set PATH` discards
-           extraPackages, `--set LUA_PATH` discards the rocks' Lua modules and the interpreter's
-           own default search path (LUA_CPATH is a separate variable and stays), and an --add-flags
-           can change how neovim starts. That is deliberate -- this is the escape hatch -- so what
-           you write here is yours to keep working.
+           extraPackages. `--set LUA_PATH` discards the rocks' Lua modules, and the interpreter's
+           own default search path too unless the new value contains `;;` (LUA_CPATH is a separate
+           variable and stays). An --add-flags can change how neovim starts. That is deliberate --
+           this is the escape hatch -- so what you write here is yours to keep working.
 
            Some makeWrapper arguments take shell text rather than a literal value: --add-flags,
-           --append-flags and --run are spliced into the wrapper script as they are and interpreted
-           by the shell each time neovim starts, so a `$VAR` in them is expanded then. Use
-           --add-flag / --append-flag for a single literal argument. A variable set here is
-           exported, so the processes neovim starts -- a :! command, a :terminal shell, a language
-           server -- inherit it unless they are started with an environment of their own.
+           --append-flags and --run, among others, are spliced into the wrapper script as they are
+           and interpreted by the shell each time neovim starts, so a `$VAR` in them is expanded
+           then. Use --add-flag / --append-flag for a single literal argument. A variable set here
+           is exported, so the processes neovim starts -- a :! command, a :terminal shell, a
+           language server -- inherit it unless they are started with an environment of their own.
          '';
        };
    ```
@@ -914,10 +923,14 @@ pkgs.symlinkJoin {
 
     So yours act on what the first three built. A `--prefix PATH` lands in front of `extraPackages`, an
     `--add-flags` follows nvimx's `--cmd`, and a `--set` replaces the variable outright. nvimx protects
-    none of its own arguments: `--set PATH` discards `extraPackages`, and `--set LUA_PATH` discards the
-    rocks' Lua modules together with the interpreter's default search path (`LUA_CPATH` is a separate
-    variable and stays). That is what makes this an escape hatch, and it is also why whatever you put
-    here is yours to keep working.
+    none of its own arguments: `--set PATH` discards `extraPackages`; `--set LUA_PATH` discards the
+    rocks' Lua modules, and the interpreter's default search path too unless the new value contains
+    `;;` (`LUA_CPATH` is a separate variable and stays). That is what makes this an escape hatch, and
+    it is also why whatever you put here is yours to keep working.
+
+    This is not the order home-manager uses. There `extraPackages` is applied (as `--suffix PATH`)
+    after your arguments, so a list ported from `programs.neovim.extraWrapperArgs` that touches `PATH`
+    can behave differently here.
 
     Three things worth knowing before you reach for it:
 
@@ -930,9 +943,9 @@ pkgs.symlinkJoin {
       the variable without one — and a `--prefix` here keeps it. Otherwise start with
       `"--set-default" "LUA_PATH" ";;"` yourself — or use `extraLuaPackages`, which does.
     - Some arguments take shell text rather than a literal value — `--add-flags`, `--append-flags` and
-      `--run`: the value is written into the wrapper script as-is and interpreted every time Neovim
-      starts, so a `$HOME` in it is expanded then. `--add-flag` / `--append-flag` (singular) pass one
-      literal argument instead.
+      `--run` among them: the value is written into the wrapper script as-is and interpreted every time
+      Neovim starts, so a `$HOME` in it is expanded then. `--add-flag` / `--append-flag` (singular)
+      pass one literal argument instead.
 
     A variable set here is exported, so the processes Neovim starts — a `:!` command, a `:terminal`
     shell, a language server — inherit it unless they are started with an environment of their own.
@@ -1579,7 +1592,7 @@ git diff --name-only main
 # 10. ドキュメント
 grep -c '(#wrapper-arguments)' README.md                 # → 1(Options 表)
 grep -n '^### Wrapper arguments' README.md               # → 1 件、### Lua rocks と ## How it works のあいだ
-grep -c 'extraWrapperArgs' README.md                     # → 5
+grep -c 'extraWrapperArgs' README.md                     # → 6(home-manager との適用順の差を述べる文が 1 行ぶん)
 grep -c 'extraWrapperArgs' docs/architecture.md          # → 5(mermaid / 設計原則 4 / build フロー / モジュール例 / ファイル一覧)
 grep -c 'extra-wrapper-args\|hm-module-wrapper-args' docs/architecture.md   # → 1(checks の列挙)
 grep -c 'Runtime injection is limited' docs/architecture.md                 # → 0(設計原則 4 を書き換えた)

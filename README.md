@@ -486,10 +486,14 @@ The arguments are appended after nvimx's own, and `makeWrapper` applies them in 
 
 So yours act on what the first three built. A `--prefix PATH` lands in front of `extraPackages`, an
 `--add-flags` follows nvimx's `--cmd`, and a `--set` replaces the variable outright. nvimx protects
-none of its own arguments: `--set PATH` discards `extraPackages`, and `--set LUA_PATH` discards the
-rocks' Lua modules together with the interpreter's default search path (`LUA_CPATH` is a separate
-variable and stays). That is what makes this an escape hatch, and it is also why whatever you put
-here is yours to keep working.
+none of its own arguments: `--set PATH` discards `extraPackages`; `--set LUA_PATH` discards the
+rocks' Lua modules, and the interpreter's default search path too unless the new value contains
+`;;` (`LUA_CPATH` is a separate variable and stays). That is what makes this an escape hatch, and
+it is also why whatever you put here is yours to keep working.
+
+This is not the order home-manager uses. There `extraPackages` is applied (as `--suffix PATH`)
+after your arguments, so a list ported from `programs.neovim.extraWrapperArgs` that touches `PATH`
+can behave differently here.
 
 Three things worth knowing before you reach for it:
 
@@ -502,9 +506,9 @@ Three things worth knowing before you reach for it:
   the variable without one — and a `--prefix` here keeps it. Otherwise start with
   `"--set-default" "LUA_PATH" ";;"` yourself — or use `extraLuaPackages`, which does.
 - Some arguments take shell text rather than a literal value — `--add-flags`, `--append-flags` and
-  `--run`: the value is written into the wrapper script as-is and interpreted every time Neovim
-  starts, so a `$HOME` in it is expanded then. `--add-flag` / `--append-flag` (singular) pass one
-  literal argument instead.
+  `--run` among them: the value is written into the wrapper script as-is and interpreted every time
+  Neovim starts, so a `$HOME` in it is expanded then. `--add-flag` / `--append-flag` (singular)
+  pass one literal argument instead.
 
 A variable set here is exported, so the processes Neovim starts — a `:!` command, a `:terminal`
 shell, a language server — inherit it unless they are started with an environment of their own.

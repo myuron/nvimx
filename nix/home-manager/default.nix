@@ -176,20 +176,22 @@ in
         extraPackages, then LUA_PATH / LUA_CPATH for extraLuaPackages, then these. They
         therefore act on what nvimx set up: a --prefix PATH here lands in front of
         extraPackages, an --add-flags here follows nvimx's --cmd, and a --set replaces the
-        variable outright.
+        variable outright. home-manager orders this differently: it applies extraPackages (as
+        --suffix PATH) after your arguments, so a list ported from programs.neovim.extraWrapperArgs
+        that touches PATH can behave differently here.
 
         nvimx protects none of its own arguments from them. `--set PATH` discards
-        extraPackages, `--set LUA_PATH` discards the rocks' Lua modules and the interpreter's
-        own default search path (LUA_CPATH is a separate variable and stays), and an --add-flags
-        can change how neovim starts. That is deliberate -- this is the escape hatch -- so what
-        you write here is yours to keep working.
+        extraPackages. `--set LUA_PATH` discards the rocks' Lua modules, and the interpreter's
+        own default search path too unless the new value contains `;;` (LUA_CPATH is a separate
+        variable and stays). An --add-flags can change how neovim starts. That is deliberate --
+        this is the escape hatch -- so what you write here is yours to keep working.
 
         Some makeWrapper arguments take shell text rather than a literal value: --add-flags,
-        --append-flags and --run are spliced into the wrapper script as they are and interpreted
-        by the shell each time neovim starts, so a `$VAR` in them is expanded then. Use
-        --add-flag / --append-flag for a single literal argument. A variable set here is
-        exported, so the processes neovim starts -- a :! command, a :terminal shell, a language
-        server -- inherit it unless they are started with an environment of their own.
+        --append-flags and --run, among others, are spliced into the wrapper script as they are
+        and interpreted by the shell each time neovim starts, so a `$VAR` in them is expanded
+        then. Use --add-flag / --append-flag for a single literal argument. A variable set here
+        is exported, so the processes neovim starts -- a :! command, a :terminal shell, a
+        language server -- inherit it unless they are started with an environment of their own.
       '';
     };
 
