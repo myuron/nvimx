@@ -145,6 +145,54 @@ in
       '';
     };
 
+    extraWrapperArgs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = lib.literalExpression ''
+        [
+          "--set"
+          "MY_ASSET_DIR"
+          "''${pkgs.someAsset}/share"
+          "--suffix"
+          "PATH"
+          ":"
+          "''${lib.makeBinPath [ pkgs.nodejs ]}"
+        ]
+      '';
+      description = ''
+        Extra arguments for the makeWrapper call that builds the wrapped neovim, as a flat list
+        with one makeWrapper argument per element -- the same shape as home-manager's
+        programs.neovim.extraWrapperArgs. Every element is shell-escaped on its way there, so it
+        may contain spaces, quotes, `;` or `$` and still reaches makeWrapper as the one argument
+        you wrote.
+
+        Use it for what extraPackages and extraLuaPackages do not cover: an environment variable
+        set for neovim rather than for your whole session (a path to a Nix-built asset that Lua
+        reads through vim.env), a PATH entry that should lose to the PATH you already have rather
+        than win (--suffix, where extraPackages uses --prefix), an extra command-line flag.
+
+        The arguments are appended after nvimx's own, and makeWrapper applies them in order:
+        first --add-flags "--cmd 'luafile <bootstrap.lua>'", then --prefix PATH for
+        extraPackages, then LUA_PATH / LUA_CPATH for extraLuaPackages, then these. They
+        therefore act on what nvimx set up: a --prefix PATH here lands in front of
+        extraPackages, an --add-flags here follows nvimx's --cmd, and a --set replaces the
+        variable outright.
+
+        nvimx protects none of its own arguments from them. `--set PATH` discards
+        extraPackages, `--set LUA_PATH` discards the rocks' Lua modules and the interpreter's
+        own default search path (LUA_CPATH is a separate variable and stays), and an --add-flags
+        can change how neovim starts. That is deliberate -- this is the escape hatch -- so what
+        you write here is yours to keep working.
+
+        Some makeWrapper arguments take shell text rather than a literal value: --add-flags,
+        --append-flags and --run are spliced into the wrapper script as they are and interpreted
+        by the shell each time neovim starts, so a `$VAR` in them is expanded then. Use
+        --add-flag / --append-flag for a single literal argument. A variable set here is
+        exported, so the processes neovim starts -- a :! command, a :terminal shell, a language
+        server -- inherit it unless they are started with an environment of their own.
+      '';
+    };
+
     devPlugins = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
@@ -344,6 +392,7 @@ in
           lockDir
           extraPackages
           extraLuaPackages
+          extraWrapperArgs
           vimAlias
           viAlias
           plugins

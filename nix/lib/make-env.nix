@@ -11,6 +11,10 @@
   # home-manager's programs.neovim.extraLuaPackages. Threaded straight to the wrapper, which is
   # what knows which Lua the chosen neovim links against.
   extraLuaPackages ? (_: [ ]),
+  # Extra makeWrapper arguments, appended after nvimx's own (programs.nvimx.extraWrapperArgs).
+  # Threaded straight to the wrapper like the two above, and like them it gets no output of its
+  # own -- it is visible only through `wrapped`.
+  extraWrapperArgs ? [ ],
   vimAlias ? false,
   viAlias ? false,
   # Same shape as the module's programs.nvimx.plugins, so it can be passed straight through
@@ -139,6 +143,7 @@ let
       bootstrap
       extraPackages
       extraLuaPackages
+      extraWrapperArgs
       vimAlias
       viAlias
       ;
