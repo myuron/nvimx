@@ -572,7 +572,8 @@ What `true` builds, and what it adds to the wrapper besides the `vim.g` setting:
 
 `PATH` entries are *appended*, so a `node` or `ruby` you already have — or one in `extraPackages` —
 stays in front. The `vim.g` settings are applied with `--cmd`, before your `init.lua`, so a
-`vim.g.python3_host_prog` you set there still wins.
+`vim.g.python3_host_prog` you set there still wins. With `false` that does not bring the provider
+back by itself: `init.lua` has to unset `vim.g.loaded_python3_provider` as well.
 
 `:checkhealth vim.provider` compares each host with its upstream registry over the network, so it
 can report a host pinned by Nix as out of date, or report errors when you are offline. Neither means

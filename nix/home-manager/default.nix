@@ -219,7 +219,8 @@ in
         porting a configuration, write the value you were getting.
 
         The setting is applied with --cmd, before your init.lua, so a vim.g.python3_host_prog
-        you set there still wins.
+        you set there still wins. With false that does not bring the provider back by itself:
+        init.lua has to unset vim.g.loaded_python3_provider as well.
 
         nvimx does not generate a remote-plugin manifest. Run :UpdateRemotePlugins yourself, and
         again after a plugin update: the manifest records the plugin's path, which is a Nix store

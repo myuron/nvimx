@@ -50,7 +50,8 @@ let
   );
   # Provider hosts (#73). nix/lib/providers.nix decides what there is to say; here it only has to
   # reach wrapProgram. The Lua goes in as a second --cmd, after the bootstrap's and before the
-  # user's config, so vim.g.<prog>_host_prog is a default that init.lua can still overwrite.
+  # user's config, so vim.g.<prog>_host_prog is a default that init.lua can still overwrite. (A
+  # provider set to false stays off until init.lua also unsets vim.g.loaded_<prog>_provider.)
   # A file rather than an inline `--cmd "lua ..."`: --add-flags splices its value into the
   # wrapper script as shell text, and a path has nothing in it to quote.
   # lib.escapeShellArgs [ ] is "", so with every provider left at null this contributes nothing
