@@ -574,6 +574,11 @@ What `true` builds, and what it adds to the wrapper besides the `vim.g` setting:
 stays in front. The `vim.g` settings are applied with `--cmd`, before your `init.lua`, so a
 `vim.g.python3_host_prog` you set there still wins.
 
+`:checkhealth vim.provider` compares each host with its upstream registry over the network, so it
+can report a host pinned by Nix as out of date, or report errors when you are offline. Neither means
+the provider is broken, and the `npm install -g` style advice it gives does not apply: the host's
+version follows your nixpkgs.
+
 Two things these options do not do:
 
 - **No remote-plugin manifest is generated.** Run `:UpdateRemotePlugins` yourself, and again after
