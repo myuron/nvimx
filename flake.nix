@@ -1010,10 +1010,11 @@
                   assert(vim.fn.py3eval('__import__("six").__name__') == "six", "extraPython3Packages did not reach the python3 host")
                   assert(vim.fn.has("ruby") == 1, "the ruby provider is not usable")
                   assert(vim.fn.rubyeval("1 + 1") == 2, "the ruby host did not evaluate")
-                  -- There is no has("node"): node only ever serves remote plugins. Requiring the
-                  -- host is what a node remote plugin's first call does, and it returns the
-                  -- channel of the started process. This is the assert that fails without node on
-                  -- PATH.
+                  -- Not has("node"): with g:node_host_prog set, provider#node#Detect returns it as
+                  -- it stands (measured: has("node") is already 1 before the host is ever started),
+                  -- so it says nothing about whether the host runs. Requiring the host starts the
+                  -- process, as a node remote plugin's first call does, and returns its channel.
+                  -- This is the assert that fails without node on PATH.
                   assert(vim.fn["remote#host#Require"]("node") > 0, "the node host did not start")
 
                   -- PATH: the hosts' entries are appended (--suffix), so extraPackages -- and
