@@ -5,6 +5,7 @@
   bootstrap,
   extraPackages ? [ ],
   extraLuaPackages ? (_: [ ]),
+  extraWrapperArgs ? [ ],
   vimAlias ? false,
   viAlias ? false,
 }:
@@ -43,6 +44,25 @@ let
       "--prefix LUA_CPATH ';' ${lib.escapeShellArg (lua.pkgs.luaLib.genLuaCPathAbsStr luaEnv)}"
     ]
   );
+  # extraWrapperArgs (#72) go last, after everything nvimx passes itself. makeWrapper handles its
+  # arguments in order -- environment blocks are written out as it meets them, flags are collected
+  # in the same order onto the final exec line -- so last means the user has the final word: a
+  # --prefix PATH lands in front of extraPackages, a --set PATH replaces what was built up for
+  # it, and an --add-flags follows the --cmd 'luafile <bootstrap>' below. That is what an escape
+  # hatch is for, and nothing here guards against it.
+  # They are free-form user text, hence lib.escapeShellArgs: each list element reaches
+  # wrapProgram as one argument, whatever is in it. Do not "simplify" this to a plain join.
+  # Joined onto luaWrapperArgs rather than given a continuation line of its own, and filtered so
+  # that an empty side contributes no separator: with no extraWrapperArgs the postBuild text is
+  # then byte for byte what it was before the option existed, so the derivation -- not merely the
+  # script it produces -- is unchanged, and the last continuation line still ends without a
+  # backslash to swallow the `ln -s` under it.
+  trailingWrapperArgs = lib.concatStringsSep " " (
+    lib.filter (s: s != "") [
+      luaWrapperArgs
+      (lib.escapeShellArgs extraWrapperArgs)
+    ]
+  );
 in
 pkgs.symlinkJoin {
   name = "nvimx-neovim";
@@ -52,7 +72,7 @@ pkgs.symlinkJoin {
     wrapProgram $out/bin/nvim \
       --add-flags "--cmd 'luafile ${bootstrap}'" \
       ${lib.optionalString (extraPackages != [ ]) "--prefix PATH : ${lib.makeBinPath extraPackages}"} \
-      ${luaWrapperArgs}
+      ${trailingWrapperArgs}
     ${lib.optionalString vimAlias "ln -s $out/bin/nvim $out/bin/vim"}
     ${lib.optionalString viAlias "ln -s $out/bin/nvim $out/bin/vi"}
   '';

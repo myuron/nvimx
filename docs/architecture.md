@@ -105,7 +105,7 @@ flowchart LR
     D -- "4. default" --> H["cp + helptags<br/>(shell build runs buildPhase)"]
     E & F & G & H --> I["linkFarm<br/>nvimx-plugins"]
     I --> J["bootstrap.lua<br/>(farm path embedded)"]
-    J --> K["wrapProgram neovim<br/>--cmd luafile<br/>PATH / LUA_PATH / LUA_CPATH"]
+    J --> K["wrapProgram neovim<br/>--cmd luafile<br/>PATH / LUA_PATH / LUA_CPATH<br/>+ extraWrapperArgs"]
     K --> M["deployed via home.packages"]
 ```
 
@@ -118,8 +118,9 @@ flowchart LR
    The plugin names derived by lazy's `Spec` are used verbatim as directory names in the symlink farm → the nix-side directory names and lazy's plugin names are guaranteed to match by construction (no hand-rolled reconciliation logic).
 3. **The lock pipeline is unified on `nvim -l` (Lua)**.
    Reusing the semver module bundled with lazy.nvim (`lazy.manage.semver`) makes the version resolution semantics identical to lazy's.
-4. **Runtime injection is limited to the wrapper's `--cmd luafile` + `package.preload["lazy"]`, plus `LUA_PATH` / `LUA_CPATH` when `extraLuaPackages` asks for rocks**.
+4. **What nvimx injects at runtime is limited to the wrapper's `--cmd luafile` + `package.preload["lazy"]`, plus `PATH` for `extraPackages` and `LUA_PATH` / `LUA_CPATH` when `extraLuaPackages` asks for rocks**.
    The user's lua stays unmodified.
+   `extraWrapperArgs` sits outside that limit on purpose: it appends the user's own arguments to the same `wrapProgram` call, after nvimx's, and whatever those inject is the user's doing rather than nvimx's.
 
 ## Data flow
 
@@ -171,7 +172,8 @@ flowchart LR
 [4] linkFarm "nvimx-plugins" [ { name = <lazy-derived name>; path = drv; } ... ]
 [5] Generate bootstrap.lua (embedding the farm path and the forced opts)
       → wrapProgram neovim (the user-selected package) with --cmd 'luafile <bootstrap.lua>',
-        extraPackages on PATH and extraLuaPackages' rock env on LUA_PATH / LUA_CPATH
+        extraPackages on PATH and extraLuaPackages' rock env on LUA_PATH / LUA_CPATH,
+        then the user's extraWrapperArgs (shell-escaped, last, so they act on all of the above)
 [6] hm deployment:
       home.packages = [ wrapped-nvim, nvimx-lock ]
       home.sessionVariables.EDITOR = "nvim"        (when defaultEditor = true)
@@ -425,6 +427,7 @@ programs.nvimx = {
 
   extraPackages = [ ];             # prepended to the wrapper's PATH (ripgrep, lsp, etc.)
   extraLuaPackages = ps: [ ];      # lua rocks on the wrapper's LUA_PATH / LUA_CPATH (luarocks itself stays off)
+  extraWrapperArgs = [ ];          # extra makeWrapper arguments, appended after nvimx's own (escape hatch)
 
   lock = {
     installCommand = true;         # add nvimx-lock to home.packages
@@ -491,7 +494,7 @@ nix/
     build-network.nix        # detecting build commands that cannot run in the sandbox
     farm.nix                 # linkFarm construction
     bootstrap.nix            # bootstrap.lua generation
-    wrapper.nix              # wrapProgram for neovim (PATH / LUA_PATH / LUA_CPATH)
+    wrapper.nix              # wrapProgram for neovim (PATH / LUA_PATH / LUA_CPATH / extraWrapperArgs)
     treesitter.nix           # nvim-treesitter + grammar merge derivation
     lock-app.nix             # lock script (writeShellApplication)
   build-registry/            # name → build recipe (default.nix = the index + how to add an entry)
@@ -516,7 +519,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, extractor-local-dir, semver-select, source-parse, resolve-merge, resolve-semver, resolve-sources, resolve-golden, genflake-golden, resolve-lazy-self, resolve-update, update-summary, resolve-import-lazy-lock, lock-app, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, dev-plugins, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, hm-module-dev, hm-module-lua-packages, hm-module-default-editor, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases, extra-lua-packages}`
+- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, extractor-local-dir, semver-select, source-parse, resolve-merge, resolve-semver, resolve-sources, resolve-golden, genflake-golden, resolve-lazy-self, resolve-update, update-summary, resolve-import-lazy-lock, lock-app, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, dev-plugins, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, hm-module-dev, hm-module-lua-packages, hm-module-wrapper-args, hm-module-default-editor, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases, extra-lua-packages, extra-wrapper-args}`
   - planned, not yet implemented: `e2e-offline` (#30)
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`

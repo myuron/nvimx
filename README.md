@@ -223,6 +223,7 @@ All options live under `programs.nvimx`.
 | `defaultEditor` | `bool` | `false` | Set `EDITOR` to `nvim` in `home.sessionVariables`. `EDITOR` only — unlike home-manager's own `programs.neovim.defaultEditor`, `VISUAL` is left alone — and the value is the bare command name, resolved through the `PATH` that `home.packages` already provides. |
 | `extraPackages` | `listOf package` | `[ ]` | Packages prepended to the wrapper's `PATH` (ripgrep, language servers, etc.). |
 | `extraLuaPackages` | `functionTo (listOf package)` | `ps: [ ]` | Lua rocks to put on the wrapper's `LUA_PATH` / `LUA_CPATH`, as a function over the Lua package set of the Neovim you chose. luarocks itself stays disabled. See [Lua rocks](#lua-rocks). |
+| `extraWrapperArgs` | `listOf str` | `[ ]` | Extra `makeWrapper` arguments for the wrapped Neovim, one per list element, appended after nvimx's own: environment variables set for Neovim rather than session-wide, `--suffix PATH`, extra flags. nvimx protects none of its own arguments from them. See [Wrapper arguments](#wrapper-arguments). |
 | `devPlugins` | `listOf str` | `[ ]` | Plugin names to load from a working tree under `devPath` instead of the Nix store. See [Local plugin development](#local-plugin-development). |
 | `devPath` | `str` | `"~/projects"` | Where dev working trees live. A locally developed plugin — named in `devPlugins`, or marked `dev = true` by your own spec — resolves to `<devPath>/<name>`, unless that spec entry writes `dir` itself, which lazy uses directly instead. Replaces lazy.nvim's own `dev.path`. A `str`, not a `path`: a path would copy the tree into the store. |
 | `plugins.overrides` | `attrsOf (functionTo package)` | `{ }` | Per-plugin derivation overrides, keyed by the plugin name lazy derived. See [Escape hatches](#escape-hatches). |
@@ -456,6 +457,61 @@ the wrapper is exactly what it was before, environment variables included.
 This does not resurrect `build = "rockspec"`: that build kind still cannot run, and `nvimx-lock`
 still warns about it — pointing you here. `extraLuaPackages` is how you satisfy the dependency
 such a build was going to install.
+
+### Wrapper arguments
+
+`extraPackages` and `extraLuaPackages` each look after one part of the wrapper's environment. For
+anything else, `extraWrapperArgs` hands you the `makeWrapper` call itself, in the same shape as
+home-manager's `programs.neovim.extraWrapperArgs`:
+
+```nix
+programs.nvimx.extraWrapperArgs = [
+  # A variable set for Neovim only, not for your login shell; Lua reads it as vim.env.MY_ASSET_DIR.
+  "--set" "MY_ASSET_DIR" "${pkgs.someAsset}/share"
+  # Tools that should lose to whatever is already on PATH. extraPackages would make them win.
+  "--suffix" "PATH" ":" "${lib.makeBinPath [ pkgs.nodejs ]}"
+];
+```
+
+It is a flat list with one `makeWrapper` argument per element, and every element is shell-escaped
+for you: one containing spaces, quotes, `;` or `$` still reaches `makeWrapper` as the one argument
+you wrote.
+
+The arguments are appended after nvimx's own, and `makeWrapper` applies them in the order given:
+
+1. `--add-flags "--cmd 'luafile <bootstrap.lua>'"`
+2. `--prefix PATH` for `extraPackages`
+3. `--set-default` and `--prefix` on `LUA_PATH` / `LUA_CPATH` for `extraLuaPackages`
+4. your `extraWrapperArgs`
+
+So yours act on what the first three built. A `--prefix PATH` lands in front of `extraPackages`, an
+`--add-flags` follows nvimx's `--cmd`, and a `--set` replaces the variable outright. nvimx protects
+none of its own arguments: `--set PATH` discards `extraPackages`; `--set LUA_PATH` discards the
+rocks' Lua modules, and the interpreter's default search path too unless the new value contains
+`;;` (`LUA_CPATH` is a separate variable and stays). That is what makes this an escape hatch, and
+it is also why whatever you put here is yours to keep working.
+
+This is not the order home-manager uses. There `extraPackages` is applied (as `--suffix PATH`)
+after your arguments, so a list ported from `programs.neovim.extraWrapperArgs` that touches `PATH`
+can behave differently here.
+
+Three things worth knowing before you reach for it:
+
+- nvimx's own `--prefix PATH` is there only while `extraPackages` is non-empty, and no option turns
+  it into a `--suffix`. To have a tool lose to the `PATH` you already have, leave it out of
+  `extraPackages` and add it here with `--suffix`, as above.
+- Adding to `LUA_PATH` / `LUA_CPATH` by hand has the catch it has in any Lua program: once the
+  variable is set, the interpreter's defaults are included only where the value says `;;`. When
+  `extraLuaPackages` is in use nvimx has already put that `;;` there — unless you already export
+  the variable without one — and a `--prefix` here keeps it. Otherwise start with
+  `"--set-default" "LUA_PATH" ";;"` yourself — or use `extraLuaPackages`, which does.
+- Some arguments take shell text rather than a literal value — `--add-flags`, `--append-flags` and
+  `--run` among them: the value is written into the wrapper script as-is and interpreted every time
+  Neovim starts, so a `$HOME` in it is expanded then. `--add-flag` / `--append-flag` (singular)
+  pass one literal argument instead.
+
+A variable set here is exported, so the processes Neovim starts — a `:!` command, a `:terminal`
+shell, a language server — inherit it unless they are started with an environment of their own.
 
 ## How it works
 
