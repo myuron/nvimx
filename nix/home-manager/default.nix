@@ -241,6 +241,9 @@ in
         warns at activation time if packages are named without it. They are importable by
         Python remote plugins and by :python3, not by a python you start from :terminal -- no
         interpreter is put on PATH. Use extraPackages for that.
+
+        The list is still evaluated when withPython3 is not true -- that is how the warning is
+        produced -- so a package that fails to evaluate is an error either way.
       '';
     };
 
