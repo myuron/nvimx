@@ -939,14 +939,18 @@
                       "withRuby"
                       "withNodeJs"
                     ]
-                # unusedPython3Packages, one assert per state of withPython3 that can matter. The pair
-                # that matters most: packages with no host must be reported, and the same packages with
-                # a host must not. The `false` corner is what tells `withPython3 != true` from
-                # `withPython3 == null`: the packages of an explicitly disabled host are just as unused.
+                # unusedPython3Packages, all six corners: withPython3 null / true / false, each with the
+                # default (no packages) and with packages. The pair that matters most: packages with no
+                # host must be reported, and the same packages with a host must not. The two `false`
+                # corners tell `withPython3 != true` apart from its look-alikes: with packages it
+                # separates it from `withPython3 == null` (the packages of an explicitly disabled host
+                # are just as unused), without packages from a test that warns on `false` alone.
                 ++ lib.optional ((mkEnv { }).unusedPython3Packages
                 ) "the default extraPython3Packages must not be reported as unused"
                 ++ lib.optional ((mkEnv { withPython3 = true; }).unusedPython3Packages
                 ) "withPython3 = true alone must not be reported as unused packages"
+                ++ lib.optional ((mkEnv { withPython3 = false; }).unusedPython3Packages
+                ) "withPython3 = false alone must not be reported as unused packages"
                 ++ lib.optional (
                   !(mkEnv { extraPython3Packages = pythonPackages; }).unusedPython3Packages
                 ) "extraPython3Packages without withPython3 = true must be reported as unused"
