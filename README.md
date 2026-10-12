@@ -224,6 +224,10 @@ All options live under `programs.nvimx`.
 | `extraPackages` | `listOf package` | `[ ]` | Packages prepended to the wrapper's `PATH` (ripgrep, language servers, etc.). |
 | `extraLuaPackages` | `functionTo (listOf package)` | `ps: [ ]` | Lua rocks to put on the wrapper's `LUA_PATH` / `LUA_CPATH`, as a function over the Lua package set of the Neovim you chose. luarocks itself stays disabled. See [Lua rocks](#lua-rocks). |
 | `extraWrapperArgs` | `listOf str` | `[ ]` | Extra `makeWrapper` arguments for the wrapped Neovim, one per list element, appended after nvimx's own: environment variables set for Neovim rather than session-wide, `--suffix PATH`, extra flags. nvimx protects none of its own arguments from them. See [Wrapper arguments](#wrapper-arguments). |
+| `withPython3` | `nullOr bool` | `null` | The Python 3 provider. `true`: build a host from nixpkgs (`pkgs.python3` with `pynvim`) and point `vim.g.python3_host_prog` at it. `false`: disable the provider. `null`: leave Neovim's own discovery alone, as before this option existed. See [Providers](#providers). |
+| `extraPython3Packages` | `functionTo (listOf package)` | `ps: [ ]` | Python packages to add to the Python 3 provider's host, as a function over `pkgs.python3`'s package set. Only used when `withPython3 = true`. See [Providers](#providers). |
+| `withRuby` | `nullOr bool` | `null` | The Ruby provider, with the same three states. `true` uses the `neovim-ruby-host` nixpkgs builds and appends its Ruby to the wrapper's `PATH`; `GEM_HOME` is not set. See [Providers](#providers). |
+| `withNodeJs` | `nullOr bool` | `null` | The Node.js provider, with the same three states. `true` uses `pkgs.neovim-node-client` and appends `pkgs.nodejs` to the wrapper's `PATH`. See [Providers](#providers). |
 | `devPlugins` | `listOf str` | `[ ]` | Plugin names to load from a working tree under `devPath` instead of the Nix store. See [Local plugin development](#local-plugin-development). |
 | `devPath` | `str` | `"~/projects"` | Where dev working trees live. A locally developed plugin — named in `devPlugins`, or marked `dev = true` by your own spec — resolves to `<devPath>/<name>`, unless that spec entry writes `dir` itself, which lazy uses directly instead. Replaces lazy.nvim's own `dev.path`. A `str`, not a `path`: a path would copy the tree into the store. |
 | `plugins.overrides` | `attrsOf (functionTo package)` | `{ }` | Per-plugin derivation overrides, keyed by the plugin name lazy derived. See [Escape hatches](#escape-hatches). |
@@ -233,7 +237,7 @@ All options live under `programs.nvimx`.
 | `lock.projectDir` | `nullOr str` | `null` | The working tree of your dotfiles repository. When set, running `nvimx-lock` with no arguments targets `configDirRelative` / `lockDirRelative`. |
 | `lock.configDirRelative` | `str` | `"nvim"` | Path to `configDir`, relative to `projectDir`. |
 | `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | Path to `lockDir`, relative to `projectDir`. |
-| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
+| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `unusedPython3Packages` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
 
 `lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module.
 
@@ -482,11 +486,14 @@ The arguments are appended after nvimx's own, and `makeWrapper` applies them in 
 1. `--add-flags "--cmd 'luafile <bootstrap.lua>'"`
 2. `--prefix PATH` for `extraPackages`
 3. `--set-default` and `--prefix` on `LUA_PATH` / `LUA_CPATH` for `extraLuaPackages`
-4. your `extraWrapperArgs`
+4. a second `--cmd` and a `--suffix PATH` for `withPython3` / `withRuby` / `withNodeJs`
+5. your `extraWrapperArgs`
 
-So yours act on what the first three built. A `--prefix PATH` lands in front of `extraPackages`, an
+So yours act on what the first four built. A `--prefix PATH` lands in front of `extraPackages`, an
 `--add-flags` follows nvimx's `--cmd`, and a `--set` replaces the variable outright. nvimx protects
-none of its own arguments: `--set PATH` discards `extraPackages`; `--set LUA_PATH` discards the
+none of its own arguments: `--set PATH` discards `extraPackages`, and with it the `PATH` entries
+`withRuby` / `withNodeJs` added (the Node.js host no longer starts without its `node`);
+`--set LUA_PATH` discards the
 rocks' Lua modules, and the interpreter's default search path too unless the new value contains
 `;;` (`LUA_CPATH` is a separate variable and stays). That is what makes this an escape hatch, and
 it is also why whatever you put here is yours to keep working.
@@ -512,6 +519,68 @@ Three things worth knowing before you reach for it:
 
 A variable set here is exported, so the processes Neovim starts — a `:!` command, a `:terminal`
 shell, a language server — inherit it unless they are started with an environment of their own.
+
+### Providers
+
+Remote plugins written in Python, Ruby or JavaScript — and `:python3` / `:ruby` — need a *provider*:
+a host process Neovim starts and talks to. Three options, named after home-manager's
+`programs.neovim` ones, say where each host comes from:
+
+```nix
+programs.nvimx = {
+  withPython3 = true;                                # rplugin/python3, :python3, py3eval()
+  extraPython3Packages = ps: [ ps.jupyter-client ];  # importable from that host
+  withRuby = false;                                  # never used here: switch it off
+  # withNodeJs is not mentioned, so Neovim keeps searching for a host by itself
+};
+```
+
+Each `with*` option has three states:
+
+| value | what nvimx does | what Neovim does |
+| --- | --- | --- |
+| `true` | builds the host from nixpkgs and sets `vim.g.<name>_host_prog` | uses that host instead of searching for one |
+| `false` | sets `vim.g.loaded_<name>_provider = 0` | the provider is off, and no search happens |
+| `null` (the default) | nothing | searches for a host itself the first time one is needed (`:help provider`) |
+
+`true` and `false` mean what they mean in `programs.neovim`. `null` is nvimx's own: it is what
+nvimx did before these options existed, so nothing changes for a setup that relies on it — but it
+depends on what that search finds on the machine. Write `true` or `false` to take it out of the
+picture: with `true` the host comes from Nix on every machine (for Node.js the host does, its
+interpreter not quite — see below).
+
+**Coming from `programs.neovim`, write the value you were getting.** Its defaults are not nvimx's:
+there `withPython3` and `withRuby` default to `true` before `home.stateVersion = "26.05"` and to
+`false` from then on, and `withNodeJs` to `false`. In particular, an `extraPython3Packages` line
+that worked without any `withPython3` line needs `withPython3 = true` here; nvimx warns at
+activation time when it sees one without the other.
+
+What `true` builds, and what it adds to the wrapper besides the `vim.g` setting:
+
+- **Python 3** — `pkgs.python3` with `pynvim` and your `extraPython3Packages`. Nothing is added to
+  `PATH`: the packages are importable by Python remote plugins and `:python3`, not by a `python`
+  you start from `:terminal`.
+- **Ruby** — the `neovim-ruby-host` nixpkgs builds for its own Neovim wrapper. Its Ruby is appended
+  to the wrapper's `PATH`, which is what `:checkhealth` looks for. Unlike nixpkgs' wrapper, nvimx
+  does not set `GEM_HOME`: the host runs without it, and it would be exported to every process
+  Neovim starts. Add it through [`extraWrapperArgs`](#wrapper-arguments) if you need it.
+- **Node.js** — `pkgs.neovim-node-client`, with `pkgs.nodejs` appended to the wrapper's `PATH`:
+  Neovim starts the host as `node <host>`, so it has to be there. As with `programs.neovim`,
+  appending it also makes `node` available to plugins that run it themselves. The host therefore
+  runs under the first `node` on `PATH` — yours, if you have one; put `pkgs.nodejs` in
+  `extraPackages` to pin it.
+
+`PATH` entries are *appended*, so a `node` or `ruby` you already have — or one in `extraPackages` —
+stays in front. The `vim.g` settings are applied with `--cmd`, before your `init.lua`, so a
+`vim.g.python3_host_prog` you set there still wins.
+
+Two things these options do not do:
+
+- **No remote-plugin manifest is generated.** Run `:UpdateRemotePlugins` yourself, and again after
+  every plugin update: the manifest records each plugin's path, which is a Nix store path that
+  changes with the lock.
+- **There is no `withPerl`.** Neovim's own discovery applies to Perl as it always has; put
+  `vim.g.loaded_perl_provider = 0` in your `init.lua` to switch it off.
 
 ## How it works
 

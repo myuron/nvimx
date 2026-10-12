@@ -105,7 +105,7 @@ flowchart LR
     D -- "4. default" --> H["cp + helptags<br/>(shell build runs buildPhase)"]
     E & F & G & H --> I["linkFarm<br/>nvimx-plugins"]
     I --> J["bootstrap.lua<br/>(farm path embedded)"]
-    J --> K["wrapProgram neovim<br/>--cmd luafile<br/>PATH / LUA_PATH / LUA_CPATH<br/>+ extraWrapperArgs"]
+    J --> K["wrapProgram neovim<br/>--cmd luafile<br/>PATH / LUA_PATH / LUA_CPATH<br/>+ provider hosts<br/>+ extraWrapperArgs"]
     K --> M["deployed via home.packages"]
 ```
 
@@ -120,6 +120,7 @@ flowchart LR
    Reusing the semver module bundled with lazy.nvim (`lazy.manage.semver`) makes the version resolution semantics identical to lazy's.
 4. **What nvimx injects at runtime is limited to the wrapper's `--cmd luafile` + `package.preload["lazy"]`, plus `PATH` for `extraPackages` and `LUA_PATH` / `LUA_CPATH` when `extraLuaPackages` asks for rocks**.
    The user's lua stays unmodified.
+   With `withPython3` / `withRuby` / `withNodeJs` set, a second `--cmd luafile` (one `vim.g` line per provider that was given a value) and, for Ruby / Node.js set to `true`, a `--suffix PATH` join that list; left at `null`, the default, they add nothing at all.
    `extraWrapperArgs` sits outside that limit on purpose: it appends the user's own arguments to the same `wrapProgram` call, after nvimx's, and whatever those inject is the user's doing rather than nvimx's.
 
 ## Data flow
@@ -173,6 +174,7 @@ flowchart LR
 [5] Generate bootstrap.lua (embedding the farm path and the forced opts)
       → wrapProgram neovim (the user-selected package) with --cmd 'luafile <bootstrap.lua>',
         extraPackages on PATH and extraLuaPackages' rock env on LUA_PATH / LUA_CPATH,
+        the providers' --cmd 'luafile <nvimx-providers.lua>' (only for providers given a value) and --suffix PATH (Ruby / Node.js set to true),
         then the user's extraWrapperArgs (shell-escaped, last, so they act on all of the above)
 [6] hm deployment:
       home.packages = [ wrapped-nvim, nvimx-lock ]
@@ -428,6 +430,10 @@ programs.nvimx = {
   extraPackages = [ ];             # prepended to the wrapper's PATH (ripgrep, lsp, etc.)
   extraLuaPackages = ps: [ ];      # lua rocks on the wrapper's LUA_PATH / LUA_CPATH (luarocks itself stays off)
   extraWrapperArgs = [ ];          # extra makeWrapper arguments, appended after nvimx's own (escape hatch)
+  withPython3 = null;              # true: host from nixpkgs / false: provider off / null (default): neovim's own discovery
+  extraPython3Packages = ps: [ ];  # python packages for that host (withPython3 = true only)
+  withRuby = null;                 # same three states
+  withNodeJs = null;               # same three states
 
   lock = {
     installCommand = true;         # add nvimx-lock to home.packages
@@ -494,7 +500,8 @@ nix/
     build-network.nix        # detecting build commands that cannot run in the sandbox
     farm.nix                 # linkFarm construction
     bootstrap.nix            # bootstrap.lua generation
-    wrapper.nix              # wrapProgram for neovim (PATH / LUA_PATH / LUA_CPATH / extraWrapperArgs)
+    wrapper.nix              # wrapProgram for neovim (PATH / LUA_PATH / LUA_CPATH / provider hosts / extraWrapperArgs)
+    providers.nix            # provider hosts (python3 / ruby / node): the --cmd lua file + PATH entries
     treesitter.nix           # nvim-treesitter + grammar merge derivation
     lock-app.nix             # lock script (writeShellApplication)
   build-registry/            # name → build recipe (default.nix = the index + how to add an entry)
@@ -519,7 +526,7 @@ flake outputs:
 - `homeModules.nvimx`
 - `apps.x86_64-linux.lock` (standalone, for bootstrapping and CI)
 - `packages.x86_64-linux.demo` (for smoke testing and dogfooding with the fixtures)
-- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, extractor-local-dir, semver-select, source-parse, resolve-merge, resolve-semver, resolve-sources, resolve-golden, genflake-golden, resolve-lazy-self, resolve-update, update-summary, resolve-import-lazy-lock, lock-app, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, dev-plugins, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, hm-module-dev, hm-module-lua-packages, hm-module-wrapper-args, hm-module-default-editor, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases, extra-lua-packages, extra-wrapper-args}`
+- `checks.<system>.{extractor-snapshot, extractor-no-setup, extractor-defaults-version, extractor-local-dir, semver-select, source-parse, resolve-merge, resolve-semver, resolve-sources, resolve-golden, genflake-golden, resolve-lazy-self, resolve-update, update-summary, resolve-import-lazy-lock, lock-app, resolve-build-warnings, build-shell, plugin-drv-phases, build-network-detect, build-registry, treesitter-grammars, dev-plugins, hm-module, hm-module-degrade, hm-module-plugins, hm-module-treesitter, hm-module-dev, hm-module-lua-packages, hm-module-wrapper-args, hm-module-providers, hm-module-default-editor, plugins-overrides, plugins-nixpkgs-fallback, plugins-escape-hatch, wrapper-aliases, extra-lua-packages, extra-wrapper-args, providers}`
   - planned, not yet implemented: `e2e-offline` (#30)
   (e2e-offline is a network-free E2E using a fixture lock with path-type inputs)
 - `templates.default`
@@ -538,6 +545,7 @@ flake outputs:
 | build is a table of steps | each element is classified individually and recorded in order (`build.kind == "steps"`); `shell` elements run in declared order, each in its own subshell, and the rest are skipped. A warning fires only if at least one element cannot run, and names which steps those are |
 | build is a shell command (or step) needing the network | detected at evaluation time and thrown with a message naming the same three escape hatches |
 | luarocks (rocks) | **explicitly unsupported**. `rocks.enabled=false` is forced during extraction, so a `build = "rockspec"` (or a `rockspec` element inside a table build) is recorded as `{ kind: "rockspec" }` and never run; warned about at lock time like any other unrunnable build. `programs.nvimx.extraLuaPackages` is the supported way out: it takes the rock from nixpkgs' Lua package set for the chosen neovim and puts it on the wrapper's LUA_PATH / LUA_CPATH, so the dependency the rockspec build was going to install is simply already there |
+| Remote plugins (Python / Ruby / Node.js providers) | `withPython3` / `withRuby` / `withNodeJs` build the host from nixpkgs (`true`), switch the provider off (`false`), or leave neovim's own discovery alone (`null`, the default). With `true`, only the Node.js host's interpreter still comes from `PATH`: neovim runs `node <host>`, and nvimx appends its `node` rather than prepending it. The remote-plugin manifest is **not** generated at build time: `:UpdateRemotePlugins` writes it to stdpath("data"), which is user-owned, and it has to be re-run after a plugin update because it records store paths. There is no `withPerl` |
 | Machine-dependent spec (`enabled = fn`, `cond`) | the superset is locked. `if` branching on the spec list itself only captures the branch taken on the machine running lock (documented) |
 | Local plugin development | `devPlugins` names them, `devPath` says where they live, and the dev.path function routes them; a spec-level `dev = true` is picked up automatically from `localPlugins` and follows `devPath` too. A spec entry that writes `dir` itself (with or without `dev`, #47) is likewise picked up automatically from `localPlugins`, but lazy short-circuits on that `dir` before `devPath` is ever consulted, so `devPath` never applies to it. A plugin named in `devPlugins` stays in the lock and in the farm, so removing the name restores the pinned build with no re-lock; a spec-level `dev = true` or `dir` plugin was never locked in the first place. A missing working tree is not fallen back on |
 | lazy writing state | stdpath(data/state/cache) is user-owned territory, so this is fine |

@@ -15,6 +15,17 @@
   # Threaded straight to the wrapper like the two above, and like them it gets no output of its
   # own -- it is visible only through `wrapped`.
   extraWrapperArgs ? [ ],
+  # Remote-plugin provider hosts (#73): null leaves neovim's own discovery alone, true builds the
+  # host and sets vim.g.<prog>_host_prog, false sets vim.g.loaded_<prog>_provider = 0. Four flat
+  # arguments rather than a `providers = { ... }` attrset, for the reason devPlugins / devPath
+  # give below: they map 1:1 onto the module's options, which are flat because
+  # programs.neovim's are. Threaded straight to the wrapper, which hands them to providers.nix.
+  withPython3 ? null,
+  withRuby ? null,
+  withNodeJs ? null,
+  # A function over pkgs.python3's package set (ps: [ ps.foo ]), the same shape as
+  # programs.neovim.extraPython3Packages. Only reaches a host when withPython3 = true.
+  extraPython3Packages ? (_: [ ]),
   vimAlias ? false,
   viAlias ? false,
   # Same shape as the module's programs.nvimx.plugins, so it can be passed straight through
@@ -136,6 +147,15 @@ let
     }) pluginDrvs;
   };
 
+  # extraPython3Packages only ever reaches a host that withPython3 = true builds, so naming
+  # packages without it is a silent no-op -- and an easy one to walk into: home-manager's
+  # programs.neovim defaulted withPython3 to true before stateVersion 26.05, so a config written
+  # against it can carry extraPython3Packages and no withPython3 line at all. Reported rather than
+  # thrown, like unknownPluginNames. Comparing against [ ] looks at the list's length and nothing
+  # in it, so this line forces no element of the list by itself; the default (_: [ ]) never
+  # touches the package set at all.
+  unusedPython3Packages = withPython3 != true && extraPython3Packages pkgs.python3.pkgs != [ ];
+
   bootstrap = mkBootstrap { inherit farm devDirs; };
   wrapped = mkWrapper {
     inherit
@@ -144,6 +164,10 @@ let
       extraPackages
       extraLuaPackages
       extraWrapperArgs
+      withPython3
+      withRuby
+      withNodeJs
+      extraPython3Packages
       vimAlias
       viAlias
       ;
@@ -159,6 +183,7 @@ in
     treesitterWithoutPlugin
     devDirs
     unknownDevPluginNames
+    unusedPython3Packages
     hasLock
     ;
 }
