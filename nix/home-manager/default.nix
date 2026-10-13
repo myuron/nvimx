@@ -173,7 +173,8 @@ in
 
         The arguments are appended after nvimx's own, and makeWrapper applies them in order:
         first --add-flags "--cmd 'luafile <bootstrap.lua>'", then --prefix PATH for
-        extraPackages, then LUA_PATH / LUA_CPATH for extraLuaPackages, then these. They
+        extraPackages, then LUA_PATH / LUA_CPATH for extraLuaPackages, then what withPython3 /
+        withRuby / withNodeJs ask for (a second --cmd and a --suffix PATH), then these. They
         therefore act on what nvimx set up: a --prefix PATH here lands in front of
         extraPackages, an --add-flags here follows nvimx's --cmd, and a --set replaces the
         variable outright. home-manager orders this differently: it applies extraPackages (as
@@ -181,9 +182,11 @@ in
         that touches PATH can behave differently here.
 
         nvimx protects none of its own arguments from them. `--set PATH` discards
-        extraPackages. `--set LUA_PATH` discards the rocks' Lua modules, and the interpreter's
-        own default search path too unless the new value contains `;;` (LUA_CPATH is a separate
-        variable and stays). An --add-flags can change how neovim starts. That is deliberate --
+        extraPackages, and with it the PATH entries withRuby / withNodeJs added -- the Node.js
+        host no longer starts without its node. `--set LUA_PATH` discards the rocks' Lua
+        modules, and the interpreter's own default search path too unless the new value
+        contains `;;` (LUA_CPATH is a separate variable and stays). An --add-flags can change
+        how neovim starts. That is deliberate --
         this is the escape hatch -- so what you write here is yours to keep working.
 
         Some makeWrapper arguments take shell text rather than a literal value: --add-flags,
@@ -192,6 +195,96 @@ in
         then. Use --add-flag / --append-flag for a single literal argument. A variable set here
         is exported, so the processes neovim starts -- a :! command, a :terminal shell, a
         language server -- inherit it unless they are started with an environment of their own.
+      '';
+    };
+
+    withPython3 = lib.mkOption {
+      type = lib.types.nullOr lib.types.bool;
+      default = null;
+      example = true;
+      description = ''
+        The Python 3 provider, for remote plugins written in Python (rplugin/python3) and for
+        :python3 / py3eval().
+
+        true builds a host from nixpkgs -- pkgs.python3 with pynvim, plus extraPython3Packages --
+        and points vim.g.python3_host_prog at it. false sets vim.g.loaded_python3_provider = 0:
+        the provider is off and neovim does not search for one. Both mean what they mean in
+        home-manager's programs.neovim.withPython3.
+
+        null (the default) is the state programs.neovim does not have: nvimx says nothing, and
+        neovim looks for a python3 with pynvim on PATH the first time something needs it. That is
+        what nvimx did before this option existed, so a setup relying on it keeps working -- but
+        it depends on what happens to be on PATH, so set true or false to make it reproducible.
+        programs.neovim's own default is false from stateVersion 26.05 on and true before; when
+        porting a configuration, write the value you were getting.
+
+        The setting is applied with --cmd, before your init.lua, so a vim.g.python3_host_prog
+        you set there still wins. With false that does not bring the provider back by itself:
+        init.lua has to unset vim.g.loaded_python3_provider as well.
+
+        nvimx does not generate a remote-plugin manifest. Run :UpdateRemotePlugins yourself, and
+        again after a plugin update: the manifest records the plugin's path, which is a Nix store
+        path that changes with the lock.
+      '';
+    };
+
+    extraPython3Packages = lib.mkOption {
+      type = lib.types.functionTo (lib.types.listOf lib.types.package);
+      default = _: [ ];
+      defaultText = lib.literalExpression "ps: [ ]";
+      example = lib.literalExpression "ps: [ ps.jupyter-client ]";
+      description = ''
+        Python packages to add to the Python 3 provider's host, as a function over a Python
+        package set -- the same shape as home-manager's programs.neovim.extraPython3Packages.
+        The set is pkgs.python3's (pkgs.python3.pkgs); pynvim is always included.
+
+        Only used when withPython3 = true: there is no host to add them to otherwise, and nvimx
+        warns at activation time if packages are named without it. They are importable by
+        Python remote plugins and by :python3, not by a python you start from :terminal -- no
+        interpreter is put on PATH. Use extraPackages for that.
+
+        The list is still evaluated when withPython3 is not true -- that is how the warning is
+        produced -- so a package that fails to evaluate is an error either way.
+      '';
+    };
+
+    withRuby = lib.mkOption {
+      type = lib.types.nullOr lib.types.bool;
+      default = null;
+      example = true;
+      description = ''
+        The Ruby provider, for remote plugins written in Ruby and for :ruby / rubyeval().
+
+        true points vim.g.ruby_host_prog at the neovim-ruby-host nixpkgs builds for its own
+        neovim wrapper, false sets vim.g.loaded_ruby_provider = 0, and null (the default) leaves
+        neovim's own discovery alone -- the same three states as withPython3, with the same
+        relation to home-manager's programs.neovim.withRuby (false from stateVersion 26.05 on,
+        true before).
+
+        With true, that Ruby environment's bin/ is appended to the wrapper's PATH (--suffix, so
+        a ruby you already have stays in front), which is what :checkhealth looks for. Unlike
+        nixpkgs' wrapper, nvimx does not set GEM_HOME: the host runs without it, and it would be
+        exported to every process neovim starts. Add it with extraWrapperArgs if you need it.
+      '';
+    };
+
+    withNodeJs = lib.mkOption {
+      type = lib.types.nullOr lib.types.bool;
+      default = null;
+      example = true;
+      description = ''
+        The Node.js provider, for remote plugins written in JavaScript (rplugin/node).
+
+        true points vim.g.node_host_prog at pkgs.neovim-node-client's neovim-node-host, false
+        sets vim.g.loaded_node_provider = 0, and null (the default) leaves neovim's own discovery
+        alone -- the same three states as withPython3. programs.neovim.withNodeJs defaults to
+        false.
+
+        With true, pkgs.nodejs's bin/ is appended to the wrapper's PATH (--suffix, so a node you
+        already have stays in front): neovim starts the host as `node <host>`, so it has to be
+        there. As with programs.neovim, appending it also makes `node` available to plugins
+        that run it themselves. The host therefore runs under the first node on PATH -- yours,
+        if you have one; put pkgs.nodejs in extraPackages to pin it.
       '';
     };
 
@@ -346,7 +439,7 @@ in
       description = ''
         The result of makeEnv (farm / bootstrap / wrapped / pluginDrvs /
         unknownPluginNames / treesitterWithoutPlugin / devDirs / unknownDevPluginNames /
-        hasLock).
+        unusedPython3Packages / hasLock).
         By default it is built automatically from the options above.
         This is an escape hatch for advanced users who want to supply it directly.
       '';
@@ -385,6 +478,12 @@ in
         ${lib.concatMapStringsSep "\n" (n: "  - ${n}") (cfg.env.unknownDevPluginNames or [ ])}
         Use the name lazy derived for the plugin (the key in nvimx-lock/plugins.json); if you
         added the plugin to your spec without re-locking, re-run `nvimx-lock`.
+      ''
+      ++ lib.optional (cfg.env.unusedPython3Packages or false) ''
+        programs.nvimx: extraPython3Packages names packages, but withPython3 is not true, so
+        there is no Python 3 host to add them to and they are ignored.
+        Set withPython3 = true. (home-manager's programs.neovim turned it on by default before
+        stateVersion 26.05; nvimx never does.)
       '';
 
     programs.nvimx.env = lib.mkDefault (
@@ -395,6 +494,10 @@ in
           extraPackages
           extraLuaPackages
           extraWrapperArgs
+          withPython3
+          withRuby
+          withNodeJs
+          extraPython3Packages
           vimAlias
           viAlias
           plugins

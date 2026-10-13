@@ -6,6 +6,10 @@
   extraPackages ? [ ],
   extraLuaPackages ? (_: [ ]),
   extraWrapperArgs ? [ ],
+  withPython3 ? null,
+  withRuby ? null,
+  withNodeJs ? null,
+  extraPython3Packages ? (_: [ ]),
   vimAlias ? false,
   viAlias ? false,
 }:
@@ -44,6 +48,30 @@ let
       "--prefix LUA_CPATH ';' ${lib.escapeShellArg (lua.pkgs.luaLib.genLuaCPathAbsStr luaEnv)}"
     ]
   );
+  # Provider hosts (#73). nix/lib/providers.nix decides what there is to say; here it only has to
+  # reach wrapProgram. The Lua goes in as a second --cmd, after the bootstrap's and before the
+  # user's config, so vim.g.<prog>_host_prog is a default that init.lua can still overwrite. (A
+  # provider set to false stays off until init.lua also unsets vim.g.loaded_<prog>_provider.)
+  # A file rather than an inline `--cmd "lua ..."`: --add-flags splices its value into the
+  # wrapper script as shell text, and a path has nothing in it to quote.
+  # lib.escapeShellArgs [ ] is "", so with every provider left at null this contributes nothing
+  # and the filter below drops it -- see the note on trailingWrapperArgs.
+  providers = import ./providers.nix { inherit pkgs; } {
+    inherit
+      package
+      withPython3
+      withRuby
+      withNodeJs
+      extraPython3Packages
+      ;
+  };
+  providerWrapperArgs = lib.escapeShellArgs (
+    lib.optionals (providers.rc != null) [
+      "--add-flags"
+      "--cmd 'luafile ${providers.rc}'"
+    ]
+    ++ providers.wrapperArgs
+  );
   # extraWrapperArgs (#72) go last, after everything nvimx passes itself. makeWrapper handles its
   # arguments in order -- environment blocks are written out as it meets them, flags are collected
   # in the same order onto the final exec line -- so last means the user has the final word: a
@@ -60,6 +88,7 @@ let
   trailingWrapperArgs = lib.concatStringsSep " " (
     lib.filter (s: s != "") [
       luaWrapperArgs
+      providerWrapperArgs
       (lib.escapeShellArgs extraWrapperArgs)
     ]
   );
