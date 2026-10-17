@@ -26,6 +26,7 @@
       # x86_64-darwin is out of scope: nixpkgs 26.11 dropped support for it
       systems = [
         "x86_64-linux"
+        "aarch64-linux"
         "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;

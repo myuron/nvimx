@@ -20,7 +20,8 @@
     {
       # TODO: change the username and home directory to your own
       homeConfigurations."myuser" = home-manager.lib.homeManagerConfiguration {
-        # On macOS (Apple Silicon), change this to "aarch64-darwin".
+        # On ARM Linux, change this to "aarch64-linux"; on macOS (Apple Silicon),
+        # "aarch64-darwin".
         # Intel Mac ("x86_64-darwin") is not supported by nvimx because
         # nixpkgs 26.11 dropped support for it.
         pkgs = import nixpkgs { system = "x86_64-linux"; };
