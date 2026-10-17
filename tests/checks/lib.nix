@@ -32,19 +32,7 @@
   # itself -- genflake.lua already does, since it prepends "git+" to every git-type source.
   # Tags are annotated (`tag -a`) so the same repo exercises both the `--refs` filtering
   # and nix's own peeling of an annotated tag to its commit (see the plan's §1.3).
-  mkTagRepoSh = ''
-    # mkrepo <dir> [tag...]
-    mkrepo() {
-      local d="$1"
-      shift
-      mkdir -p "$d"
-      git init -q -b main "$d"
-      git -C "$d" -c user.name=nvimx -c user.email=nvimx@example.com commit -q --allow-empty -m init
-      for t in "$@"; do
-        git -C "$d" -c user.name=nvimx -c user.email=nvimx@example.com tag -a "$t" -m "$t"
-      done
-    }
-  '';
+  mkTagRepoSh = builtins.readFile ./scripts/mkrepo.sh;
   # Actually evaluate and build the hm module against a fixture config
   mkHmCheck =
     nvimxConfig:

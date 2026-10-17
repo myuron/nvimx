@@ -138,6 +138,10 @@
             # matching the same file in ascending priority order, so pin the order explicitly
             # (omitting it falls back to name order, which runs luacheck before stylua).
             stylua.priority = 1;
+            # Only tests/checks/scripts/*.sh today: check bodies that are plain shell live there
+            # instead of in a Nix string, which neither of these can see.
+            shellcheck.enable = true;
+            shfmt.enable = true;
           };
           # luacheck is a linter, not a formatter, so treefmt-nix has no programs.luacheck.
           # treefmt only requires a formatter to accept paths and exit non-zero on failure;
