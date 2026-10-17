@@ -129,6 +129,38 @@ NVIMX_STUB_FAIL=130 nvimx-lock --config pincfg --out signalled 2>signalled.log |
 absent '^nvimx-lock: failed' signalled.log
 no_leftover
 
+# 4d. The failure can also come from the other `nix` call sites, which step 4 never
+# reaches: the stub only fails at its first call there. Here `nix flake update` (the
+# second call under --update) fails; the lock files from `first` are already written,
+# so the run is a real half-finished one (#81).
+cp -r first upd-fail
+reset
+rc=0
+NVIMX_STUB_FAIL=7 NVIMX_STUB_FAIL_AT=2 nvimx-lock --config "$fx" --out upd-fail --update 2>upd-fail.log || rc=$?
+printf '%s\n' 'flake lock path:.' 'flake update --flake path:. lazy-nvim tokyonight-nvim' >want-argv
+diff -u want-argv argv
+[ "$rc" -eq 7 ]
+[ "$(tail -n 1 upd-fail.log)" = "$(fail_line 7)" ]
+absent '^nvimx-lock: done' upd-fail.log
+no_leftover
+
+# 4e. ... and the convergence pass's `nix flake lock` (the second call of a first-time
+# pin). Pass 2's resolve.log has replaced pass 1's by then: its warning must be shown
+# once, after nix's error, not lost and not doubled (#81).
+reset
+rc=0
+NVIMX_STUB_FAIL=7 NVIMX_STUB_FAIL_AT=2 nvimx-lock --config pincfg --out conv-fail 2>conv-fail.log || rc=$?
+printf '%s\n' 'flake lock path:.' 'flake lock path:.' >want-argv
+diff -u want-argv argv
+[ "$rc" -eq 7 ]
+grep -q '^nvimx-lock: freezing pinned plugins$' conv-fail.log
+[ "$(grep -c '^\[nvimx\] warning: plugin "tokyonight.nvim"' conv-fail.log)" -eq 1 ]
+err_at=$(grep -n '^error: stub nix was told to fail$' conv-fail.log | cut -d: -f1)
+warn_at=$(grep -n '^\[nvimx\] warning: plugin "tokyonight.nvim"' conv-fail.log | cut -d: -f1)
+[ "$err_at" -lt "$warn_at" ]
+[ "$(tail -n 1 conv-fail.log)" = "$(fail_line 7)" ]
+no_leftover
+
 # 5. A failure before `nix` is ever reached ends the same way (the trap is what
 # prints the line, not the nix step).
 mkdir nosetup
@@ -239,6 +271,7 @@ nvimx-lock --config "$fx" --out sj-bad --summary-json sj-dir 2>sj-bad.log || rc=
 
 # 12. A failed run never leaves a previous report behind, and the failure line stays last.
 echo stale >stale.json
+reset # the stub fails on the first call counted since the last reset (#81)
 rc=0
 NVIMX_STUB_FAIL=7 nvimx-lock --config pincfg --out sj-failed --summary-json stale.json 2>sj-failed.log || rc=$?
 [ "$rc" -eq 7 ]

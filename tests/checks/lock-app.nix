@@ -1,8 +1,10 @@
 # The lock app itself, end to end (#71): what nix/lib/lock-app.nix hands its `nix` calls, what
 # the EXIT trap prints, and everything after them -- no other check gets past those calls,
 # since recursive nix cannot run in a build. `nix` comes from the caller's PATH, so a stub
-# stands in: it answers the seed lookup (`eval`, #32) with nvimx's own lazy.nvim, records argv and
-# cwd, fails on NVIMX_STUB_FAIL, and otherwise writes a fixture
+# stands in: it answers the seed lookup (`eval`, #32) with nvimx's own lazy.nvim (not recorded
+# in argv, so it is not counted as a call), records argv and cwd, fails on the NVIMX_STUB_FAIL_AT-th
+# call (default 1) when NVIMX_STUB_FAIL is set (#81: the later call sites need a failure of their
+# own), and otherwise writes a fixture
 # flake.lock (the convergence pass reads it right after). That the real nix accepts `path:.`
 # stays a manual check.
 {
@@ -19,7 +21,8 @@ let
     fi
     printf '%s\n' "$*" >> "$NVIMX_STUB_ARGV"
     pwd >> "$NVIMX_STUB_CWD"
-    if [ -n "''${NVIMX_STUB_FAIL:-}" ]; then
+    calls=$(wc -l < "$NVIMX_STUB_ARGV")
+    if [ -n "''${NVIMX_STUB_FAIL:-}" ] && [ "$calls" -eq "''${NVIMX_STUB_FAIL_AT:-1}" ]; then
       echo "error: stub nix was told to fail" >&2
       exit "$NVIMX_STUB_FAIL"
     fi
