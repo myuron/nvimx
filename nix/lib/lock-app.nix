@@ -172,9 +172,11 @@ pkgs.writeShellApplication {
     # import.log exists for one reason only: pass 2 below (the convergence resolve) redirects its
     # own stderr with `2>` to the exact same resolve.log path pass 1 used, and `2>` truncates on
     # open -- so by the time either pass's log would be printed, pass 1's `[nvimx] import: ...`
-    # report (#25) is already gone unless it was copied out first. Pass 2 never produces any
+    # report (#25) is already gone unless it was moved out first. Pass 2 never produces any
     # import lines itself (it deliberately never gets --import-lazy-lock -- see the comment on
-    # that pass below), so import.log is populated once, right after pass 1, and is simply
+    # that pass below), so import.log is populated once, right after pass 1 (the lines are moved
+    # out of resolve.log, so a failure before pass 2 prints them once, #81, and the output shape --
+    # import report, then the rest -- is the same on success and failure), and is simply
     # ignored on every run that was not given --import-lazy-lock in the first place (grep finds
     # nothing, so the file stays empty and flush_logs' `-s` check skips it).
     resolve_log_shown=0
@@ -300,14 +302,18 @@ pkgs.writeShellApplication {
       flush_logs
       exit "$rc"
     fi
-    # Lift the import report out of resolve.log now, before the convergence pass below reopens
+    # Move the import report out of resolve.log now, before the convergence pass below reopens
     # that same path with `2>` and truncates it. Only this pass can have produced import lines in
     # the first place (the convergence pass never gets --import-lazy-lock -- see its own comment
-    # below for why), so this is also the only place that needs to do the lifting. `grep` exits 1
-    # when nothing matches (e.g. any run without --import-lazy-lock), which `set -e` would
+    # below for why), so this is also the only place that needs to do the moving. Moved, not
+    # copied (#81): a copy left the lines in resolve.log too, and a failing first `nix` printed
+    # them twice. `grep` exits 1 when nothing matches (e.g. a report with only import lines left
+    # nothing for the second grep, or any run without --import-lazy-lock), which `set -e` would
     # otherwise treat as a script failure, hence `|| true`.
     if [ "$import_mode" -eq 1 ]; then
       grep '^\[nvimx\] import: ' "$sandbox/resolve.log" > "$sandbox/import.log" || true
+      grep -v '^\[nvimx\] import: ' "$sandbox/resolve.log" > "$sandbox/resolve.rest" || true
+      mv "$sandbox/resolve.rest" "$sandbox/resolve.log"
     fi
 
     echo "nvimx-lock: generating lock flake" >&2

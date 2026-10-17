@@ -97,10 +97,9 @@ absent '^nvimx-lock: done' failed.log
 
 # 4b. The same failure on the path #71 was actually reported on: --import-lazy-lock.
 # The import report is held back like the warnings are, so it lands after nix's
-# error too, and the failure line still has to come last. Deliberately indifferent
-# to how many times the report is printed: today a failing first `nix` prints it
-# twice (pass 2 has not truncated resolve.log yet, so the lines sit in both
-# import.log and resolve.log) -- a known wart, and fixing it must not break this.
+# error too, and the failure line still has to come last. The report is printed
+# exactly once (#81: it used to come out twice, because pass 2 had not truncated
+# resolve.log yet and the lines sat in both it and import.log).
 cat >lazy-lock.json <<'JSON'
 { "tokyonight.nvim": { "branch": "main", "commit": "1234123412341234123412341234123412341234" } }
 JSON
@@ -111,6 +110,7 @@ NVIMX_STUB_FAIL=7 nvimx-lock --config pincfg --out failed-import \
 [ "$rc" -eq 7 ]
 [ "$(tail -n 1 failed-import.log)" = "$(fail_line 7)" ]
 [ "$(grep -c '^nvimx-lock: failed' failed-import.log)" -eq 1 ]
+[ "$(grep -c '^\[nvimx\] import: ' failed-import.log)" -eq 2 ]
 err_at=$(grep -n '^error: stub nix was told to fail$' failed-import.log | cut -d: -f1)
 import_first=$(grep -n '^\[nvimx\] import: ' failed-import.log | head -n 1 | cut -d: -f1)
 import_last=$(grep -n '^\[nvimx\] import: ' failed-import.log | tail -n 1 | cut -d: -f1)
