@@ -238,7 +238,7 @@ All options live under `programs.nvimx`.
 | `lock.projectDir` | `nullOr str` | `null` | The working tree of your dotfiles repository. When set, running `nvimx-lock` with no arguments targets `configDirRelative` / `lockDirRelative`. |
 | `lock.configDirRelative` | `str` | `"nvim"` | Path to `configDir`, relative to `projectDir`. |
 | `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | Path to `lockDir`, relative to `projectDir`. |
-| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `unusedPython3Packages` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
+| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `unusedPython3Packages` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. Setting it replaces the `makeEnv` call, so `extraPackages`, `extraLuaPackages`, `extraWrapperArgs` and every other option above that only feeds `makeEnv` are silently ignored. |
 
 `lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module. On NixOS, `defaultEditor` shares `EDITOR` with a default NixOS sets on its own; see [`defaultEditor` on NixOS](#defaulteditor-on-nixos).
 

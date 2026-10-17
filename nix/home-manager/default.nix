@@ -453,6 +453,10 @@ in
         unusedPython3Packages / hasLock).
         By default it is built automatically from the options above.
         This is an escape hatch for advanced users who want to supply it directly.
+        Setting it replaces the makeEnv call, so every option that only feeds makeEnv is
+        silently ignored: package, lockDir, extraPackages, extraLuaPackages, extraWrapperArgs,
+        withPython3, withRuby, withNodeJs, extraPython3Packages, vimAlias, viAlias, plugins.*,
+        treesitter.*, devPlugins and devPath.
       '';
     };
   };
