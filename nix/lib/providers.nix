@@ -1,6 +1,7 @@
 # Remote-plugin provider hosts (python3 / ruby / node) for the wrapped neovim (#73).
 # Returns what nix/lib/wrapper.nix needs and nothing else: `rc`, a Lua file to run with --cmd
-# (null when there is nothing to say), and `wrapperArgs`, a flat list of makeWrapper arguments.
+# (null when there is nothing to say), `wrapperArgs`, a flat list of makeWrapper arguments, and
+# `manifest`, the build-time remote-plugin manifest (#85; null unless a host is true, see below).
 #
 # Each with* argument has three states, and the third is why this file writes its own lines
 # instead of reusing wrapNeovimUnstable's providerLuaRc, which only knows two:
@@ -11,6 +12,9 @@
 #   false -> vim.g.loaded_<prog>_provider = 0: the provider is off, and neovim skips the search.
 # true and false mean what they mean in home-manager's programs.neovim, so a value carried over
 # from there keeps its meaning; null is the state programs.neovim does not have.
+#
+# true additionally registers the remote plugins of that host at build time (nix/lib/rplugin-manifest.nix)
+# and has the rc load the result. null and false change nothing, so those wrappers stay as they were.
 { pkgs }:
 {
   package,
@@ -18,6 +22,10 @@
   withRuby ? null,
   withNodeJs ? null,
   extraPython3Packages ? (_: [ ]),
+  # For the remote-plugin manifest (#85): the plugin farm to register from, and the farm entries
+  # left to :UpdateRemotePlugins (dev plugins). Without a farm there is no manifest.
+  farm ? null,
+  rpluginExclude ? [ ],
 }:
 let
   inherit (pkgs) lib;
@@ -84,13 +92,43 @@ let
   # python3 needs nothing: g:python3_host_prog is executed directly.
   runtimeDeps =
     lib.optional (withRuby == true) rubyEnv ++ lib.optional (withNodeJs == true) pkgs.nodejs;
+
+  # The hosts that are on, i.e. the ones whose remote plugins get registered at build time (#85).
+  # null and false register nothing and leave the rc and the wrapper exactly as they were.
+  manifestHosts = lib.concatLists [
+    (lib.optional (withPython3 == true) "python3")
+    (lib.optional (withRuby == true) "ruby")
+    (lib.optional (withNodeJs == true) "node")
+  ];
+  # Today's rc: the vim.g.*_host_prog lines. Also what the manifest derivation runs with --cmd.
+  hostRc = pkgs.writeText "nvimx-providers.lua" (lib.concatStringsSep "\n" lines + "\n");
+  manifest =
+    if farm != null && manifestHosts != [ ] then
+      import ./rplugin-manifest.nix { inherit pkgs; } {
+        inherit package farm hostRc;
+        hosts = manifestHosts;
+        path = runtimeDeps;
+        exclude = rpluginExclude;
+      }
+    else
+      null;
+  loadLine = "dofile(${lib.generators.toLua { } "${../../lua/nvimx/rplugin-load.lua}"})(${
+    lib.generators.toLua { } {
+      manifest = "${manifest}";
+      hosts = manifestHosts;
+      store = builtins.storeDir + "/";
+    }
+  })";
 in
 {
+  inherit manifest;
   rc =
     if lines == [ ] then
       null
+    else if manifest == null then
+      hostRc
     else
-      pkgs.writeText "nvimx-providers.lua" (lib.concatStringsSep "\n" lines + "\n");
+      pkgs.writeText "nvimx-providers.lua" (lib.concatStringsSep "\n" (lines ++ [ loadLine ]) + "\n");
   wrapperArgs = lib.optionals (runtimeDeps != [ ]) [
     "--suffix"
     "PATH"
