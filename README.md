@@ -8,6 +8,7 @@
   <a href="https://nixos.org"><img src="https://img.shields.io/badge/built%20with-Nix-5277C3?logo=nixos&logoColor=white" alt="Built with Nix"></a>
   <a href="https://neovim.io"><img src="https://img.shields.io/badge/for-Neovim-57A143?logo=neovim&logoColor=white" alt="For Neovim"></a>
   <a href="https://github.com/myuron/nvimx/actions/workflows/ci-linux.yml"><img src="https://github.com/myuron/nvimx/actions/workflows/ci-linux.yml/badge.svg?branch=main" alt="x86_64-linux"></a>
+  <a href="https://github.com/myuron/nvimx/actions/workflows/ci-linux-arm.yml"><img src="https://github.com/myuron/nvimx/actions/workflows/ci-linux-arm.yml/badge.svg?branch=main" alt="aarch64-linux"></a>
   <a href="https://github.com/myuron/nvimx/actions/workflows/ci-darwin.yml"><img src="https://github.com/myuron/nvimx/actions/workflows/ci-darwin.yml/badge.svg?branch=main" alt="aarch64-darwin"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/myuron/nvimx?color=blue" alt="License: MIT"></a>
 </p>
