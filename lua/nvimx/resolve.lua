@@ -1512,7 +1512,7 @@ if unbuildable then
   note('  - programs.nvimx.plugins.nixpkgsFallback = [ "<name>" ];')
   note("  - a recipe under nix/build-registry/, if this plugin is common enough that nvimx")
   note("    should ship one")
-  note('See docs/architecture.md ("Plugin derivations").')
+  note('See "Escape hatches" and "The build registry" in the nvimx README.')
 end
 
 -- #49: lazy_entry is non-nil exactly when the spec has its own, non-local lazy.nvim entry (the
