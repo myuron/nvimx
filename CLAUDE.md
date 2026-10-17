@@ -10,7 +10,7 @@ A Nix × Neovim plugin manager shipped as a home-manager module (`programs.nvimx
 
 - `nix flake check` and `nix fmt -- --ci` — exactly what CI runs (`.github/workflows/check.yml`). Both must pass.
 - `nix build .#checks.x86_64-linux.<name>` — run one check.
-- `nix eval .#checks.aarch64-darwin.<name>.drvPath` — a Linux `nix flake check` silently skips darwin; run this when touching darwin-related code.
+- `nix eval .#checks.<system>.<name>.drvPath` — a `nix flake check` silently skips other systems (aarch64-darwin, and aarch64-linux on an x86 host); run this for `aarch64-darwin` / `aarch64-linux` when touching system-dependent code. `nix flake check --no-build --all-systems` evaluates all of them.
 - `nix fmt -- --clear-cache` — required after editing `stylua.toml` or `.luacheckrc` (treefmt caches on file + command).
 - `nix build .#demo && ./result/bin/nvim` — smoke test; `:Lazy` should show every plugin as local with no git operations.
 - `nix run .#lock -- --config ./nvim --out ./nvim/nvimx-lock` — lock pipeline; also `--update [name...]`, `--import-lazy-lock [path]`.
@@ -24,8 +24,8 @@ No test framework. Every check is a derivation in its own `tests/checks/<name>.n
 
 - Locking is the only online step. `nix/lib/build-network.nix` throws at evaluation time on builds needing network; escape hatches: `plugins.overrides` > `plugins.nixpkgsFallback` > `nix/build-registry/`.
 - No IFD — e.g. checks pin blink.cmp with a literal `builtins.fetchTree`.
-- Systems are `x86_64-linux` and `aarch64-darwin` only (`x86_64-darwin` is out of scope). Wrap system-dependent outputs in `forAllSystems`; `homeModules` and `templates` stay system-independent.
-- CI has one workflow per system only for per-system README badges. Add steps to `check.yml` only, never to `ci-linux.yml`/`ci-darwin.yml`.
+- Systems are `x86_64-linux`, `aarch64-linux` and `aarch64-darwin` only (`x86_64-darwin` is out of scope). Wrap system-dependent outputs in `forAllSystems`; `homeModules` and `templates` stay system-independent.
+- CI has one workflow per system only for per-system README badges. Add steps to `check.yml` only, never to the per-system `ci-*.yml` files.
 - `lua/nvimx/bootstrap.lua.in` is excluded from stylua/luacheck only by its extension — keep the name.
 - Don't set `programs.stylua.settings` in treefmt; it would override `stylua.toml`.
 
