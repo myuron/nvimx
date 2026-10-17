@@ -515,13 +515,22 @@ pkgs.writeShellApplication {
     # other two), so an untracked flake.nix alone does not degrade anything: it gets a note of its
     # own that only asks for the three files to be committed together, instead of a false alarm.
     if [ "$(git -C "$out" rev-parse --is-inside-work-tree 2> /dev/null)" = "true" ]; then
+      # A gitignored lock dir makes a plain `git add` refuse ("paths are ignored"), so the printed
+      # command needs -f when any of the files is ignored (#81). check-ignore reports only untracked
+      # ignored paths (tracked ones never match): exit 0 = at least one ignored, 1 = none, 128 =
+      # error (treated as none). No -q: git rejects it with more than one path. Read-only, like the
+      # rest of the probe.
+      add_cmd="add"
+      if git -C "$out" check-ignore -- plugins.json flake.nix flake.lock > /dev/null 2>&1; then
+        add_cmd="add -f"
+      fi
       if ! git -C "$out" ls-files --error-unmatch -- plugins.json flake.lock > /dev/null 2>&1; then
         echo "nvimx-lock: note: this lock is not fully tracked by git. A flake only sees git-tracked files, so until you run" >&2
-        echo "nvimx-lock: note:   git -C \"$out\" add plugins.json flake.nix flake.lock" >&2
+        echo "nvimx-lock: note:   git -C \"$out\" $add_cmd plugins.json flake.nix flake.lock" >&2
         echo "nvimx-lock: note: home-manager switch cannot see it and builds the degraded (lazy.nvim-only) neovim instead" >&2
       elif ! git -C "$out" ls-files --error-unmatch -- flake.nix > /dev/null 2>&1; then
         echo "nvimx-lock: note: flake.nix is not tracked by git. The build does not read it, but it belongs with plugins.json and flake.lock:" >&2
-        echo "nvimx-lock: note:   git -C \"$out\" add flake.nix" >&2
+        echo "nvimx-lock: note:   git -C \"$out\" $add_cmd flake.nix" >&2
       fi
     fi
     if [ "$summary_rc" -ne 0 ]; then

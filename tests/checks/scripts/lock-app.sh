@@ -277,6 +277,25 @@ absent 'nvimx-lock: note:' tracked.log
 [ ! -s tracked.out ]
 git -C repo status --porcelain | diff -u status.before -
 
+# 7b. A gitignored lock dir: a plain `git add` refuses it, so the note has to say -f
+# (#81). Step 7's exact match on the command without -f is what keeps this from being
+# always-on.
+git init -q -b main ignored
+mkdir ignored/nvim
+cp "$fx"/init.lua ignored/nvim/
+echo 'nvim/nvimx-lock/' >ignored/.gitignore
+ilockdir=$here/ignored/nvim/nvimx-lock
+nvimx-lock --config ignored/nvim --out ignored/nvim/nvimx-lock 2>ignored.log
+grep -qxF "nvimx-lock: note:   git -C \"$ilockdir\" add -f plugins.json flake.nix flake.lock" ignored.log
+# The printed command must work as printed, and once it has, the note is gone.
+git -C "$ilockdir" add -f plugins.json flake.nix flake.lock
+nvimx-lock --config ignored/nvim --out ignored/nvim/nvimx-lock 2>ignored-tracked.log
+absent 'nvimx-lock: note:' ignored-tracked.log
+# The flake.nix-only note gets the -f too.
+git -C ignored rm -q --cached nvim/nvimx-lock/flake.nix
+nvimx-lock --config ignored/nvim --out ignored/nvim/nvimx-lock 2>ignored-nix.log
+[ "$(tail -n 1 ignored-nix.log)" = "nvimx-lock: note:   git -C \"$ilockdir\" add -f flake.nix" ]
+
 # 8. `git rev-parse --is-inside-work-tree` prints "false" and still exits 0 inside
 # a bare repository, so the note has to compare the output, not the exit code.
 git init -q --bare bare.git
