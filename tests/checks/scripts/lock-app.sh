@@ -202,4 +202,61 @@ git init -q --bare bare.git
 nvimx-lock --config "$fx" --out bare.git/lock 2>bare.log
 absent 'nvimx-lock: note:' bare.log
 
+# 9. --summary-json (#77) on a plain first lock: the report is written (relative path, so it is
+# resolved against the caller's cwd), in lock mode, and no summary text goes to stderr -- a
+# plain lock's stderr is what it was before the flag existed. The first lock has no "before"
+# files, so everything is an addition.
+reset
+nvimx-lock --config "$fx" --out sj1 --summary-json s1.json 2>sj1.log
+jq -e '.mode == "lock" and ([.added[].name] == ["lazy.nvim", "tokyonight.nvim"])' s1.json >/dev/null
+absent 'update summary' sj1.log
+absent 'no plugins updated' sj1.log
+no_leftover
+
+# 10. --update with the flag: same report path, and the stderr text is still printed. The stub's
+# lock does not move, so nothing is updated.
+nvimx-lock --config "$fx" --out sj1 --update --summary-json s2.json 2>sj2.log
+jq -e '.mode == "update-all" and .updated == []' s2.json >/dev/null
+grep -q 'no plugins updated' sj2.log
+
+# 11. Argument errors exit 2 before anything is created, --out included.
+for bad in "--summary-json" "--summary-json --update"; do
+  rc=0
+  # shellcheck disable=SC2086 # word splitting of $bad is the point
+  nvimx-lock --config "$fx" --out sj-bad $bad 2>sj-bad.log || rc=$?
+  [ "$rc" -eq 2 ]
+  [ ! -e sj-bad ]
+done
+rc=0
+nvimx-lock --config "$fx" --out sj-bad --summary-json no-such-dir/s.json 2>sj-bad.log || rc=$?
+[ "$rc" -eq 2 ]
+[ ! -e sj-bad ]
+mkdir sj-dir
+rc=0
+nvimx-lock --config "$fx" --out sj-bad --summary-json sj-dir 2>sj-bad.log || rc=$?
+[ "$rc" -eq 2 ]
+[ ! -e sj-bad ]
+
+# 12. A failed run never leaves a previous report behind, and the failure line stays last.
+echo stale >stale.json
+rc=0
+NVIMX_STUB_FAIL=7 nvimx-lock --config pincfg --out sj-failed --summary-json stale.json 2>sj-failed.log || rc=$?
+[ "$rc" -eq 7 ]
+[ ! -e stale.json ]
+[ "$(tail -n 1 sj-failed.log)" = "$(fail_line 7)" ]
+
+# 12b. The same for an early exit: the stale report is removed above the --update no-lock guard,
+# and that guard still creates nothing.
+echo stale >stale-early.json
+rc=0
+nvimx-lock --config "$fx" --out no-such-lock --update --summary-json stale-early.json 2>sj-early.log || rc=$?
+[ "$rc" -eq 2 ]
+grep -q 'nvimx-lock: no existing lock to update' sj-early.log
+[ ! -e stale-early.json ]
+[ ! -e no-such-lock ]
+
+# 13. --import-lazy-lock is a plain lock as far as the report goes.
+nvimx-lock --config pincfg --out sj3 --import-lazy-lock lazy-lock.json --summary-json s3.json 2>sj3.log
+jq -e '.mode == "lock"' s3.json >/dev/null
+
 touch "$out"
