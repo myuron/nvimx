@@ -672,6 +672,10 @@ Two things these options do not do:
 Network access happens only while locking. `nvimx-lock` runs a headless Neovim that really evaluates
 your lazy spec, then persists the plugin list to `plugins.json` and the pins to `flake.lock`.
 
+Extraction runs against the lazy.nvim your `flake.lock` pins, which is the one your Neovim loads.
+nvimx's own pinned lazy.nvim is used only on the very first lock, and the spec is extracted again
+whenever locking or updating moves lazy.nvim, so `plugins.json` always matches `flake.lock`.
+
 Builds merely read those files, so evaluation is fully pure — no network, no `--impure`. From them
 nvimx builds one derivation per plugin, collects them into a linkFarm, and wraps Neovim with a
 generated `bootstrap.lua` so lazy.nvim loads from the Nix store instead of running its own

@@ -47,6 +47,7 @@ pkgs.lib.genAttrs [
   "resolve-import-lazy-lock"
   "lock-app"
   "lock-untracked-config"
+  "lock-lazy-seed"
   "resolve-sources"
   "resolve-golden"
   "genflake-golden"
