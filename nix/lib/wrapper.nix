@@ -80,6 +80,10 @@ let
   # hatch is for, and nothing here guards against it.
   # They are free-form user text, hence lib.escapeShellArgs: each list element reaches
   # wrapProgram as one argument, whatever is in it. Do not "simplify" this to a plain join.
+  # Not validated, like home-manager's: a short operand mid-list shifts the next flag into its slot
+  # and makeWrapper dies, but at the end of the list it goes through (`--set X` exports X='', a bare
+  # `--set` writes `export =''` and the wrapper then fails at every start). makeWrapper's grammar
+  # is the user's nixpkgs', so nvimx does not keep a copy of it (#83).
   # Joined onto luaWrapperArgs rather than given a continuation line of its own, and filtered so
   # that an empty side contributes no separator: with no extraWrapperArgs the postBuild text is
   # then byte for byte what it was before the option existed, so the derivation -- not merely the
