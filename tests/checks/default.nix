@@ -51,4 +51,5 @@ pkgs.lib.genAttrs [
   "resolve-lazy-self"
   "dev-plugins"
   "dev-patterns"
+  "extractor-dev-opts"
 ] (name: import (./. + "/${name}.nix") checkArgs)

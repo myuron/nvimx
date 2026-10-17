@@ -427,7 +427,7 @@ on its own, under `devPath` just the same. A spec entry that writes `dir` itself
 lazy uses that path directly and never consults `devPath` for it, so changing `devPath` will not
 move it. Short of that, `devPath` is the one place that decides where dev working trees live. If
 you were setting lazy.nvim's own `dev.path`, set `devPath` instead, and `devPatterns` for
-`dev.patterns` — nvimx overrides both along with the rest of `dev`.
+`dev.patterns` — nvimx overrides both along with the rest of `dev`. `nvimx-lock` prints a warning when your spec sets `dev.patterns`, `dev.path` or `dev.fallback`, since nvimx ignores them at runtime.
 
 Three things are deliberate:
 
