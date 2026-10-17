@@ -15,10 +15,8 @@ let
     package = pkgs.neovim-unwrapped;
     lockDir = ../fixtures/registry-plugins/nvimx-lock;
   };
-  # The entry replaces a build that downloads its artifact, so nothing here is
-  # fetched. Resolved against the real upstream tree (pkgs.fzf is already a
-  # dependency of the entry, so its src costs nothing extra): the entry checks the
-  # tree it was handed, and bin/ exists there with other files in it.
+  # Resolved against the real upstream tree (pkgs.fzf.src, already a dependency of the entry):
+  # the entry checks the tree it is handed, and upstream bin/ already has other files in it.
   fzf = nvimxLib.resolvePlugin {
     name = "fzf";
     src = pkgs.fzf.src;
@@ -27,10 +25,8 @@ let
       cmd = "./install --bin";
     };
   };
-  # nvim-treesitter: the entry must ignore whatever build the spec declared, even one
-  # that would fail if it ran -- proof that this plugin never reaches the generic
-  # build's buildPhase at all (#36's decision on nvim-treesitter's own `make`, which
-  # is unrunnable in the sandbox on the `main` branch layout).
+  # nvim-treesitter: the entry must ignore the declared build, even one that would fail, so the
+  # plugin never reaches the generic buildPhase (#36: its `make` cannot run in the sandbox).
   treesitterEntry = nvimxLib.resolvePlugin {
     name = "nvim-treesitter";
     src = ../fixtures/local-plugin;
@@ -39,10 +35,8 @@ let
       cmd = "exit 1";
     };
   };
-  # blink.cmp: the one entry that has to *produce* a compiled artifact from the
-  # locked src, so it is resolved against a real upstream tree (blinkSrc above) and
-  # actually built. The declared build is the one build-network.nix rejects, which is
-  # what the entry is rescuing.
+  # blink.cmp: the one entry that *produces* a compiled artifact, so it is built for real from
+  # blinkSrc (./lib.nix). The declared build is the one build-network.nix rejects.
   blinkEntry = nvimxLib.resolvePlugin {
     name = "blink.cmp";
     src = blinkSrc;
@@ -52,9 +46,8 @@ let
     };
   };
   blinkLib = "libblink_cmp_fuzzy${pkgs.stdenv.hostPlatform.extensions.sharedLibrary}";
-  # Both refusals the entry can raise before it builds anything. They are the entry's
-  # documented behaviour for a rev it cannot handle, so they have to keep being
-  # refusals rather than silently becoming a plain (and doomed) build.
+  # The entry.s two documented refusals for a rev it cannot handle; they must stay refusals
+  # rather than silently becoming a plain (and doomed) build.
   blinkRefuses =
     src:
     !(builtins.tryEval (
@@ -68,9 +61,8 @@ let
         }).drvPath
         null
     )).success;
-  # The mechanism itself, checked against a stub registry so that it does not depend
-  # on which plugins happen to be shipped today. Compared by outPath: nothing below
-  # has to be built.
+  # The mechanism itself, against a stub registry so it does not depend on what is shipped
+  # today. Compared by outPath, so nothing below is built.
   pname = "telescope-fzf-native.nvim";
   mkGeneric =
     n:
@@ -95,9 +87,8 @@ let
     );
   stubDrv = pkgs.runCommand "nvimx-registry-stub" { } "mkdir -p $out";
   stub.${pname} = _: stubDrv;
-  # An entry must be handed the plugin it is keyed by, plus the generic builder.
-  # Fed to `overrides` further down as well: the two contracts are meant to be
-  # identical, so the very same function has to work in both positions.
+  # An entry gets its plugin plus the generic builder. Also fed to `overrides` below: the two
+  # contracts are identical, so the same function must work in both positions.
   echoArgs.${pname} =
     {
       name,

@@ -1,13 +1,8 @@
-# withPython3 / withRuby / withNodeJs / extraPython3Packages (#73). Like
-# extraLuaPackages the promise is a runtime one -- a host that neovim can actually start
-# and talk to -- so this starts the wrapped neovim and uses each provider, rather than
-# reading vim.g.*_host_prog back and believing it. That distinction is the point for
-# node: its host_prog can be set perfectly and the provider still fail, because neovim
-# runs it as `node <host>` and needs node on PATH (measured: "'node' is not
-# executable"). Each option has three states, so the wrappers below are chosen to tell
-# them apart: `on` (all true), `off` (all false), `mixed` (one of each), `untouched`
-# (all null, the default). Degraded mode for the same reason as checks.extra-lua-packages:
-# nothing here depends on the lock, so not one plugin source is fetchTree'd.
+# withPython3 / withRuby / withNodeJs / extraPython3Packages (#73). The promise is a host neovim
+# can start and talk to, so this uses each provider rather than reading vim.g.*_host_prog back
+# (node's host_prog can be right while node is missing from PATH). Each option has three states:
+# `on` (all true), `off` (all false), `mixed` (one of each), `untouched` (all null, the default).
+# Degraded mode as in checks.extra-lua-packages: nothing here depends on the lock.
 {
   pkgs,
   nvimxLib,
@@ -26,12 +21,9 @@ let
       }
       // args
     );
-  # six: a pure-Python package that pynvim does not pull in (its own dependencies are
-  # msgpack and greenlet), so importing it proves extraPython3Packages reached the
-  # host rather than riding along with pynvim.
+  # six: not a pynvim dependency, so importing it proves extraPython3Packages reached the host.
   pythonPackages = ps: [ ps.six ];
-  # Everything on, with an extraPackages entry so that there is a --prefix PATH of
-  # nvimx's for the providers' --suffix PATH to be told apart from.
+  # extraPackages gives a --prefix PATH to tell the providers' --suffix PATH apart from.
   on = mkEnv {
     withPython3 = true;
     extraPython3Packages = pythonPackages;
@@ -44,23 +36,16 @@ let
     withRuby = false;
     withNodeJs = false;
   };
-  # One of each state, on three different providers: python3 off, ruby not mentioned,
-  # node on. `on` and `off` alone cannot see one option leaking into another -- a
-  # runtimeDeps that put ruby on PATH whenever *any* provider is on, or a null that
-  # falls through to the false branch -- because in them all three always agree.
+  # python3 off, ruby unset, node on: catches one option leaking into another (e.g. ruby on
+  # PATH whenever any provider is on), which `on` and `off` cannot since all three agree there.
   mixed = mkEnv {
     withPython3 = false;
     withNodeJs = true;
   };
-  # The control, and the proof that the default is a genuine no-op: no provider file,
-  # no vim.g.* of nvimx's, nothing new on PATH. (That the derivation itself is
-  # unchanged, not merely the script, is shown by the drvPath comparison in the plan's
-  # verification steps -- like checks.extra-lua-packages' `untouched`, this is the
-  # cheap standing proxy for that, not a proof of it.)
+  # The control: the default is a no-op -- no provider file, no vim.g.*, nothing new on PATH.
   untouched = mkEnv { };
-  # Order against extraWrapperArgs: the provider arguments come before the user's, so
-  # a --cmd of the user's runs after nvimx's provider file and can read -- or replace
-  # -- what it set. withRuby = false, so that seeing the order costs no host build.
+  # Provider arguments come before extraWrapperArgs, so a user --cmd can read or replace what
+  # they set. withRuby = false so this costs no host build.
   ordered = mkEnv {
     withRuby = false;
     extraWrapperArgs = [
@@ -68,9 +53,7 @@ let
       "--cmd 'lua vim.g.nvimx_test_seen = vim.g.loaded_ruby_provider'"
     ];
   };
-  # Evaluates the module with the given programs.nvimx settings. The results are read
-  # through .config (the wrapper, the warnings) and, for moduleEval, .options (the
-  # declared defaults). Degraded lockDir, to stay offline.
+  # Read through .config (wrapper, warnings) and .options (declared defaults). Degraded lockDir.
   evalHm =
     nvimxConfig:
     home-manager.lib.homeManagerConfiguration {
@@ -78,9 +61,7 @@ let
       modules = [
         self.homeModules.nvimx
         {
-          # The three home.* settings homeManagerConfiguration requires, same values
-          # mkHmCheck uses. Only .config and .options are read; no activation package
-          # is built.
+          # Same values as mkHmCheck. Nothing is built.
           home.username = "nvimx-test";
           home.homeDirectory = "/home/nvimx-test";
           home.stateVersion = "25.05";
@@ -93,18 +74,9 @@ let
         }
       ];
     };
-  # The module's pass-through, for the reason checks.extra-lua-packages' moduleWrapped
-  # gives: mkHmCheck asserts nothing, and the four formals in nix/lib/make-env.nix all
-  # carry defaults, so dropping any one of them from the `inherit (cfg)` list in
-  # nix/home-manager/default.nix type-checks, builds, and silently ignores the option.
-  # All four are set, each to something module.lua can see, so that each drop has its
-  # own failing assert: python3 on, a package for it, ruby off, node off.
-  # Two of the four drops are reported somewhere else first, though. Without
-  # withPython3 or without extraPython3Packages, unusedPython3Packages flips, so the
-  # evaluation-level warning asserts in `failures` fail before module.lua is ever
-  # run ("must not warn when withPython3 = true" / "must warn about
-  # extraPython3Packages ..."), naming the symptom rather than the dropped word.
-  # module.lua's first two asserts are the backstop for the day those two change.
+  # The module's pass-through (see checks.extra-lua-packages' moduleWrapped): makeEnv's formals
+  # all have defaults, so dropping one from the module's `inherit (cfg)` would go unnoticed.
+  # Each of the four is set to something module.lua can see, so each drop has its own assert.
   moduleEval = evalHm {
     withPython3 = true;
     extraPython3Packages = pythonPackages;
@@ -115,11 +87,8 @@ let
   # extraPython3Packages without withPython3: the silent no-op the warning exists for.
   forgotten = evalHm { extraPython3Packages = pythonPackages; };
   warnsAboutPython = eval: lib.any (lib.hasInfix "extraPython3Packages") eval.config.warnings;
-  # A stub for a neovim package nvimx knows nothing about. The hosts are separate
-  # processes, so unlike extraLuaPackages nothing here may ask the package for a
-  # passthru (lua, version, meta, ...): users bring their own neovim, and
-  # wrapNeovimUnstable -- which nix/lib/providers.nix reaches into for rubyEnv -- is
-  # exactly the kind of function that might.
+  # A neovim package with no passthru: the hosts are separate processes, so unlike
+  # extraLuaPackages nothing may ask the user's package for lua / version / meta.
   stub = pkgs.runCommand "nvimx-neovim-stub" { } "mkdir -p $out/bin";
   wraps = args: (builtins.tryEval (builtins.seq (mkEnv args).wrapped.drvPath null)).success;
   failures =
@@ -131,12 +100,9 @@ let
         withNodeJs = true;
       })
     ) "the provider hosts must not depend on anything the neovim package exposes"
-    # The declared defaults, read out of the declaration rather than observed: no
-    # behavioural assert here can tell a module default of null from one of false.
-    # moduleEval sets all three explicitly, `forgotten` warns under either, and
-    # `untouched` goes through makeEnv's defaults, not the module's. null is what
-    # keeps an existing user's wrapper unchanged, so a default of false --
-    # programs.neovim's -- would silently switch their providers off.
+    # Declared defaults: no behavioural assert here tells null from false, and null is what keeps
+    # an existing user's wrapper unchanged (false, programs.neovim's default, would switch
+    # their providers off).
     ++
       lib.concatMap
         (
@@ -150,12 +116,8 @@ let
           "withRuby"
           "withNodeJs"
         ]
-    # unusedPython3Packages, all six corners: withPython3 null / true / false, each with the
-    # default (no packages) and with packages. The pair that matters most: packages with no
-    # host must be reported, and the same packages with a host must not. The two `false`
-    # corners tell `withPython3 != true` apart from its look-alikes: with packages it
-    # separates it from `withPython3 == null` (the packages of an explicitly disabled host
-    # are just as unused), without packages from a test that warns on `false` alone.
+    # unusedPython3Packages, all six corners (withPython3 null / true / false, with and without
+    # packages). The `false` corners pin the test to `withPython3 != true`, not `== null`.
     ++ lib.optional ((mkEnv { }).unusedPython3Packages
     ) "the default extraPython3Packages must not be reported as unused"
     ++ lib.optional ((mkEnv { withPython3 = true; }).unusedPython3Packages

@@ -22,11 +22,9 @@ let
     cmd = ":TSUpdate";
   };
   none = mkLocal { kind = "none"; };
-  # Two shell steps, ordered: step 2 only appends if step 1's file is already there, so
-  # a mis-ordered or dropped step fails the build (its `&&` list ends non-zero, which
-  # the subshell propagates), and the assert below pins the contents either way.
-  # The `&&` shape is deliberate -- it is exactly what a trailing no-op inside the
-  # subshell would swallow, so this case also guards how that subshell is written.
+  # Two ordered shell steps: step 2 only appends if step 1's file exists, so a mis-ordered or
+  # dropped step fails the build. The `&&` shape is deliberate: a trailing no-op in the step
+  # subshell would swallow its failure, so this also guards how that subshell is written.
   orderedSteps = mkLocal {
     kind = "steps";
     steps = [
@@ -72,9 +70,8 @@ let
       { kind = "function"; }
     ];
   };
-  # The #45 regression: a scalar build that `cd`s must not leak that directory into
-  # installPhase. Before the fix this produced a $out containing only lua/'s contents
-  # (Makefile, doc/ and the marker's siblings all gone).
+  # #45: a scalar build that `cd`s must not leak that directory into installPhase (it used to
+  # produce a $out holding only lua/'s contents).
   cwdLeak = mkLocal {
     kind = "shell";
     cmd = "cd lua && touch marker";
