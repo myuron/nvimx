@@ -151,10 +151,6 @@ pkgs.writeShellApplication {
     mkdir -p "$out"
     out=$(realpath "$out")
 
-    # TODO: if the existing lock pins lazy.nvim, use that as the seed (to avoid skew).
-    # For now nvimx's own flake input is always used as the seed.
-    seed="${lazyNvimSeed}"
-
     sandbox=$(mktemp -d)
     # --update's summary (below) is a before/after diff, so the "before" half has to be snapshot
     # ahead of any of the steps that are about to move it. --summary-json (#77) needs it for a plain
@@ -221,22 +217,46 @@ pkgs.writeShellApplication {
       fi
     }
     trap cleanup EXIT
+
+    # The lazy.nvim that extraction (and resolve's semver.lua) runs against has to be the one the
+    # built neovim loads, i.e. the `lazy-nvim` input pinned in $out/flake.lock (make-env.nix), or
+    # the spec recorded in plugins.json can come from a different lazy.nvim than the one that
+    # runs it (#32). locked_seed prints that store path, or nothing when no lock pins one yet.
+    # A failing `nix eval` is fatal on purpose: falling back silently would reintroduce the skew.
+    # --impure because $out/flake.lock is an absolute non-store path; the env var carries it in
+    # because `nix eval --expr` cannot be handed arguments for a function.
+    locked_seed() {
+      [ -f "$out/flake.lock" ] || return 0
+      NVIMX_LOCK_DIR="$out" nix eval --raw --impure --expr \
+        'import ${./locked-lazy-seed.nix} { lockDir = builtins.getEnv "NVIMX_LOCK_DIR"; sources = ${./sources.nix}; }'
+    }
+    seed=$(locked_seed)
+    if [ -n "$seed" ]; then
+      echo "nvimx-lock: lazy.nvim seed: $seed (pinned in $out/flake.lock)" >&2
+    else
+      seed="${lazyNvimSeed}"
+      echo "nvimx-lock: lazy.nvim seed: $seed (nvimx's own; no lock pins lazy.nvim yet)" >&2
+    fi
+
     mkdir -p "$sandbox/config" "$sandbox/data/nvim/lazy" "$sandbox/state" "$sandbox/cache"
     ln -sfT "$config" "$sandbox/config/nvim"
     ln -sfT "$seed" "$sandbox/data/nvim/lazy/lazy.nvim"
 
+    extract_spec() {
+      # extract.lua exits 0 when it captures setup, and exits 1 from VimEnter when it does not.
+      # The timeout plus closing stdin is a safety net for unexpected cases where it still
+      # stays in the event loop (#3).
+      env \
+        XDG_CONFIG_HOME="$sandbox/config" \
+        XDG_DATA_HOME="$sandbox/data" \
+        XDG_STATE_HOME="$sandbox/state" \
+        XDG_CACHE_HOME="$sandbox/cache" \
+        NVIMX_LAZY_SEED="$seed" \
+        NVIMX_OUT="$sandbox/raw-spec.json" \
+        timeout 120 nvim --headless --cmd "luafile ${luaDir}/extract.lua" < /dev/null
+    }
     echo "nvimx-lock: extracting spec from $config" >&2
-    # extract.lua exits 0 when it captures setup, and exits 1 from VimEnter when it does not.
-    # The timeout plus closing stdin is a safety net for unexpected cases where it still
-    # stays in the event loop (#3).
-    env \
-      XDG_CONFIG_HOME="$sandbox/config" \
-      XDG_DATA_HOME="$sandbox/data" \
-      XDG_STATE_HOME="$sandbox/state" \
-      XDG_CACHE_HOME="$sandbox/cache" \
-      NVIMX_LAZY_SEED="$seed" \
-      NVIMX_OUT="$sandbox/raw-spec.json" \
-      timeout 120 nvim --headless --cmd "luafile ${luaDir}/extract.lua" < /dev/null
+    extract_spec
 
     echo "nvimx-lock: resolving plugins" >&2
     # Whatever the previous lock decided is an input to this one: resolve.lua carries already
@@ -318,11 +338,36 @@ pkgs.writeShellApplication {
       fi
     fi
 
+    # `nix flake lock` / `nix flake update` above may have moved the lazy.nvim pin away from the
+    # seed extraction used (#32): the first lock pins lazy.nvim's HEAD of that moment rather than
+    # nvimx's own rev, `--update` moves it on purpose, and a spec that changes its own lazy.nvim
+    # entry changes the input URL (#49). Extract again against the newly pinned one so the final
+    # plugins.json matches the final flake.lock. If this extraction fails, flake.lock has already
+    # moved; the next plain lock seeds from the new pin and fails the same way.
+    new_seed=$(locked_seed)
+    if [ -n "$new_seed" ] && [ "$new_seed" != "$seed" ]; then
+      seed=$new_seed
+      echo "nvimx-lock: lazy.nvim seed: $seed (newly pinned in $out/flake.lock); re-extracting spec" >&2
+      ln -sfT "$seed" "$sandbox/data/nvim/lazy/lazy.nvim"
+      # Wiped because vim.loader.enable() (common at the top of init.lua) keeps bytecode in
+      # stdpath("cache")/luac, keyed by module path and validated only by size and mtime, never
+      # by content. Both extractions load lazy's modules through the same symlink path, and store
+      # files all have mtime 1, so a module that changed but kept its size would be served from
+      # the first run's cache and silently run the OLD lazy.nvim. State goes too, so nothing the
+      # first run persisted leaks into the second.
+      rm -rf "$sandbox/cache" "$sandbox/state"
+      mkdir -p "$sandbox/cache" "$sandbox/state"
+      extract_spec
+    fi
+
     # A plugin pinned for the first time (or right after its spec changed) has no usable rev in
     # flake.lock when the resolve above runs, so its freeze had to be deferred. Resolve once more
     # now that flake.lock has caught up, and redo the flake only if that actually changed
     # something. One retry is enough: the third resolve would read back the same flake.lock and
     # produce the same file, so this is already the fixed point.
+    # (The lazy-nvim URL comes only from the spec's own lazy.nvim entry, so the freezing lock below
+    # can move lazy-nvim again only if re-extraction changed that entry; that is not looped -- the
+    # next plain lock seeds from whatever was pinned and converges.)
     # The log is overwritten on purpose: only this run's warnings are shown. resolve.lua is
     # written so that the two runs report the same set of problems -- in particular a `pin` that
     # only freezes here still warns about an unvalidated `version` on the first run, and a
