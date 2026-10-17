@@ -239,7 +239,38 @@ All options live under `programs.nvimx`.
 | `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | Path to `lockDir`, relative to `projectDir`. |
 | `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `unusedPython3Packages` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
 
-`lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module.
+`lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module. On NixOS, `defaultEditor` shares `EDITOR` with a default NixOS sets on its own; see [`defaultEditor` on NixOS](#defaulteditor-on-nixos).
+
+### `defaultEditor` on NixOS
+
+On NixOS, `defaultEditor` can look as if it does nothing. NixOS exports `EDITOR=nano` on every
+system: `nixos/modules/programs/environment.nix` sets `environment.variables.EDITOR = lib.mkDefault
+"nano"` unconditionally, whether or not `programs.nano.enable` is set. That value and the one
+`defaultEditor` writes to `home.sessionVariables` live in different module systems and never merge,
+so nvimx cannot override it; which one you see depends only on which shell startup file exports
+last.
+
+- In a shell home-manager manages (`programs.bash.enable`, `programs.zsh.enable` or
+  `programs.fish.enable`), NixOS's own shell init runs first (`/etc/profile` for bash,
+  `/etc/zshenv` for zsh, `nixos-env-preinit.fish` for fish) and home-manager's session variables
+  are sourced after it, so `nvim` wins: for bash only in a login shell, for zsh and fish in every
+  shell.
+- When the session's first (login) shell is one home-manager does not manage, its session
+  variables are never sourced (see home-manager's FAQ, "Why are the session variables not set?")
+  and `nano` is the only value left. Shells started later inherit whatever that first shell
+  exported, so a fish login giving `nvim` while a bash login gives `nano` on the same machine is
+  this case.
+
+Either let home-manager manage that shell (or source `hm-session-vars.sh` yourself, as the FAQ
+shows), or drop the NixOS default in your NixOS configuration, not your home-manager one:
+
+```nix
+environment.variables.EDITOR = lib.mkForce null; # null entries are filtered out
+```
+
+With only that line, a shell home-manager does not manage ends up with no `EDITOR` at all rather
+than `nvim`. Note also that NixOS puts this default in `environment.variables`, not
+`environment.sessionVariables`, so it is not in `/etc/pam/environment`.
 
 ### Escape hatches
 
