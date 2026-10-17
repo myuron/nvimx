@@ -181,14 +181,9 @@ for _, name in ipairs(sorted_keys(want)) do
   end
 end
 
--- lazy.nvim's own entry, on its own footing (see name_map). A committed lazyNvim without a
--- `synthetic` key predates #49, which could only ever write the synthetic literal, and the build
--- reads both identically -- so it is read as synthetic rather than flagged for lacking the key.
+-- lazy.nvim's own entry, on its own footing (see name_map).
 local old_lazy = type(committed.lazyNvim) == "table" and committed.lazyNvim or {}
 local new_lazy = type(candidate.lazyNvim) == "table" and candidate.lazyNvim or {}
-if is_null(old_lazy.synthetic) then
-  old_lazy.synthetic = true
-end
 do
   local parts = diff_entries(old_lazy, new_lazy)
   if #parts > 0 then

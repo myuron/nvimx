@@ -212,10 +212,5 @@ check cfg9a lock9b c9b
 nvimx-lock --config cfg9c --out lock9c 2>/dev/null
 check cfg9c lock9c c9c
 [ "$rc" -eq 0 ]
-# d. A lock written before #49 has no `synthetic` key on lazyNvim; the build reads it the same.
-cp -a lock lock9d
-jq 'del(.lazyNvim.synthetic)' lock/plugins.json >lock9d/plugins.json
-check cfg lock9d c9d
-[ "$rc" -eq 0 ]
 
 touch "$out"
