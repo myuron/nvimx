@@ -1,5 +1,5 @@
 # nvimx-lock: a script that runs extract → resolve → flake generation → nix flake lock in one go.
-# Locking is an online operation (the build is fully pure and offline).
+# Locking is an online operation (the build is fully pure and offline); --check is the offline exception (#78).
 { pkgs, lazyNvimSeed }:
 let
   luaDir = ../../lua/nvimx;
@@ -22,7 +22,7 @@ pkgs.writeShellApplication {
   ];
   text = ''
     usage() {
-      echo "usage: nvimx-lock --config <configDir> --out <lockDir> [--update [name...] | --import-lazy-lock [path]] [--summary-json <path>]" >&2
+      echo "usage: nvimx-lock --config <configDir> --out <lockDir> [--update [name...] | --import-lazy-lock [path] | --check] [--summary-json <path>]" >&2
       exit 2
     }
 
@@ -34,6 +34,7 @@ pkgs.writeShellApplication {
     import_mode=0
     import_path=""
     summary_json=""
+    check_mode=0
     while [ $# -gt 0 ]; do
       case "$1" in
         --config)
@@ -79,6 +80,10 @@ pkgs.writeShellApplication {
             shift
           fi
           ;;
+        --check)
+          check_mode=1
+          shift
+          ;;
         *)
           usage
           ;;
@@ -103,6 +108,12 @@ pkgs.writeShellApplication {
       echo "nvimx-lock: --import-lazy-lock cannot be combined with --update; run them as two separate locks" >&2
       usage
     fi
+    # --check (#78) only answers "is the lock stale?", so combining it with a flag whose whole
+    # point is to rewrite the lock is a contradiction, not a mode to guess at.
+    if [ "$check_mode" -eq 1 ] && { [ "$update_mode" -eq 1 ] || [ "$import_mode" -eq 1 ] || [ -n "$summary_json" ]; }; then
+      echo "nvimx-lock: --check never writes the lock, so it cannot be combined with --update, --import-lazy-lock or --summary-json" >&2
+      usage
+    fi
     [ -n "$config" ] && [ -n "$out" ] || usage
     # --summary-json (#77): the path is only inspected here, nothing is created (no mkdir -p: the
     # parent has to exist, which also rules out a path inside a not-yet-created --out). An `if`,
@@ -123,6 +134,17 @@ pkgs.writeShellApplication {
       # `mkdir -p "$out"`, nor any later failure. Keep this above every other exit when editing
       # this script; only the pure argument errors above may precede it.
       rm -f -- "$summary_json"
+    fi
+    # --check on a directory with no lock: not up to date, so exit 1 (`--check || nvimx-lock`
+    # then bootstraps a first lock). Checked against the raw --out, before realpath/mkdir below,
+    # so that --check never creates the directory; the final line therefore shows --out as given.
+    if [ "$check_mode" -eq 1 ]; then
+      if [ ! -f "$out/plugins.json" ] || [ ! -f "$out/flake.lock" ]; then
+        echo "[nvimx] lock is stale:" >&2
+        echo "  no lock in $out (plugins.json and flake.lock are both needed)" >&2
+        echo "nvimx-lock: run nvimx-lock without --check to refresh $out" >&2
+        exit 1
+      fi
     fi
     # --update is a lock's forward motion, not its beginning: mixing it with a first-ever lock
     # would leave resolve.lua with no previous decisions to force away from in the first place.
@@ -251,8 +273,17 @@ pkgs.writeShellApplication {
       NVIMX_LOCK_DIR="$out" nix eval --raw --impure --expr \
         'import ${./locked-lazy-seed.nix} { lockDir = builtins.getEnv "NVIMX_LOCK_DIR"; sources = ${./sources.nix}; }'
     }
-    seed=$(locked_seed)
-    if [ -n "$seed" ]; then
+    # --check (#78) never runs nix, and locked_seed is a `nix eval`: it extracts against nvimx's
+    # own bundled lazy.nvim instead. The simplest option that stays offline; the cost is that a
+    # spec relying on a newer lazy.nvim feature than the bundled one could extract differently.
+    seed=""
+    if [ "$check_mode" -eq 0 ]; then
+      seed=$(locked_seed)
+    fi
+    if [ "$check_mode" -eq 1 ]; then
+      seed="${lazyNvimSeed}"
+      echo "nvimx-lock: lazy.nvim seed: $seed (nvimx's own; --check never runs nix)" >&2
+    elif [ -n "$seed" ]; then
       echo "nvimx-lock: lazy.nvim seed: $seed (pinned in $out/flake.lock)" >&2
     else
       seed="${lazyNvimSeed}"
@@ -278,6 +309,85 @@ pkgs.writeShellApplication {
     }
     echo "nvimx-lock: extracting spec from $config" >&2
     extract_spec
+
+    # Config files git does not know about (#33). Extraction above read the work tree, so an
+    # untracked spec file IS locked; the gap is at deployment: home-manager deploys configDir
+    # from the flake source, and a git flake contains only indexed files (measured: new-but-staged
+    # files are visible, untracked and gitignored ones are not). Files that are tracked but
+    # modified are NOT a hazard -- nix reads the work tree for them ("Git tree is dirty") -- so
+    # only `--others` is listed. Same two-stage git detection and read-only stance as #71's probe
+    # below. Everything is wrapped so that no git hiccup can fail a finished lock.
+    # The lock dir is dropped from the list when it sits inside the config (#71's note covers it).
+    # Edge case not handled: --out equal to --config would list the three lock files.
+    # Submodules and nested repos are out of scope: ls-files --others does not descend into them.
+    warn_untracked_config() {
+      if [ "$(git -C "$config" rev-parse --is-inside-work-tree 2> /dev/null)" = "true" ]; then
+        mapfile -d "" -t untracked_all < <(git -C "$config" ls-files -z --others --exclude-standard 2> /dev/null || true)
+        lock_rel=""
+        case "$out" in
+          "$config"/*) lock_rel=''${out#"$config"/} ;;
+        esac
+        untracked=()
+        for f in ''${untracked_all[@]+"''${untracked_all[@]}"}; do
+          if [ -n "$lock_rel" ]; then
+            case "$f" in
+              "$lock_rel"/*) continue ;;
+            esac
+          fi
+          untracked+=("$f")
+        done
+        if [ "''${#untracked[@]}" -gt 0 ]; then
+          shown=("''${untracked[@]:0:20}")
+          echo "nvimx-lock: warning: ''${#untracked[@]} file(s) under $config are not tracked by git. nvimx-lock read them from your work tree, but a flake only sees git-tracked files, so a flake-deployed config (manageConfig = true) will lack them:" >&2
+          for f in "''${shown[@]}"; do
+            echo "nvimx-lock: warning:   $f" >&2
+          done
+          echo "nvimx-lock: warning: track them, then commit and switch (no need to re-run nvimx-lock):" >&2
+          if [ "''${#untracked[@]}" -gt 20 ]; then
+            echo "nvimx-lock: warning:   ... and $((''${#untracked[@]} - 20)) more (git -C \"$config\" status --untracked-files=all)" >&2
+            echo "nvimx-lock: warning:   git -C \"$config\" add -- ." >&2
+          else
+            printf 'nvimx-lock: warning:   git -C "%s" add --%s\n' "$config" "$(printf ' %q' "''${shown[@]}")" >&2
+          fi
+        fi
+      else
+        echo "nvimx-lock: $config is not inside a git work tree; skipped the check for untracked config files" >&2
+      fi
+    }
+
+    # --check (#78): resolve the spec offline into a candidate plugins.json in the sandbox and
+    # compare it with the committed lock. Nothing here touches $out, runs nix, or reaches the
+    # network: --offline skips resolve.lua's git ls-remote loop, and check.lua ignores the
+    # resolvedRef it would have produced.
+    # The log is check.log, not resolve.log, so the trap's flush_logs (which also runs on exit 0)
+    # does not dump resolve warnings on a clean check; they only surface on failure. A stale
+    # result clears the trap so it does not print "failed (exit 1)" -- this avoids touching
+    # cleanup(). A failing check.lua trips errexit, so the trap reports it as a failure.
+    if [ "$check_mode" -eq 1 ]; then
+      echo "nvimx-lock: checking $out against the spec" >&2
+      rc=0
+      nvim -l "${luaDir}/resolve.lua" "$sandbox/raw-spec.json" "$sandbox/plugins.json" \
+        --lazy "$seed" --offline 2> "$sandbox/check.log" || rc=$?
+      if [ "$rc" -ne 0 ]; then
+        cat "$sandbox/check.log" >&2
+        exit "$rc"
+      fi
+      nvim -l "${luaDir}/check.lua" "$sandbox/plugins.json" "$out/plugins.json" "$out/flake.lock" \
+        > "$sandbox/check.txt"
+      # Warnings only (#33): a hook running --check should still hear about a spec file git does
+      # not know about. Never changes the exit code or the report; it comes before both so the
+      # last line stays the verdict.
+      warn_untracked_config
+      if [ -s "$sandbox/check.txt" ]; then
+        cat "$sandbox/check.txt" >&2
+        echo "nvimx-lock: run nvimx-lock without --check to refresh $out" >&2
+        trap - EXIT
+        rm -rf "$sandbox"
+        exit 1
+      fi
+      echo "nvimx-lock: lock is up to date" >&2
+      exit 0
+    fi
 
     echo "nvimx-lock: resolving plugins" >&2
     # Whatever the previous lock decided is an input to this one: resolve.lua carries already
@@ -456,48 +566,7 @@ pkgs.writeShellApplication {
         ''${update_names[@]+"''${update_names[@]}"} || summary_rc=$?
     fi
 
-    # Config files git does not know about (#33). Extraction above read the work tree, so an
-    # untracked spec file IS locked; the gap is at deployment: home-manager deploys configDir
-    # from the flake source, and a git flake contains only indexed files (measured: new-but-staged
-    # files are visible, untracked and gitignored ones are not). Files that are tracked but
-    # modified are NOT a hazard -- nix reads the work tree for them ("Git tree is dirty") -- so
-    # only `--others` is listed. Same two-stage git detection and read-only stance as #71's probe
-    # below. Everything is wrapped so that no git hiccup can fail a finished lock.
-    # The lock dir is dropped from the list when it sits inside the config (#71's note covers it).
-    # Edge case not handled: --out equal to --config would list the three lock files.
-    # Submodules and nested repos are out of scope: ls-files --others does not descend into them.
-    if [ "$(git -C "$config" rev-parse --is-inside-work-tree 2> /dev/null)" = "true" ]; then
-      mapfile -d "" -t untracked_all < <(git -C "$config" ls-files -z --others --exclude-standard 2> /dev/null || true)
-      lock_rel=""
-      case "$out" in
-        "$config"/*) lock_rel=''${out#"$config"/} ;;
-      esac
-      untracked=()
-      for f in ''${untracked_all[@]+"''${untracked_all[@]}"}; do
-        if [ -n "$lock_rel" ]; then
-          case "$f" in
-            "$lock_rel"/*) continue ;;
-          esac
-        fi
-        untracked+=("$f")
-      done
-      if [ "''${#untracked[@]}" -gt 0 ]; then
-        shown=("''${untracked[@]:0:20}")
-        echo "nvimx-lock: warning: ''${#untracked[@]} file(s) under $config are not tracked by git. nvimx-lock read them from your work tree, but a flake only sees git-tracked files, so a flake-deployed config (manageConfig = true) will lack them:" >&2
-        for f in "''${shown[@]}"; do
-          echo "nvimx-lock: warning:   $f" >&2
-        done
-        echo "nvimx-lock: warning: track them, then commit and switch (no need to re-run nvimx-lock):" >&2
-        if [ "''${#untracked[@]}" -gt 20 ]; then
-          echo "nvimx-lock: warning:   ... and $((''${#untracked[@]} - 20)) more (git -C \"$config\" status --untracked-files=all)" >&2
-          echo "nvimx-lock: warning:   git -C \"$config\" add -- ." >&2
-        else
-          printf 'nvimx-lock: warning:   git -C "%s" add --%s\n' "$config" "$(printf ' %q' "''${shown[@]}")" >&2
-        fi
-      fi
-    else
-      echo "nvimx-lock: $config is not inside a git work tree; skipped the check for untracked config files" >&2
-    fi
+    warn_untracked_config
 
     echo "nvimx-lock: done. commit $out/{plugins.json,flake.nix,flake.lock}" >&2
     # A flake only sees git-tracked files, and make-env.nix's hasLock cannot see an untracked

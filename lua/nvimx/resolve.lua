@@ -3,7 +3,7 @@
 -- Usage:
 --   nvim -l resolve.lua <raw-spec.json> <where to write plugins.json> \
 --     [--prev <existing plugins.json>] [--lock <existing flake.lock>] [--lazy <lazy.nvim path>] \
---     [--update [<name>]]... [--update-plan <path>] [--import-lazy-lock <lazy-lock.json>]
+--     [--update [<name>]]... [--update-plan <path>] [--import-lazy-lock <lazy-lock.json>] [--offline]
 --
 -- Converts raw-spec.json into the plugins.json schema, merging with the previous lock so that
 -- refs already decided stay decided (--prev) and `pin = true` plugins get frozen onto the rev
@@ -18,6 +18,8 @@
 -- at all are seeded -- an existing --prev entry always wins. The seed is written to `resolvedRef`
 -- only, never to `commit` or `branch`: those are part of the spec identity, so writing there
 -- would make the next plain lock discard the seed as a spec change.
+-- --offline skips version resolution (no git ls-remote); a plugin that needs one keeps
+-- resolvedRef = null. Used by nvimx-lock --check, whose comparison ignores resolvedRef (#78).
 
 local function fail(msg)
   io.stderr:write("[nvimx] resolve failed: " .. tostring(msg) .. "\n")
@@ -28,7 +30,7 @@ local function usage()
   io.stderr:write(
     "usage: nvim -l resolve.lua <raw-spec.json> <plugins.json> [--prev <plugins.json>] "
       .. "[--lock <flake.lock>] [--lazy <lazy.nvim path>] [--update [<name>]]... "
-      .. "[--update-plan <path>] [--import-lazy-lock <path>]\n"
+      .. "[--update-plan <path>] [--import-lazy-lock <path>] [--offline]\n"
   )
   os.exit(2)
 end
@@ -38,6 +40,7 @@ end
 -- the two positional paths.
 local raw_path, out_path, prev_path, lock_path, lazy_path, update_plan_path, import_path
 local update_all = false
+local offline = false
 local update_names = {}
 do
   local saw_bare_update = false
@@ -78,6 +81,9 @@ do
         saw_bare_update = true
         i = i + 1
       end
+    elseif a == "--offline" then
+      offline = true
+      i = i + 1
     elseif a:sub(1, 2) == "--" then
       io.stderr:write(("[nvimx] resolve: unknown option %s\n"):format(a))
       usage()
@@ -1113,6 +1119,11 @@ if #pending > 0 then
     end
   end
   pending = syntax_ok
+  -- #78: --offline runs the network-free grammar validation above but never reaches the
+  -- ls-remote loop below (emptying pending also skips its progress line).
+  if offline then
+    pending = {}
+  end
 
   table.sort(pending, function(a, b)
     return a.name < b.name
