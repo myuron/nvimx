@@ -37,6 +37,10 @@ fail_line() { # <exit code>
   echo "nvimx-lock: failed (exit $1) -- look for the error above; it may sit above the import report and warnings"
 }
 
+# What the trap prints before the held-back resolve report on a failure (#81): the
+# error is above it.
+held_line='nvimx-lock: the lock failed; the resolve report held back for the end follows -- the error is above it'
+
 # 1. First lock: one `nix flake lock`, with an explicit path: ref, run from inside
 # the lock dir. The generated files equal the committed fixture lock, which is what
 # makes the stub's flake.lock a faithful stand-in for the rest of this check.
@@ -91,16 +95,18 @@ NVIMX_STUB_FAIL=7 nvimx-lock --config pincfg --out failed 2>failed.log || rc=$?
 no_leftover
 err_at=$(grep -n '^error: stub nix was told to fail$' failed.log | cut -d: -f1)
 warn_at=$(grep -n '^\[nvimx\] warning: plugin "tokyonight.nvim"' failed.log | cut -d: -f1)
-[ "$err_at" -lt "$warn_at" ]
+[ "$(grep -cxF "$held_line" failed.log)" -eq 1 ]
+held_at=$(grep -nxF "$held_line" failed.log | cut -d: -f1)
+[ "$err_at" -lt "$held_at" ]
+[ "$held_at" -lt "$warn_at" ]
 [ "$(grep -c '^nvimx-lock: failed' failed.log)" -eq 1 ]
 absent '^nvimx-lock: done' failed.log
 
 # 4b. The same failure on the path #71 was actually reported on: --import-lazy-lock.
 # The import report is held back like the warnings are, so it lands after nix's
-# error too, and the failure line still has to come last. Deliberately indifferent
-# to how many times the report is printed: today a failing first `nix` prints it
-# twice (pass 2 has not truncated resolve.log yet, so the lines sit in both
-# import.log and resolve.log) -- a known wart, and fixing it must not break this.
+# error too, and the failure line still has to come last. The report is printed
+# exactly once (#81: it used to come out twice, because pass 2 had not truncated
+# resolve.log yet and the lines sat in both it and import.log).
 cat >lazy-lock.json <<'JSON'
 { "tokyonight.nvim": { "branch": "main", "commit": "1234123412341234123412341234123412341234" } }
 JSON
@@ -111,10 +117,14 @@ NVIMX_STUB_FAIL=7 nvimx-lock --config pincfg --out failed-import \
 [ "$rc" -eq 7 ]
 [ "$(tail -n 1 failed-import.log)" = "$(fail_line 7)" ]
 [ "$(grep -c '^nvimx-lock: failed' failed-import.log)" -eq 1 ]
+[ "$(grep -c '^\[nvimx\] import: ' failed-import.log)" -eq 2 ]
 err_at=$(grep -n '^error: stub nix was told to fail$' failed-import.log | cut -d: -f1)
 import_first=$(grep -n '^\[nvimx\] import: ' failed-import.log | head -n 1 | cut -d: -f1)
 import_last=$(grep -n '^\[nvimx\] import: ' failed-import.log | tail -n 1 | cut -d: -f1)
-[ "$err_at" -lt "$import_first" ]
+[ "$(grep -cxF "$held_line" failed-import.log)" -eq 1 ]
+held_at=$(grep -nxF "$held_line" failed-import.log | cut -d: -f1)
+[ "$err_at" -lt "$held_at" ]
+[ "$held_at" -lt "$import_first" ]
 [ "$import_last" -lt "$(wc -l <failed-import.log)" ]
 
 # 4c. An exit code above 128 means the child was killed by a signal (the stub's 130
@@ -126,7 +136,59 @@ rc=0
 NVIMX_STUB_FAIL=130 nvimx-lock --config pincfg --out signalled 2>signalled.log || rc=$?
 [ "$rc" -eq 130 ]
 [ "$(tail -n 1 signalled.log)" = 'nvimx-lock: stopped by a signal (exit 130)' ]
+# A killed child printed no error, so claiming one is above would be false.
+absent "$held_line" signalled.log
 absent '^nvimx-lock: failed' signalled.log
+no_leftover
+
+# 4d. The failure can also come from the other `nix` call sites, which step 4 never
+# reaches: the stub only fails at its first call there. Here `nix flake update` (the
+# second call under --update) fails; the lock files from `first` are already written,
+# so the run is a real half-finished one (#81).
+cp -r first upd-fail
+reset
+rc=0
+NVIMX_STUB_FAIL=7 NVIMX_STUB_FAIL_AT=2 nvimx-lock --config "$fx" --out upd-fail --update 2>upd-fail.log || rc=$?
+printf '%s\n' 'flake lock path:.' 'flake update --flake path:. lazy-nvim tokyonight-nvim' >want-argv
+diff -u want-argv argv
+[ "$rc" -eq 7 ]
+[ "$(tail -n 1 upd-fail.log)" = "$(fail_line 7)" ]
+absent '^nvimx-lock: done' upd-fail.log
+no_leftover
+
+# 4e. ... and the convergence pass's `nix flake lock` (the second call of a first-time
+# pin). Pass 2's resolve.log has replaced pass 1's by then: its warning must be shown
+# once, after nix's error, not lost and not doubled (#81).
+reset
+rc=0
+NVIMX_STUB_FAIL=7 NVIMX_STUB_FAIL_AT=2 nvimx-lock --config pincfg --out conv-fail 2>conv-fail.log || rc=$?
+printf '%s\n' 'flake lock path:.' 'flake lock path:.' >want-argv
+diff -u want-argv argv
+[ "$rc" -eq 7 ]
+grep -q '^nvimx-lock: freezing pinned plugins$' conv-fail.log
+[ "$(grep -c '^\[nvimx\] warning: plugin "tokyonight.nvim"' conv-fail.log)" -eq 1 ]
+err_at=$(grep -n '^error: stub nix was told to fail$' conv-fail.log | cut -d: -f1)
+warn_at=$(grep -n '^\[nvimx\] warning: plugin "tokyonight.nvim"' conv-fail.log | cut -d: -f1)
+[ "$err_at" -lt "$warn_at" ]
+[ "$(grep -cxF "$held_line" conv-fail.log)" -eq 1 ]
+[ "$(tail -n 1 conv-fail.log)" = "$(fail_line 7)" ]
+no_leftover
+
+# 4f. The trap must survive a stderr whose reader has gone (`nvimx-lock 2>&1 | head`).
+# The reader quits on the stub's error line and closes the pipe before the stub
+# returns, so the trap's flush_logs is the first write to hit a closed pipe --
+# deterministic, unlike `| head -n N`. Before #81 this ended rc=141 with the sandbox
+# left behind. `exec 0<&-` matters: without it the `sh` keeps the read end open and
+# nothing breaks.
+# Nix runs builders with SIGPIPE ignored, which would hide the signal half of the bug,
+# so it is put back to its default for this one run.
+reset
+rc=0
+NVIMX_STUB_FAIL=7 NVIMX_STUB_WAIT_FOR=$here/reader-gone \
+  env --default-signal=PIPE nvimx-lock --config pincfg --out epipe \
+  2> >(sh -c 'sed "/^error: stub nix was told to fail\$/q" >/dev/null; exec 0<&-; touch "$1"' _ "$here/reader-gone") ||
+  rc=$?
+[ "$rc" -eq 7 ]
 no_leftover
 
 # 5. A failure before `nix` is ever reached ends the same way (the trap is what
@@ -138,6 +200,7 @@ rc=0
 nvimx-lock --config nosetup --out nosetup-out 2>nosetup.log || rc=$?
 [ "$rc" -eq 1 ]
 [ "$(tail -n 1 nosetup.log)" = "$(fail_line 1)" ]
+absent "$held_line" nosetup.log # nothing was held back
 [ ! -s argv ]
 no_leftover
 
@@ -169,6 +232,24 @@ grep -q '^nvimx-lock: no plugins updated' untracked-update.log
 grep -qxF "$note_cmd" untracked-update.log
 [ "$(tail -n 1 untracked-update.log)" = 'nvimx-lock: note: home-manager switch cannot see it and builds the degraded (lazy.nvim-only) neovim instead' ]
 [ "$(git -C repo status --porcelain)" = "?? nvim/" ]
+# update-summary.lua failing is still fatal, but the files are written by then, so
+# the commit reminder must survive a summary bug (#81) -- and the failure line still
+# comes last. The stub corrupts the snapshot the summary reads.
+rc=0
+NVIMX_STUB_CORRUPT_BEFORE=1 nvimx-lock --config repo/nvim --out repo/nvim/nvimx-lock --update \
+  2>summary-fail.log || rc=$?
+[ "$rc" -eq 1 ]
+grep -q '^\[nvimx\] update-summary failed: ' summary-fail.log
+grep -qxF "$note_cmd" summary-fail.log
+grep -q '^nvimx-lock: done\. ' summary-fail.log
+[ "$(tail -n 1 summary-fail.log)" = "$(fail_line 1)" ]
+sum_at=$(grep -n '^\[nvimx\] update-summary failed: ' summary-fail.log | cut -d: -f1)
+note_at=$(grep -nxF "$note_cmd" summary-fail.log | cut -d: -f1)
+fail_at=$(grep -n '^nvimx-lock: failed' summary-fail.log | cut -d: -f1)
+[ "$sum_at" -lt "$note_at" ]
+[ "$note_at" -lt "$fail_at" ]
+no_leftover
+[ "$(git -C repo status --porcelain)" = "?? nvim/" ]
 # Each of the three files on its own is enough to trigger a note: one state per
 # file, with only that file missing from the index. A single partial state would
 # let a check narrowed to one file (whichever) pass unnoticed. Which note differs:
@@ -195,6 +276,25 @@ nvimx-lock --config repo/nvim --out repo/nvim/nvimx-lock >tracked.out 2>tracked.
 absent 'nvimx-lock: note:' tracked.log
 [ ! -s tracked.out ]
 git -C repo status --porcelain | diff -u status.before -
+
+# 7b. A gitignored lock dir: a plain `git add` refuses it, so the note has to say -f
+# (#81). Step 7's exact match on the command without -f is what keeps this from being
+# always-on.
+git init -q -b main ignored
+mkdir ignored/nvim
+cp "$fx"/init.lua ignored/nvim/
+echo 'nvim/nvimx-lock/' >ignored/.gitignore
+ilockdir=$here/ignored/nvim/nvimx-lock
+nvimx-lock --config ignored/nvim --out ignored/nvim/nvimx-lock 2>ignored.log
+grep -qxF "nvimx-lock: note:   git -C \"$ilockdir\" add -f plugins.json flake.nix flake.lock" ignored.log
+# The printed command must work as printed, and once it has, the note is gone.
+git -C "$ilockdir" add -f plugins.json flake.nix flake.lock
+nvimx-lock --config ignored/nvim --out ignored/nvim/nvimx-lock 2>ignored-tracked.log
+absent 'nvimx-lock: note:' ignored-tracked.log
+# The flake.nix-only note gets the -f too.
+git -C ignored rm -q --cached nvim/nvimx-lock/flake.nix
+nvimx-lock --config ignored/nvim --out ignored/nvim/nvimx-lock 2>ignored-nix.log
+[ "$(tail -n 1 ignored-nix.log)" = "nvimx-lock: note:   git -C \"$ilockdir\" add -f flake.nix" ]
 
 # 8. `git rev-parse --is-inside-work-tree` prints "false" and still exits 0 inside
 # a bare repository, so the note has to compare the output, not the exit code.
@@ -239,6 +339,7 @@ nvimx-lock --config "$fx" --out sj-bad --summary-json sj-dir 2>sj-bad.log || rc=
 
 # 12. A failed run never leaves a previous report behind, and the failure line stays last.
 echo stale >stale.json
+reset # the stub fails on the first call counted since the last reset (#81)
 rc=0
 NVIMX_STUB_FAIL=7 nvimx-lock --config pincfg --out sj-failed --summary-json stale.json 2>sj-failed.log || rc=$?
 [ "$rc" -eq 7 ]

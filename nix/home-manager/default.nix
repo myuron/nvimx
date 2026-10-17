@@ -499,6 +499,9 @@ in
         programs.nvimx: lock files (plugins.json / flake.lock) not found in lockDir.
         Building in degraded mode (lazy.nvim seed only).
         Run `nvimx-lock`, commit the lock files, then re-run home-manager switch.
+        If you already did, your flake cannot see them: a flake only sees files git tracks
+        (`git add` them, with -f if lockDir is gitignored), and a lockDir inside a git
+        submodule also needs `inputs.self.submodules = true;` in your flake.
       ''
       ++ lib.optional ((cfg.env.unknownPluginNames or [ ]) != [ ]) ''
         programs.nvimx: plugins.overrides / plugins.nixpkgsFallback name plugins that are

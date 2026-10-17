@@ -172,9 +172,11 @@ pkgs.writeShellApplication {
     # import.log exists for one reason only: pass 2 below (the convergence resolve) redirects its
     # own stderr with `2>` to the exact same resolve.log path pass 1 used, and `2>` truncates on
     # open -- so by the time either pass's log would be printed, pass 1's `[nvimx] import: ...`
-    # report (#25) is already gone unless it was copied out first. Pass 2 never produces any
+    # report (#25) is already gone unless it was moved out first. Pass 2 never produces any
     # import lines itself (it deliberately never gets --import-lazy-lock -- see the comment on
-    # that pass below), so import.log is populated once, right after pass 1, and is simply
+    # that pass below), so import.log is populated once, right after pass 1 (the lines are moved
+    # out of resolve.log, so a failure before pass 2 prints them once, #81, and the output shape --
+    # import report, then the rest -- is the same on success and failure), and is simply
     # ignored on every run that was not given --import-lazy-lock in the first place (grep finds
     # nothing, so the file stays empty and flush_logs' `-s` check skips it).
     resolve_log_shown=0
@@ -193,10 +195,23 @@ pkgs.writeShellApplication {
     #
     # cleanup() runs on every exit after this point. `exit_code=$?` has to be its very first
     # statement: any command run before it (flush_logs included) replaces $?. The failure line is
-    # an `if`, not `[ ... ] && echo`: the && form makes cleanup() return 1 when the test is false,
-    # and errexit is still in force inside the trap, so that aborts it with status 1 and turns a
-    # successful lock into exit 1. It does not `exit`,
-    # so the original exit code stays the process's exit code. The line comes last on purpose
+    # an `if`, not `[ ... ] && echo` (harmless now that errexit is off in here, but the && form is
+    # still a trap for the next edit). It does not `exit`, so the original exit code stays the
+    # process's exit code. `set +e` and ignoring SIGPIPE are what make that true when stderr is a
+    # pipe whose reader has already gone (#81, `nvimx-lock 2>&1 | head`): errexit is in force
+    # inside the trap, so the first failed write (cat in flush_logs dying of SIGPIPE, rc 141)
+    # aborted it before `rm -rf` -- leaking the sandbox and replacing the exit code -- and with
+    # errexit off alone the final builtin echo would still kill bash with the signal. With both,
+    # a write that fails is skipped and the trap's last status is ignored, so the original code
+    # stays (verified for 0, 7 and 130). A stderr that is closed before or while the body runs
+    # kills or fails the body itself and is out of scope.
+    # Before flush_logs, a header says that what follows is the held-back resolve report and that
+    # the error is above it (#81: nix's output streams live and cannot be moved below the report
+    # without capturing it, which would cost nix its progress line and colours). It is skipped when
+    # the logs were already printed (resolve's own failure path calls flush_logs in the body, and
+    # there the log is the error), when nothing is held back (an extract failure), and for signal
+    # exits, where no error was printed at all.
+    # The line comes last on purpose
     # (#71): nix's own error used to sit above flush_logs' output, buried under the import report
     # and warnings, and the last line of a failed run looked just like a successful one. The
     # sandbox is removed before it so that a failing echo cannot leave it behind. Argument errors
@@ -208,6 +223,12 @@ pkgs.writeShellApplication {
     # the signal the trap sees $? = 0 and prints neither line.
     cleanup() {
       exit_code=$?
+      set +e
+      trap "" PIPE
+      if [ "$exit_code" -ne 0 ] && [ "$exit_code" -le 128 ] && [ "$resolve_log_shown" -eq 0 ] \
+        && { [ -s "$sandbox/import.log" ] || [ -s "$sandbox/resolve.log" ]; }; then
+        echo "nvimx-lock: the lock failed; the resolve report held back for the end follows -- the error is above it" >&2
+      fi
       flush_logs
       rm -rf "$sandbox"
       if [ "$exit_code" -gt 128 ]; then
@@ -300,14 +321,18 @@ pkgs.writeShellApplication {
       flush_logs
       exit "$rc"
     fi
-    # Lift the import report out of resolve.log now, before the convergence pass below reopens
+    # Move the import report out of resolve.log now, before the convergence pass below reopens
     # that same path with `2>` and truncates it. Only this pass can have produced import lines in
     # the first place (the convergence pass never gets --import-lazy-lock -- see its own comment
-    # below for why), so this is also the only place that needs to do the lifting. `grep` exits 1
-    # when nothing matches (e.g. any run without --import-lazy-lock), which `set -e` would
+    # below for why), so this is also the only place that needs to do the moving. Moved, not
+    # copied (#81): a copy left the lines in resolve.log too, and a failing first `nix` printed
+    # them twice. `grep` exits 1 when nothing matches (e.g. a report with only import lines left
+    # nothing for the second grep, or any run without --import-lazy-lock), which `set -e` would
     # otherwise treat as a script failure, hence `|| true`.
     if [ "$import_mode" -eq 1 ]; then
       grep '^\[nvimx\] import: ' "$sandbox/resolve.log" > "$sandbox/import.log" || true
+      grep -v '^\[nvimx\] import: ' "$sandbox/resolve.log" > "$sandbox/resolve.rest" || true
+      mv "$sandbox/resolve.rest" "$sandbox/resolve.log"
     fi
 
     echo "nvimx-lock: generating lock flake" >&2
@@ -407,12 +432,15 @@ pkgs.writeShellApplication {
     flush_logs
 
     # update-summary.lua's own failure is deliberately left fatal (not downgraded to a warning,
-    # #24): every lock file above is already written by this point, so a non-zero exit here is a
-    # bug in the summary itself, not a failed lock -- but letting it fail loudly is how that bug
-    # gets noticed instead of silently going unreported. Re-running nvimx-lock afterwards is safe
-    # either way: the lock is already done, and a second --update run just reports "no plugins
+    # #24), but only after `done` and the git note below (#81): every lock file above is already
+    # written by this point, so a non-zero exit here is a bug in the summary itself, not a failed
+    # lock -- yet the user must still be told to commit the files (and that they are untracked).
+    # Letting it fail loudly is how that bug gets noticed instead of silently going unreported;
+    # the trap's failure line then comes last. Re-running nvimx-lock afterwards is safe either
+    # way: the lock is already done, and a second --update run just reports "no plugins
     # updated". The same holds for a plain lock that was given --summary-json (#77): it only runs
     # then, in --plain mode (JSON only, no text). `if`, not `[ ] && ...`: see cleanup().
+    summary_rc=0
     if [ "$update_mode" -eq 1 ] || [ -n "$summary_json" ]; then
       summary_args=()
       if [ -n "$summary_json" ]; then
@@ -425,7 +453,7 @@ pkgs.writeShellApplication {
         ''${summary_args[@]+"''${summary_args[@]}"} \
         "$sandbox/plugins.json.before" "$out/plugins.json" \
         "$sandbox/flake.lock.before" "$out/flake.lock" \
-        ''${update_names[@]+"''${update_names[@]}"}
+        ''${update_names[@]+"''${update_names[@]}"} || summary_rc=$?
     fi
 
     # Config files git does not know about (#33). Extraction above read the work tree, so an
@@ -487,14 +515,26 @@ pkgs.writeShellApplication {
     # other two), so an untracked flake.nix alone does not degrade anything: it gets a note of its
     # own that only asks for the three files to be committed together, instead of a false alarm.
     if [ "$(git -C "$out" rev-parse --is-inside-work-tree 2> /dev/null)" = "true" ]; then
+      # A gitignored lock dir makes a plain `git add` refuse ("paths are ignored"), so the printed
+      # command needs -f when any of the files is ignored (#81). check-ignore reports only untracked
+      # ignored paths (tracked ones never match): exit 0 = at least one ignored, 1 = none, 128 =
+      # error (treated as none). No -q: git rejects it with more than one path. Read-only, like the
+      # rest of the probe.
+      add_cmd="add"
+      if git -C "$out" check-ignore -- plugins.json flake.nix flake.lock > /dev/null 2>&1; then
+        add_cmd="add -f"
+      fi
       if ! git -C "$out" ls-files --error-unmatch -- plugins.json flake.lock > /dev/null 2>&1; then
         echo "nvimx-lock: note: this lock is not fully tracked by git. A flake only sees git-tracked files, so until you run" >&2
-        echo "nvimx-lock: note:   git -C \"$out\" add plugins.json flake.nix flake.lock" >&2
+        echo "nvimx-lock: note:   git -C \"$out\" $add_cmd plugins.json flake.nix flake.lock" >&2
         echo "nvimx-lock: note: home-manager switch cannot see it and builds the degraded (lazy.nvim-only) neovim instead" >&2
       elif ! git -C "$out" ls-files --error-unmatch -- flake.nix > /dev/null 2>&1; then
         echo "nvimx-lock: note: flake.nix is not tracked by git. The build does not read it, but it belongs with plugins.json and flake.lock:" >&2
-        echo "nvimx-lock: note:   git -C \"$out\" add flake.nix" >&2
+        echo "nvimx-lock: note:   git -C \"$out\" $add_cmd flake.nix" >&2
       fi
+    fi
+    if [ "$summary_rc" -ne 0 ]; then
+      exit "$summary_rc"
     fi
   '';
 }

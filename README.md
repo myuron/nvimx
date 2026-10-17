@@ -90,6 +90,12 @@ nvimx is a home-manager module. You integrate it into your dotfiles to use it.
    nix run github:myuron/nvimx#lock -- --config ./nvim --out ./nvim/nvimx-lock
    ```
 
+   Point `--out` at a directory of its own, as here. `nvimx-lock` writes `flake.nix` and
+   `flake.lock` into it (so `--out .` at your repository root would overwrite your own flake), and
+   every lock copies that whole directory into the Nix store: anything else in it (a `result`
+   symlink, `.direnv`, big files) is copied along each time, and an entry Nix cannot copy, such as
+   a FIFO or an unreadable directory, fails the lock.
+
 3. Commit the generated lock directory and switch home-manager.
 
    ```bash
@@ -101,6 +107,11 @@ nvimx is a home-manager module. You integrate it into your dotfiles to use it.
    directory is invisible to home-manager and the build degrades exactly as if you had never
    locked. `nvimx-lock` prints a note when the lock it just wrote is not tracked yet. Locking
    itself does not need the directory to be tracked.
+
+   A gitignored lock directory needs `git add -f` (the note prints it that way). A lock directory
+   inside a git submodule is tracked there, but your flake still cannot see it unless it sets
+   `inputs.self.submodules = true;` (or is referenced with `?submodules=1`); `nvimx-lock` does not
+   detect that case.
 
 The order is not actually rigid. Switching without a lock does not fail: the build *degrades* to a
 lazy.nvim-only Neovim and warns you, while still installing the `nvimx-lock` command. Running
