@@ -74,6 +74,7 @@ nvimx is a home-manager module. You integrate it into your dotfiles to use it.
 1. Write your Lua config using the same definition method as lazy.nvim, then `git add` it.
    `nvimx-lock` reads your working tree, so it locks an untracked Lua file just the same — but a
    flake only sees git-tracked files, so home-manager would then deploy your config without it.
+   `nvimx-lock` warns about config files git does not track yet and prints the `git add` to run.
 
 2. Lock the plugins.
 
