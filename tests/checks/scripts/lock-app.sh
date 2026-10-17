@@ -232,6 +232,24 @@ grep -q '^nvimx-lock: no plugins updated' untracked-update.log
 grep -qxF "$note_cmd" untracked-update.log
 [ "$(tail -n 1 untracked-update.log)" = 'nvimx-lock: note: home-manager switch cannot see it and builds the degraded (lazy.nvim-only) neovim instead' ]
 [ "$(git -C repo status --porcelain)" = "?? nvim/" ]
+# update-summary.lua failing is still fatal, but the files are written by then, so
+# the commit reminder must survive a summary bug (#81) -- and the failure line still
+# comes last. The stub corrupts the snapshot the summary reads.
+rc=0
+NVIMX_STUB_CORRUPT_BEFORE=1 nvimx-lock --config repo/nvim --out repo/nvim/nvimx-lock --update \
+  2>summary-fail.log || rc=$?
+[ "$rc" -eq 1 ]
+grep -q '^\[nvimx\] update-summary failed: ' summary-fail.log
+grep -qxF "$note_cmd" summary-fail.log
+grep -q '^nvimx-lock: done\. ' summary-fail.log
+[ "$(tail -n 1 summary-fail.log)" = "$(fail_line 1)" ]
+sum_at=$(grep -n '^\[nvimx\] update-summary failed: ' summary-fail.log | cut -d: -f1)
+note_at=$(grep -nxF "$note_cmd" summary-fail.log | cut -d: -f1)
+fail_at=$(grep -n '^nvimx-lock: failed' summary-fail.log | cut -d: -f1)
+[ "$sum_at" -lt "$note_at" ]
+[ "$note_at" -lt "$fail_at" ]
+no_leftover
+[ "$(git -C repo status --porcelain)" = "?? nvim/" ]
 # Each of the three files on its own is enough to trigger a note: one state per
 # file, with only that file missing from the index. A single partial state would
 # let a check narrowed to one file (whichever) pass unnoticed. Which note differs:

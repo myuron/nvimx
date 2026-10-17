@@ -4,8 +4,8 @@
 # stands in: it answers the seed lookup (`eval`, #32) with nvimx's own lazy.nvim (not recorded
 # in argv, so it is not counted as a call), records argv and cwd, fails on the NVIMX_STUB_FAIL_AT-th
 # call (default 1) when NVIMX_STUB_FAIL is set (#81: the later call sites need a failure of their
-# own), can wait for a pipe reader to be gone before failing (NVIMX_STUB_WAIT_FOR), and otherwise
-# writes a fixture
+# own), can corrupt the update snapshot (NVIMX_STUB_CORRUPT_BEFORE) or wait for a pipe reader to
+# be gone before failing (NVIMX_STUB_WAIT_FOR), and otherwise writes a fixture
 # flake.lock (the convergence pass reads it right after). That the real nix accepts `path:.`
 # stays a manual check.
 {
@@ -22,6 +22,13 @@ let
     fi
     printf '%s\n' "$*" >> "$NVIMX_STUB_ARGV"
     pwd >> "$NVIMX_STUB_CWD"
+    # Test-only hook for step 7's summary failure: nothing in nvimx-lock reads the snapshot
+    # but update-summary.lua, so corrupting it fails exactly that step.
+    if [ -n "''${NVIMX_STUB_CORRUPT_BEFORE:-}" ]; then
+      for f in "$TMPDIR"/tmp.*/flake.lock.before; do
+        if [ -e "$f" ]; then echo 'not json' > "$f"; fi
+      done
+    fi
     calls=$(wc -l < "$NVIMX_STUB_ARGV")
     if [ -n "''${NVIMX_STUB_FAIL:-}" ] && [ "$calls" -eq "''${NVIMX_STUB_FAIL_AT:-1}" ]; then
       echo "error: stub nix was told to fail" >&2

@@ -432,12 +432,15 @@ pkgs.writeShellApplication {
     flush_logs
 
     # update-summary.lua's own failure is deliberately left fatal (not downgraded to a warning,
-    # #24): every lock file above is already written by this point, so a non-zero exit here is a
-    # bug in the summary itself, not a failed lock -- but letting it fail loudly is how that bug
-    # gets noticed instead of silently going unreported. Re-running nvimx-lock afterwards is safe
-    # either way: the lock is already done, and a second --update run just reports "no plugins
+    # #24), but only after `done` and the git note below (#81): every lock file above is already
+    # written by this point, so a non-zero exit here is a bug in the summary itself, not a failed
+    # lock -- yet the user must still be told to commit the files (and that they are untracked).
+    # Letting it fail loudly is how that bug gets noticed instead of silently going unreported;
+    # the trap's failure line then comes last. Re-running nvimx-lock afterwards is safe either
+    # way: the lock is already done, and a second --update run just reports "no plugins
     # updated". The same holds for a plain lock that was given --summary-json (#77): it only runs
     # then, in --plain mode (JSON only, no text). `if`, not `[ ] && ...`: see cleanup().
+    summary_rc=0
     if [ "$update_mode" -eq 1 ] || [ -n "$summary_json" ]; then
       summary_args=()
       if [ -n "$summary_json" ]; then
@@ -450,7 +453,7 @@ pkgs.writeShellApplication {
         ''${summary_args[@]+"''${summary_args[@]}"} \
         "$sandbox/plugins.json.before" "$out/plugins.json" \
         "$sandbox/flake.lock.before" "$out/flake.lock" \
-        ''${update_names[@]+"''${update_names[@]}"}
+        ''${update_names[@]+"''${update_names[@]}"} || summary_rc=$?
     fi
 
     # Config files git does not know about (#33). Extraction above read the work tree, so an
@@ -520,6 +523,9 @@ pkgs.writeShellApplication {
         echo "nvimx-lock: note: flake.nix is not tracked by git. The build does not read it, but it belongs with plugins.json and flake.lock:" >&2
         echo "nvimx-lock: note:   git -C \"$out\" add flake.nix" >&2
       fi
+    fi
+    if [ "$summary_rc" -ne 0 ]; then
+      exit "$summary_rc"
     fi
   '';
 }
