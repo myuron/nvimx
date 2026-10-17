@@ -236,9 +236,14 @@ in
         you set there still wins. With false that does not bring the provider back by itself:
         init.lua has to unset vim.g.loaded_python3_provider as well.
 
-        nvimx does not generate a remote-plugin manifest. Run :UpdateRemotePlugins yourself, and
-        again after a plugin update: the manifest records the plugin's path, which is a Nix store
-        path that changes with the lock.
+        With true, nvimx also registers the Python remote plugins of the locked plugins at build
+        time, so there is nothing to run after a switch or a plugin update. Every plugin in the
+        lock is registered, whatever its lazy / cond / enabled settings, as with programs.neovim:
+        a cond = false plugin is still locked and in the farm, so its functions and commands
+        exist even though lazy never loads the plugin's Lua/Vimscript side. Plugins in
+        devPlugins (and the spec's dev/dir plugins) are left to :UpdateRemotePlugins. A plugin
+        whose registration fails (for example a package missing from extraPython3Packages) is
+        left out, with the error in the build log. See the README.
       '';
     };
 
@@ -259,6 +264,8 @@ in
 
         The list is still evaluated when withPython3 is not true -- that is how the warning is
         produced -- so a package that fails to evaluate is an error either way.
+
+        A package a remote plugin imports at registration time is needed at build time too.
       '';
     };
 
@@ -279,6 +286,9 @@ in
         a ruby you already have stays in front), which is what :checkhealth looks for. Unlike
         nixpkgs' wrapper, nvimx does not set GEM_HOME: the host runs without it, and it would be
         exported to every process neovim starts. Add it with extraWrapperArgs if you need it.
+
+        With true, Ruby remote plugins in the lock are registered at build time, as for
+        withPython3.
       '';
     };
 
@@ -299,6 +309,9 @@ in
         there. As with programs.neovim, appending it also makes `node` available to plugins
         that run it themselves. The host therefore runs under the first node on PATH -- yours,
         if you have one; put pkgs.nodejs in extraPackages to pin it.
+
+        With true, JavaScript remote plugins in the lock are registered at build time, as for
+        withPython3.
       '';
     };
 

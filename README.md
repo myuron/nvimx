@@ -714,11 +714,32 @@ can report a host pinned by Nix as out of date, or report errors when you are of
 the provider is broken, and the `npm install -g` style advice it gives does not apply: the host's
 version follows your nixpkgs.
 
-Two things these options do not do:
+#### Remote plugins
 
-- **No remote-plugin manifest is generated.** Run `:UpdateRemotePlugins` yourself, and again after
-  every plugin update: the manifest records each plugin's path, which is a Nix store path that
-  changes with the lock.
+With `true`, the remote plugins of that host in your lock are registered while nvimx builds, as
+with `programs.neovim`. There is no `:UpdateRemotePlugins` to run after a switch or a plugin
+update, and a lazy-loaded plugin's functions and commands work without the plugin being loaded.
+
+- Every plugin in the lock is registered, whatever its `lazy` / `cond` / `enabled` settings (again
+  as with `programs.neovim`). A `cond = false` plugin is still locked and in the plugin farm, so its
+  remote functions and commands exist even though lazy never loads the plugin's own Lua/Vimscript.
+  Remove the plugin from the spec and re-lock to drop them.
+- Your own manifest, `stdpath("data")/rplugin.vim` (what `:UpdateRemotePlugins` writes), is still
+  read. For the hosts nvimx registers, entries for paths under `/nix/store` are ignored in favour
+  of the build's, so an old manifest cannot shadow an updated plugin. Everything else in it is
+  kept.
+- `devPlugins` and dev/dir plugins are not registered by nvimx: run `:UpdateRemotePlugins` for
+  them, as before. (A working tree that itself lives under `/nix/store` would be treated as a
+  store plugin and ignored.)
+- A plugin whose registration fails at build time (for example, a package missing from
+  `extraPython3Packages`) is left out, with the error in the build log, instead of failing the
+  build. A package a remote plugin imports at registration time is needed at build time too.
+- Nothing is loaded with `--clean`, or when rplugin is disabled (`vim.g.loaded_remote_plugins` set
+  before plugins load, or `performance.rtp.disabled_plugins = { "rplugin" }`), matching Neovim.
+- `extraWrapperArgs` do not apply while the manifest is generated.
+
+One thing these options do not do:
+
 - **There is no `withPerl`.** Neovim's own discovery applies to Perl as it always has; put
   `vim.g.loaded_perl_provider = 0` in your `init.lua` to switch it off.
 
