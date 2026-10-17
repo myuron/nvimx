@@ -22,7 +22,7 @@ pkgs.writeShellApplication {
   ];
   text = ''
     usage() {
-      echo "usage: nvimx-lock --config <configDir> --out <lockDir> [--update [name...] | --import-lazy-lock [path]]" >&2
+      echo "usage: nvimx-lock --config <configDir> --out <lockDir> [--update [name...] | --import-lazy-lock [path]] [--summary-json <path>]" >&2
       exit 2
     }
 
@@ -33,6 +33,7 @@ pkgs.writeShellApplication {
     update_names=()
     import_mode=0
     import_path=""
+    summary_json=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --config)
@@ -56,6 +57,15 @@ pkgs.writeShellApplication {
           # recorded separately: several --update occurrences collapse into one names array, so
           # the marker cannot be recovered from the array's length afterwards.
           [ "$got" -eq 1 ] || update_all=1
+          ;;
+        --summary-json)
+          # Exactly one required value (#77); a missing one or a following flag is a usage error
+          # rather than a flag name silently taken as a path. Given twice, the last one wins.
+          if [ $# -lt 2 ] || [ -z "$2" ] || [ "''${2#--}" != "$2" ]; then
+            usage
+          fi
+          summary_json="$2"
+          shift 2
           ;;
         --import-lazy-lock)
           # A one-token lookahead, not --update's multi-token while loop: this flag takes at most
@@ -94,6 +104,26 @@ pkgs.writeShellApplication {
       usage
     fi
     [ -n "$config" ] && [ -n "$out" ] || usage
+    # --summary-json (#77): the path is only inspected here, nothing is created (no mkdir -p: the
+    # parent has to exist, which also rules out a path inside a not-yet-created --out). An `if`,
+    # not `[ ... ] && ...`, for the same errexit reason as in cleanup() below; and the whole block
+    # is guarded because `rm -f -- ""` fails under errexit.
+    if [ -n "$summary_json" ]; then
+      if [ -d "$summary_json" ]; then
+        echo "nvimx-lock: --summary-json: $summary_json is a directory" >&2
+        exit 2
+      fi
+      if [ ! -d "$(dirname -- "$summary_json")" ]; then
+        echo "nvimx-lock: --summary-json: directory $(dirname -- "$summary_json") does not exist" >&2
+        exit 2
+      fi
+      # Deleted first so that no run which gets this far can leave a previous run's report behind
+      # as if it were this run's: not the --update no-lock guard below (exit 2), not
+      # `realpath "$config"`, not the --import-lazy-lock missing-file check (exit 2), not
+      # `mkdir -p "$out"`, nor any later failure. Keep this above every other exit when editing
+      # this script; only the pure argument errors above may precede it.
+      rm -f -- "$summary_json"
+    fi
     # --update is a lock's forward motion, not its beginning: mixing it with a first-ever lock
     # would leave resolve.lua with no previous decisions to force away from in the first place.
     # Checked against the raw --out argument, before `mkdir -p "$out"` / `realpath "$out"` below,
@@ -127,10 +157,17 @@ pkgs.writeShellApplication {
 
     sandbox=$(mktemp -d)
     # --update's summary (below) is a before/after diff, so the "before" half has to be snapshot
-    # ahead of any of the steps that are about to move it.
-    if [ "$update_mode" -eq 1 ]; then
-      cp "$out/flake.lock" "$sandbox/flake.lock.before"
-      cp "$out/plugins.json" "$sandbox/plugins.json.before"
+    # ahead of any of the steps that are about to move it. --summary-json (#77) needs it for a plain
+    # lock too; a first lock has no files yet, which reads as the empty lock ({}), so everything
+    # is reported as added.
+    if [ "$update_mode" -eq 1 ] || [ -n "$summary_json" ]; then
+      for f in flake.lock plugins.json; do
+        if [ -f "$out/$f" ]; then
+          cp "$out/$f" "$sandbox/$f.before"
+        else
+          echo '{}' > "$sandbox/$f.before"
+        fi
+      done
     fi
     # resolve.lua's warnings are held back until the very end (see the resolve step below).
     # Print them from the trap when a later step failed before we got there -- otherwise
@@ -329,9 +366,18 @@ pkgs.writeShellApplication {
     # bug in the summary itself, not a failed lock -- but letting it fail loudly is how that bug
     # gets noticed instead of silently going unreported. Re-running nvimx-lock afterwards is safe
     # either way: the lock is already done, and a second --update run just reports "no plugins
-    # updated".
-    if [ "$update_mode" -eq 1 ]; then
+    # updated". The same holds for a plain lock that was given --summary-json (#77): it only runs
+    # then, in --plain mode (JSON only, no text). `if`, not `[ ] && ...`: see cleanup().
+    if [ "$update_mode" -eq 1 ] || [ -n "$summary_json" ]; then
+      summary_args=()
+      if [ -n "$summary_json" ]; then
+        summary_args+=(--json "$summary_json")
+      fi
+      if [ "$update_mode" -eq 0 ]; then
+        summary_args+=(--plain)
+      fi
       nvim -l "${luaDir}/update-summary.lua" \
+        ''${summary_args[@]+"''${summary_args[@]}"} \
         "$sandbox/plugins.json.before" "$out/plugins.json" \
         "$sandbox/flake.lock.before" "$out/flake.lock" \
         ''${update_names[@]+"''${update_names[@]}"}

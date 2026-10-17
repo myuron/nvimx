@@ -1,0 +1,117 @@
+{
+  "added": [
+    {
+      "compareUrl": null,
+      "from": null,
+      "fromRef": null,
+      "inputName": "lazy-nvim",
+      "name": "lazy.nvim",
+      "reason": null,
+      "source": {
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "type": "github"
+      },
+      "to": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "toRef": null
+    },
+    {
+      "compareUrl": null,
+      "from": null,
+      "fromRef": null,
+      "inputName": "new-nvim",
+      "name": "new.nvim",
+      "reason": null,
+      "source": {
+        "owner": "example",
+        "repo": "new.nvim",
+        "type": "github"
+      },
+      "to": "7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e",
+      "toRef": null
+    },
+    {
+      "compareUrl": null,
+      "from": null,
+      "fromRef": null,
+      "inputName": "nui-nvim",
+      "name": "nui.nvim",
+      "reason": null,
+      "source": {
+        "owner": "MunifTanjim",
+        "repo": "nui.nvim",
+        "type": "github"
+      },
+      "to": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3",
+      "toRef": "c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+    },
+    {
+      "compareUrl": null,
+      "from": null,
+      "fromRef": null,
+      "inputName": "plenary-nvim",
+      "name": "plenary.nvim",
+      "reason": null,
+      "source": {
+        "owner": "nvim-lua",
+        "repo": "plenary.nvim",
+        "type": "github"
+      },
+      "to": "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+      "toRef": null
+    },
+    {
+      "compareUrl": null,
+      "from": null,
+      "fromRef": null,
+      "inputName": "telescope-nvim",
+      "name": "telescope.nvim",
+      "reason": null,
+      "source": {
+        "owner": "nvim-telescope",
+        "repo": "telescope.nvim",
+        "type": "github"
+      },
+      "to": "e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0",
+      "toRef": "refs/tags/0.2.0"
+    },
+    {
+      "compareUrl": null,
+      "from": null,
+      "fromRef": null,
+      "inputName": "tokyonight-nvim",
+      "name": "tokyonight.nvim",
+      "reason": null,
+      "source": {
+        "owner": "folke",
+        "repo": "tokyonight.nvim",
+        "type": "github"
+      },
+      "to": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+      "toRef": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+    },
+    {
+      "compareUrl": null,
+      "from": null,
+      "fromRef": null,
+      "inputName": "vim-fugitive",
+      "name": "vim-fugitive",
+      "reason": null,
+      "source": {
+        "owner": "tpope",
+        "repo": "vim-fugitive",
+        "type": "github"
+      },
+      "to": "dddddddddddddddddddddddddddddddddddddddd",
+      "toRef": null
+    }
+  ],
+  "mode": "lock",
+  "removed": [],
+  "requested": [],
+  "schemaVersion": 1,
+  "skippedPinned": [],
+  "unchanged": [],
+  "unexplained": [],
+  "updated": []
+}

@@ -120,6 +120,35 @@ the name you type — whose positional-argument form needs Nix ≥ 2.19; older N
 fails while the lock directory is untracked, so track it first or pass `path:.` as the flake
 reference.
 
+### Machine-readable summary
+
+`nvimx-lock ... --summary-json <path>` also writes a JSON report of what the run moved, for bots
+that build a PR body. It works with a plain lock (`mode: "lock"`, which prints no summary text),
+`--update`, `--update <name>...` and `--import-lazy-lock`. The file is deleted as soon as the
+command line has been parsed, so after any run that got that far it exists only if the run
+succeeded; rejected arguments (exit 2 for a usage error) leave it untouched, so scripts should
+check the exit status as well. Its parent directory must exist. Keep it outside the lock
+directory, or it shows up there as an untracked file.
+
+The top-level keys are `schemaVersion` (currently `1`; it is bumped on any incompatible change),
+`mode` (`update-all`, `update-named` or `lock`), `requested`, `updated`, `added`, `removed`,
+`skippedPinned`, `unchanged` and `unexplained` (the plugins in the "moved without being named"
+warning). Keys come out sorted alphabetically and arrays sorted by plugin name. As in the stderr
+summary, `update-named` mode lists only the requested plugins plus whatever moved, so `unchanged`
+is not a full inventory there. In `lock` mode nothing is skipped, so a pinned plugin is
+`unchanged`. To see whether anything changed, test `(.updated + .added + .removed) | length > 0`.
+
+`updated`, `added` and `removed` share one entry shape: `name`, `inputName`, `source` (as in
+`plugins.json`), `from` and `to` (full revs, `null` where not applicable), `fromRef` and `toRef`
+(the resolved refs), `reason` (`tag-changed`, `version-resolved`, `unpinned`, `spec-changed` or
+`null`) and `compareUrl`. `compareUrl` is set for `updated` entries from a GitHub source only, with
+the full revs (`https://github.com/<owner>/<repo>/compare/<from>...<to>`), and is `null`
+otherwise. For example, a PR body table:
+
+```sh
+jq -r '"| Plugin | Old | New |\n|---|---|---|", (.updated[] | "| \(.name) | \(.from[0:7] // "-") | \(if .compareUrl then "[\(.to[0:7])](\(.compareUrl))" else .to[0:7] end) |")' summary.json
+```
+
 ## Migrating from lazy.nvim
 
 If you already run lazy.nvim, you have a `lazy-lock.json` recording the exact commit of every

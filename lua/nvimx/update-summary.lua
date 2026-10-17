@@ -1,14 +1,20 @@
 -- update-summary.lua: reports what an `nvimx-lock --update` run actually moved (#24's plan, §3.4).
 --
 -- Usage:
---   nvim -l update-summary.lua <plugins.json before> <plugins.json after> \
+--   nvim -l update-summary.lua [--json <path>] [--plain] <plugins.json before> <plugins.json after> \
 --     <flake.lock before> <flake.lock after> [name...]
 --
--- Pure text processing over the four JSON snapshots nvimx-lock takes around an --update run: no
+-- Pure text processing over the four JSON snapshots nvimx-lock takes around a lock run: no
 -- network, no external process. [name...] is exactly the list of names --update was given; an
--- empty list means a bare --update (update everything). lock-app.nix only ever calls this file
--- when --update was used at all -- a plain `nvimx-lock` never runs it, and its own non-zero exit
+-- empty list means a bare --update (update everything). lock-app.nix calls this file for every
+-- --update, and for a plain lock only when --summary-json was given (#77); its own non-zero exit
 -- is deliberately left fatal for the whole run (see lock-app.nix's comment next to the call).
+--
+-- --json <path> additionally writes a machine-readable report (#77, schema v1; see README). It is
+-- written before any stderr text, and the stderr text is byte-identical with or without it.
+-- --plain is the plain-lock flavour: no stderr text at all, mode "lock", pinned reported as
+-- unchanged (a plain lock skips nothing), and no names. Unlike resolve.lua, json.lua is a pure
+-- module, so it is dofile()d for its deterministic encoder.
 --
 -- This is deliberately standalone rather than requiring resolve.lua: resolve.lua is a CLI in its
 -- own right (dofile()ing it would re-run its own argument parsing against this file's own argv),
@@ -21,18 +27,43 @@ local function die(msg)
   os.exit(1)
 end
 
-local plugins_before_path, plugins_after_path, lock_before_path, lock_after_path = arg[1], arg[2], arg[3], arg[4]
+local usage = "usage: nvim -l update-summary.lua [--json <path>] [--plain] <plugins.json before> "
+  .. "<plugins.json after> <flake.lock before> <flake.lock after> [name...]"
+
+local json_path, plain = nil, false
+local argi = 1
+while arg[argi] and arg[argi]:sub(1, 2) == "--" do
+  local opt = arg[argi]
+  if opt == "--json" then
+    local v = arg[argi + 1]
+    if not v or v == "" or v:sub(1, 2) == "--" then
+      die(usage)
+    end
+    json_path = v
+    argi = argi + 2
+  elseif opt == "--plain" then
+    plain = true
+    argi = argi + 1
+  else
+    die(usage)
+  end
+end
+
+local plugins_before_path, plugins_after_path, lock_before_path, lock_after_path =
+  arg[argi], arg[argi + 1], arg[argi + 2], arg[argi + 3]
 if not (plugins_before_path and plugins_after_path and lock_before_path and lock_after_path) then
-  die(
-    "usage: nvim -l update-summary.lua <plugins.json before> <plugins.json after> "
-      .. "<flake.lock before> <flake.lock after> [name...]"
-  )
+  die(usage)
 end
 
 local requested = {}
-for i = 5, #arg do
+for i = argi + 4, #arg do
   requested[#requested + 1] = arg[i]
 end
+if plain and #requested > 0 then
+  die(usage)
+end
+
+local json = dofile((arg[0]:gsub("update%-summary%.lua$", "json.lua")))
 
 -- Only a genuinely unreadable file is fatal here: this file runs after every lock artifact has
 -- already been written, so a bug in it must not look like the lock itself failed by hiding behind
@@ -240,7 +271,7 @@ table.sort(all_names)
 -- being reported as if nothing happened -- otherwise the move goes unreported entirely in named
 -- mode, silencing exactly the safety net §3.4 (Done when 4) requires.
 ---@param name string
----@return { kind: string, text: string, requested: boolean, explained: boolean }|nil
+---@return { kind: string, text: string, requested: boolean, explained: boolean, entry: table }|nil
 local function classify(name)
   local before_entry = plugins_before[name]
   local after_entry = plugins_after[name]
@@ -251,11 +282,30 @@ local function classify(name)
   local rb, ra = locked_rev_before(input_name), locked_rev_after(input_name)
   local requested_here = requested_set[name] == true
 
+  -- The JSON entry (#77) is built beside the text, never from it, so the text stays untouched.
+  -- Added takes its source from the after side, removed from the before side, updated from
+  -- whichever side has one (after first).
+  local ref_before = before_entry and norm(before_entry.resolvedRef) or nil
+  local ref_after = after_entry and norm(after_entry.resolvedRef) or nil
+  local function entry(kind, reason_code)
+    local e = { name = name, inputName = input_name, reason = reason_code }
+    local a_src = after_entry and after_entry.source
+    local b_src = before_entry and before_entry.source
+    if kind == "added" then
+      e.source, e.from, e.to, e.fromRef, e.toRef = a_src, nil, ra, nil, ref_after
+    elseif kind == "removed" then
+      e.source, e.from, e.to, e.fromRef, e.toRef = b_src, rb, nil, ref_before, nil
+    else
+      e.source, e.from, e.to, e.fromRef, e.toRef = is_null(a_src) and b_src or a_src, rb, ra, ref_before, ref_after
+    end
+    return e
+  end
+
   if ra ~= nil and rb == nil and after_entry then
-    return { kind = "added", text = ("added: %s -> %s"):format(name, short(ra)) }
+    return { kind = "added", text = ("added: %s -> %s"):format(name, short(ra)), entry = entry("added") }
   end
   if rb ~= nil and ra == nil then
-    return { kind = "removed", text = ("removed: %s (was %s)"):format(name, short(rb)) }
+    return { kind = "removed", text = ("removed: %s (was %s)"):format(name, short(rb)), entry = entry("removed") }
   end
 
   -- pinned-skip and commit-pinned are both claims that the rev *cannot* have moved on its own --
@@ -281,21 +331,20 @@ local function classify(name)
 
   -- The rev moved: work out whether the move explains itself (§3.4), so a legitimate move that
   -- --update did not cause is never mistaken for the safety net this summary exists to provide.
-  local ref_before = before_entry and norm(before_entry.resolvedRef) or nil
-  local ref_after = after_entry and norm(after_entry.resolvedRef) or nil
-
   if is_tag_ref(ref_before) and is_tag_ref(ref_after) and ref_before ~= ref_after then
     return {
       kind = "updated",
       text = ("updated: %s %s -> %s (%s -> %s)"):format(name, ref_before, ref_after, short(rb), short(ra)),
       requested = requested_here,
       explained = true,
+      entry = entry("updated", "tag-changed"),
     }
   end
 
-  local reason = nil
+  local reason, reason_code = nil, nil
   if ref_before == nil and is_tag_ref(ref_after) then
     reason = ("version constraint resolved: %s"):format(ref_after)
+    reason_code = "version-resolved"
   elseif
     before_entry
     and after_entry
@@ -310,16 +359,28 @@ local function classify(name)
     -- resolvedRef back to null), and the URL then goes back to tracking a branch/tag, which a
     -- plain `nix flake lock` moves to HEAD -- a legitimate move with nothing else to explain it.
     reason = "unpinned"
+    reason_code = "unpinned"
   elseif before_entry and after_entry and not same_identity(before_entry, after_entry) then
     reason = "spec changed"
+    reason_code = "spec-changed"
   end
 
   local text = ("updated: %s %s -> %s"):format(name, short(rb), short(ra))
   if reason then
     text = text .. " (" .. reason .. ")"
   end
-  return { kind = "updated", text = text, requested = requested_here, explained = reason ~= nil }
+  return {
+    kind = "updated",
+    text = text,
+    requested = requested_here,
+    explained = reason ~= nil,
+    entry = entry("updated", reason_code),
+  }
 end
+
+-- JSON buckets (#77), filled next to the text's lines/counts with the very same inclusion rule.
+-- A plain lock (--plain) skips nothing, so a pinned plugin there is just unchanged.
+local buckets = { updated = {}, added = {}, removed = {}, unchanged = {}, skippedPinned = {} }
 
 local lines = {}
 local counts = { updated = 0, unchanged = 0, pinned = 0, added = 0, removed = 0 }
@@ -337,6 +398,14 @@ for _, name in ipairs(all_names) do
       counts[c.kind] = counts[c.kind] + 1
       if c.kind == "updated" and not c.requested and not c.explained then
         warn_names[#warn_names + 1] = name
+      end
+      if c.kind == "updated" or c.kind == "added" or c.kind == "removed" then
+        local b = buckets[c.kind]
+        b[#b + 1] = c.entry
+      elseif c.kind == "pinned" and not plain then
+        buckets.skippedPinned[#buckets.skippedPinned + 1] = name
+      else
+        buckets.unchanged[#buckets.unchanged + 1] = name
       end
     end
   end
@@ -359,16 +428,132 @@ if not lazy_is_spec then
   local lazy_moved = lazy_rb ~= lazy_ra
   if mode_all or lazy_requested or lazy_moved then
     if lazy_moved then
+      -- The seed has no plugins.json entry, so its JSON entry is built here from lazyNvim. A
+      -- first lock (no lazy-nvim node before) is an addition, not the text's "? -> rev" update.
+      local lazy_doc = type(plugins_after_doc.lazyNvim) == "table" and plugins_after_doc.lazyNvim
+        or type(plugins_before_doc.lazyNvim) == "table" and plugins_before_doc.lazyNvim
+        or {}
+      local e = {
+        name = LAZY_NAME,
+        inputName = lazy_input_name,
+        source = lazy_doc.source,
+        from = lazy_rb,
+        to = lazy_ra,
+      }
+      if lazy_rb == nil and lazy_ra ~= nil then
+        buckets.added[#buckets.added + 1] = e
+      else
+        buckets.updated[#buckets.updated + 1] = e
+      end
       lines[#lines + 1] = ("updated: lazy.nvim (seed) %s -> %s"):format(short(lazy_rb), short(lazy_ra))
       counts.updated = counts.updated + 1
       if not mode_all and not lazy_requested then
         warn_names[#warn_names + 1] = "lazy.nvim"
       end
     else
+      buckets.unchanged[#buckets.unchanged + 1] = LAZY_NAME
       lines[#lines + 1] = "unchanged: lazy.nvim (seed)"
       counts.unchanged = counts.unchanged + 1
     end
   end
+end
+
+-- #77: the machine-readable report. Written before any text so that the text's early exits below
+-- cannot skip it, and built from the same buckets the text was. `from`/`to` are the full revs.
+
+-- A compare link only when it is certain to be valid: a github source whose owner and repo
+-- (one trailing "/" allowed, as source.lua keeps it) are plain names, and both revs known.
+local function compare_url(e)
+  local src = e.source
+  if type(src) ~= "table" or src.type ~= "github" or type(e.from) ~= "string" or type(e.to) ~= "string" then
+    return vim.NIL
+  end
+  local owner, repo = src.owner, src.repo
+  if type(owner) ~= "string" or type(repo) ~= "string" then
+    return vim.NIL
+  end
+  repo = repo:gsub("/$", "")
+  if not (owner:match("^[%w._-]+$") and repo:match("^[%w._-]+$")) then
+    return vim.NIL
+  end
+  return ("https://github.com/%s/%s/compare/%s...%s"):format(owner, repo, e.from, e.to)
+end
+
+local function nn(v)
+  if v == nil then
+    return vim.NIL
+  end
+  return v
+end
+
+local function entries(list)
+  table.sort(list, function(a, b)
+    return a.name < b.name
+  end)
+  local out = {}
+  for i, e in ipairs(list) do
+    out[i] = {
+      name = e.name,
+      inputName = e.inputName,
+      source = nn(e.source),
+      from = nn(e.from),
+      to = nn(e.to),
+      fromRef = nn(e.fromRef),
+      toRef = nn(e.toRef),
+      reason = nn(e.reason),
+      compareUrl = list == buckets.updated and compare_url(e) or vim.NIL,
+    }
+  end
+  return json.array(out)
+end
+
+local function sorted_names(list)
+  table.sort(list)
+  return json.array(list)
+end
+
+if json_path then
+  local req, seen_req = {}, {}
+  if not plain then
+    for _, n in ipairs(requested) do
+      if not seen_req[n] then
+        seen_req[n] = true
+        req[#req + 1] = n
+      end
+    end
+  end
+  local unexplained = {}
+  if not plain and not mode_all then
+    for _, n in ipairs(warn_names) do
+      unexplained[#unexplained + 1] = n
+    end
+  end
+  local doc = {
+    added = entries(buckets.added),
+    mode = plain and "lock" or (mode_all and "update-all" or "update-named"),
+    removed = entries(buckets.removed),
+    requested = sorted_names(req),
+    schemaVersion = 1,
+    skippedPinned = sorted_names(buckets.skippedPinned),
+    unchanged = sorted_names(buckets.unchanged),
+    unexplained = sorted_names(unexplained),
+    updated = entries(buckets.updated),
+  }
+  local f, err = io.open(json_path, "w")
+  if not f then
+    die("cannot write " .. json_path .. ": " .. tostring(err))
+  end
+  local ok, werr = f:write(json.encode(doc))
+  if not ok then
+    die("cannot write " .. json_path .. ": " .. tostring(werr))
+  end
+  local cok, cerr = f:close()
+  if not cok then
+    die("cannot write " .. json_path .. ": " .. tostring(cerr))
+  end
+end
+if plain then
+  os.exit(0)
 end
 
 -- "Nothing moved" collapses to a single line, but only when there is truly nothing to say: a

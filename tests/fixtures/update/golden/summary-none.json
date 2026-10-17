@@ -1,0 +1,15 @@
+{
+  "added": [],
+  "mode": "update-named",
+  "removed": [],
+  "requested": [
+    "tokyonight.nvim"
+  ],
+  "schemaVersion": 1,
+  "skippedPinned": [],
+  "unchanged": [
+    "tokyonight.nvim"
+  ],
+  "unexplained": [],
+  "updated": []
+}
