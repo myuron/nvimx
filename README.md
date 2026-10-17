@@ -187,6 +187,10 @@ most), but ends with the usual `nvimx-lock: failed (exit N)` line instead of the
 Like a plain lock, `--check` also warns (on stderr, without changing the exit status) about files in
 a git-tracked config that git does not track, since a flake-deployed config would lack them.
 
+`--check` extracts the spec against nvimx's bundled lazy.nvim rather than the one pinned in
+`flake.lock` (finding that one needs `nix`), so a spec relying on a newer lazy.nvim feature could
+extract differently than in a real lock.
+
 It compares everything the spec decides (added, removed and changed plugins, including `version`,
 `branch`, `tag`, `commit`, `pin`, `build`, dependencies, the source URL, and local versus remote)
 and that `flake.lock` has exactly the inputs `plugins.json` names. It does not compare the resolved

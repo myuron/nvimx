@@ -273,8 +273,17 @@ pkgs.writeShellApplication {
       NVIMX_LOCK_DIR="$out" nix eval --raw --impure --expr \
         'import ${./locked-lazy-seed.nix} { lockDir = builtins.getEnv "NVIMX_LOCK_DIR"; sources = ${./sources.nix}; }'
     }
-    seed=$(locked_seed)
-    if [ -n "$seed" ]; then
+    # --check (#78) never runs nix, and locked_seed is a `nix eval`: it extracts against nvimx's
+    # own bundled lazy.nvim instead. The simplest option that stays offline; the cost is that a
+    # spec relying on a newer lazy.nvim feature than the bundled one could extract differently.
+    seed=""
+    if [ "$check_mode" -eq 0 ]; then
+      seed=$(locked_seed)
+    fi
+    if [ "$check_mode" -eq 1 ]; then
+      seed="${lazyNvimSeed}"
+      echo "nvimx-lock: lazy.nvim seed: $seed (nvimx's own; --check never runs nix)" >&2
+    elif [ -n "$seed" ]; then
       echo "nvimx-lock: lazy.nvim seed: $seed (pinned in $out/flake.lock)" >&2
     else
       seed="${lazyNvimSeed}"
