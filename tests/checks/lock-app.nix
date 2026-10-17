@@ -1,13 +1,13 @@
 # The lock app itself, end to end (#71): what nix/lib/lock-app.nix hands its `nix` calls, what
-# the EXIT trap prints, and everything after them -- no other check gets past those calls,
-# since recursive nix cannot run in a build. `nix` comes from the caller's PATH, so a stub
+# the EXIT trap prints, and everything after them. `nix` comes from the caller's PATH, so a stub
 # stands in: it answers the seed lookup (`eval`, #32) with nvimx's own lazy.nvim (not recorded
 # in argv, so it is not counted as a call), records argv and cwd, fails on the NVIMX_STUB_FAIL_AT-th
 # call (default 1) when NVIMX_STUB_FAIL is set (#81: the later call sites need a failure of their
 # own), can corrupt the update snapshot (NVIMX_STUB_CORRUPT_BEFORE) or wait for a pipe reader to
 # be gone before failing (NVIMX_STUB_WAIT_FOR), and otherwise writes a fixture
-# flake.lock (the convergence pass reads it right after). That the real nix accepts `path:.`
-# stays a manual check.
+# flake.lock (the convergence pass reads it right after). The stub is for what a real nix cannot
+# be made to do here (failure exit codes, signals); real-nix behaviour -- accepting `path:.`,
+# convergence against a real lock, stale-node removal -- is checks.e2e-offline step 3.
 {
   pkgs,
   nvimxLib,

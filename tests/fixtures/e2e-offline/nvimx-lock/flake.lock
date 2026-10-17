@@ -1,0 +1,66 @@
+{
+  "nodes": {
+    "alpha-nvim": {
+      "flake": false,
+      "locked": {
+        "path": "../plugins/alpha.nvim",
+        "type": "path"
+      },
+      "original": {
+        "path": "../plugins/alpha.nvim",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "beta-nvim": {
+      "flake": false,
+      "locked": {
+        "path": "../plugins/beta.nvim",
+        "type": "path"
+      },
+      "original": {
+        "path": "../plugins/beta.nvim",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "gamma-nvim": {
+      "flake": false,
+      "locked": {
+        "path": "../plugins/gamma.nvim",
+        "type": "path"
+      },
+      "original": {
+        "path": "../plugins/gamma.nvim",
+        "type": "path"
+      },
+      "parent": []
+    },
+    "lazy-nvim": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1765971162,
+        "narHash": "sha256-5A4kducPwKb5fKX4oSUFvo898P0dqfsqqLxFaXBsbQY=",
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "rev": "306a05526ada86a7b30af95c5cc81ffba93fef97",
+        "type": "github"
+      },
+      "original": {
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "alpha-nvim": "alpha-nvim",
+        "beta-nvim": "beta-nvim",
+        "gamma-nvim": "gamma-nvim",
+        "lazy-nvim": "lazy-nvim"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
