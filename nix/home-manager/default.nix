@@ -505,7 +505,8 @@ in
         Setting it replaces the makeEnv call, so every option that only feeds makeEnv is
         silently ignored: package, lockDir, extraPackages, extraLuaPackages, extraWrapperArgs,
         withPython3, withRuby, withNodeJs, extraPython3Packages, vimAlias, viAlias, plugins.*,
-        treesitter.*, devPlugins and devPath.
+        treesitter.*, devPlugins, devPath, devPatterns and check.* (configDir too, as far as
+        env.check is concerned: manageConfig still deploys it).
       '';
     };
   };
