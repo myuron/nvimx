@@ -600,8 +600,6 @@ git/install pipeline. The same lock always yields the same result, no matter how
 — the one exception being any plugin you deliberately point at a working tree with
 [`devPlugins`](#local-plugin-development).
 
-See [docs/architecture.md](docs/architecture.md) for the full design.
-
 ## Example
 
 Author's dotfiles: [myuron/dotfiles](https://github.com/myuron/dotfiles/tree/main/home-manager/nvimx)
@@ -611,6 +609,5 @@ Author's dotfiles: [myuron/dotfiles](https://github.com/myuron/dotfiles/tree/mai
 nvimx is inspired by [emacs-twist/twist.nix](https://github.com/emacs-twist/twist.nix), which builds an
 entire Emacs configuration as a pure Nix package. Its core model — read the configuration you already
 write, fetch each package from its upstream repository, and pin every one of them in `flake.lock` — is
-what nvimx applies to Neovim and lazy.nvim. Where the two differ (nvimx resolves the spec at lock time
-with a headless Neovim instead of at evaluation time, so no `--impure` is needed) is listed in
-[docs/architecture.md](docs/architecture.md#appendix-main-divergences-from-twistnix).
+what nvimx applies to Neovim and lazy.nvim. The main difference is that nvimx resolves the spec at lock time
+with a headless Neovim instead of at evaluation time, so no `--impure` is needed.

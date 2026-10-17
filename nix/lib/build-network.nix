@@ -170,6 +170,6 @@ in
         - a recipe under nix/build-registry/, if this plugin is common enough that nvimx
           should ship one (it must build from the locked src, and offline)
 
-      See docs/architecture.md ("Plugin derivations") for details.
+      See "Escape hatches" and "The build registry" in the nvimx README for details.
     '';
 }
