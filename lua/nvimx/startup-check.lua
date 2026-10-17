@@ -57,6 +57,14 @@ local function wrap(f)
     return unpack(r, 2, table.maxn(r))
   end
 end
+-- nvim-notify is `vim.notify = require("notify")`: a table with __call, not a function
+local function is_callable(v)
+  if type(v) == "function" then
+    return true
+  end
+  local m = getmetatable(v)
+  return type(m) == "table" and m.__call ~= nil
+end
 local mt = getmetatable(vim)
 if mt and type(mt.__index) == "function" and mt.__newindex == nil then
   local current = wrap(rawget(vim, "notify"))
@@ -70,7 +78,7 @@ if mt and type(mt.__index) == "function" and mt.__newindex == nil then
   end
   mt.__newindex = function(t, k, v)
     if k == "notify" then
-      current = type(v) == "function" and wrap(v) or v
+      current = is_callable(v) and wrap(v) or v
       return
     end
     rawset(t, k, v)

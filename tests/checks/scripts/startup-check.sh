@@ -30,6 +30,7 @@ if grep -qF 'timed out' chain-error.log; then
   echo "chain-error: the notify chain hung" >&2
   exit 1
 fi
+expect_fail notify-callable "$notifyCallableRunner" 'vim.notify: nvimx-check: callable notifier error'
 expect_fail early-quit "$earlyQuitRunner" 'exited before the check finished'
 expect_fail stale-lock "$staleLockRunner" 'plenary.nvim'
 grep -qF 'nvimx-lock' stale-lock.log

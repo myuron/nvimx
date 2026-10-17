@@ -47,6 +47,7 @@ pkgs.runCommand "startup-check" {
   lazyConfigErrorRunner = runner "lazy-config-error";
   notifyErrorRunner = runner "notify-error";
   chainErrorRunner = runner "chain-error";
+  notifyCallableRunner = runner "notify-callable";
   earlyQuitRunner = runner "early-quit";
   staleLockRunner = runner "stale-lock";
   noLazyRunner = runner "no-lazy";
