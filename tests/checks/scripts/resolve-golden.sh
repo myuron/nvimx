@@ -26,23 +26,12 @@ diff -u "$fx"/golden/matrix.plugins.json got.json
 
 # Exactly one warning: excmdbuild.nvim. shellbuild.nvim is the quiet path, and
 # without it a resolve that warned about every build would pass the golden too
-# (the golden would just have been generated with both warnings in it).
-# The same wording is pinned on the *stderr* side by
-# checks.resolve-build-warnings, which owns the build-shape matrix; this check
-# owns how a warning is recorded in the lock file itself.
-# `|| true` is load-bearing: grep -c exits 1 on zero matches, and a bare
-# assignment takes the substitution's own exit status, so setup.sh's `set -e`
-# kills the build right here. checks.resolve-sources' `[ "$(grep -c 'unsupported
-# source URL …')" -eq "$with_url" ]` needs no `|| true`, because there the status
-# `set -e` sees is `[`'s, not the substitution's.
-# Without it the message below never prints in the one case it is there for --
-# the excmd warning going missing.
-n=$(grep -c '^\[nvimx\] warning: ' resolve.log || true)
-if [ "$n" -ne 1 ]; then
-  echo "expected exactly 1 warning, got $n" >&2
-  exit 1
-fi
-grep -q 'plugin "excmdbuild.nvim"' resolve.log
+# (the golden would just have been generated with both warnings in it). So the
+# count is asserted here, not left to the golden: regenerating it cannot silence
+# this. This check owns how a warning is recorded in the lock file itself; the
+# stderr side belongs to checks.resolve-build-warnings, which owns the build-shape matrix.
+jq -e '.warnings | length == 1' got.json >/dev/null
+jq -e '.warnings[0] | startswith("plugin \"excmdbuild.nvim\"")' got.json >/dev/null
 
 # A dev plugin has no lock entry and no flake input at all -- that is the whole
 # contract of localPlugins. resolve.lua stopped recording the dir it resolved
