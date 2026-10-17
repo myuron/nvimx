@@ -438,6 +438,25 @@ in
       };
     };
 
+    check = {
+      ignoreErrors = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "copilot" ];
+        description = ''
+          Errors that env.check tolerates: any error whose whole message contains one of
+          these strings is dropped. Plain substrings, not Lua patterns, matched against the
+          message as it shows in the build log (which can carry a prefix such as
+          `Error in <file>:`).
+
+          For plugins that need the network at startup, prefer fixing the cause
+          (treesitter.grammars instead of :TSInstall) or switching the plugin off for the
+          check: NVIMX_CHECK=1 is set in neovim's environment, so
+          `cond = not vim.env.NVIMX_CHECK` works.
+        '';
+      };
+    };
+
     lock = {
       installCommand = lib.mkOption {
         type = lib.types.bool;
@@ -475,13 +494,19 @@ in
       description = ''
         The result of makeEnv (farm / bootstrap / wrapped / pluginDrvs /
         unknownPluginNames / treesitterWithoutPlugin / devDirs / devPatterns /
-        unknownDevPluginNames / unusedPython3Packages / hasLock).
+        unknownDevPluginNames / unusedPython3Packages / hasLock), plus `check`: a derivation that starts the wrapped
+        neovim headless and offline with configDir, loads every plugin in the farm and fails on
+        any startup error. Wire it into your flake with
+        `checks.''${system}.nvim = <hm config>.config.programs.nvimx.env.check;`. It needs
+        configDir (accessing it without one is an evaluation error). `dev` plugins are
+        skipped. See `check.ignoreErrors`.
         By default it is built automatically from the options above.
         This is an escape hatch for advanced users who want to supply it directly.
         Setting it replaces the makeEnv call, so every option that only feeds makeEnv is
         silently ignored: package, lockDir, extraPackages, extraLuaPackages, extraWrapperArgs,
         withPython3, withRuby, withNodeJs, extraPython3Packages, vimAlias, viAlias, plugins.*,
-        treesitter.*, devPlugins and devPath.
+        treesitter.*, devPlugins, devPath, devPatterns and check.* (configDir too, as far as
+        env.check is concerned: manageConfig still deploys it).
       '';
     };
   };
@@ -548,6 +573,8 @@ in
           devPlugins
           devPath
           devPatterns
+          configDir
+          check
           ;
       }
     );

@@ -319,11 +319,12 @@ All options live under `programs.nvimx`.
 | `plugins.overrides` | `attrsOf (functionTo package)` | `{ }` | Per-plugin derivation overrides, keyed by the plugin name lazy derived. See [Escape hatches](#escape-hatches). |
 | `plugins.nixpkgsFallback` | `listOf str` | `[ ]` | Plugin names to take from `pkgs.vimPlugins` as-is instead of building from the lock. Opt-in per plugin. See [Escape hatches](#escape-hatches). |
 | `treesitter.grammars` | `nullOr (either (enum [ "all" ]) (listOf str))` | `null` | Tree-sitter grammars to merge into the locked `nvim-treesitter`, so no `:TSInstall` ever runs. See [Tree-sitter grammars](#tree-sitter-grammars). |
+| `check.ignoreErrors` | `listOf str` | `[ ]` | Errors `env.check` tolerates: plain substrings matched against the whole message. See [Startup check](#startup-check). |
 | `lock.installCommand` | `bool` | `true` | Add the `nvimx-lock` command to `home.packages`. |
 | `lock.projectDir` | `nullOr str` | `null` | The working tree of your dotfiles repository. When set, running `nvimx-lock` with no arguments targets `configDirRelative` / `lockDirRelative`. |
 | `lock.configDirRelative` | `str` | `"nvim"` | Path to `configDir`, relative to `projectDir`. |
 | `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | Path to `lockDir`, relative to `projectDir`. |
-| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `unusedPython3Packages` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. Setting it replaces the `makeEnv` call, so `extraPackages`, `extraLuaPackages`, `extraWrapperArgs` and every other option above that only feeds `makeEnv` are silently ignored. |
+| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `unusedPython3Packages` / `hasLock` / `check`). Built automatically from the options above; a direct escape hatch for advanced users. Setting it replaces the `makeEnv` call, so `extraPackages`, `extraLuaPackages`, `extraWrapperArgs` and every other option above that only feeds `makeEnv` are silently ignored. |
 
 `lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module. On NixOS, `defaultEditor` shares `EDITOR` with a default NixOS sets on its own; see [`defaultEditor` on NixOS](#defaulteditor-on-nixos).
 
@@ -720,6 +721,43 @@ Two things these options do not do:
   changes with the lock.
 - **There is no `withPerl`.** Neovim's own discovery applies to Perl as it always has; put
   `vim.g.loaded_perl_provider = 0` in your `init.lua` to switch it off.
+
+### Startup check
+
+`programs.nvimx.env.check` is a derivation that starts the exact wrapped Neovim a switch would
+install, headless and offline, with a copy of your `configDir` in a throwaway `HOME` / `XDG_*`. It
+loads every plugin in the farm (so a broken `config` of a lazy-loaded plugin is found too) and
+fails the build on any startup error. Put it in your flake's checks:
+
+```nix
+checks.x86_64-linux.nvim = self.homeConfigurations.me.config.programs.nvimx.env.check;
+# or, with home-manager embedded in NixOS:
+# self.nixosConfigurations.<host>.config.home-manager.users.<me>.programs.nvimx.env.check
+```
+
+Without the module, `lib.<system>.mkCheck { env; configDir; ignoreErrors; }` does the same for any
+`makeEnv` result. `configDir` must be a path literal or a store path; an absolute string fails at
+evaluation in pure mode. Reading `env.check` without `configDir` is an evaluation error.
+
+- **A failure** is anything Neovim actually shows as an error: a Lua error in `init.lua`, in an
+  autocmd or in a scheduled callback, an error in a plugin's `config`, an `ERROR` notification
+  (even when a plugin such as nvim-notify has replaced `vim.notify`), a plugin in your spec that is
+  not in the lock (re-run `nvimx-lock`), a config that never calls `require("lazy").setup()`, and a
+  config that quits during startup. The reasons show up in the build log as `[nvimx] check: ...`.
+- **Not a failure** are writes to stderr (`Downloading Copilot server ...`), errors swallowed by
+  `silent!` or `pcall`, `WARN` / `INFO` notifications, and `dev` / `devPlugins` plugins whose
+  working tree is absent (they are skipped). `v:errmsg` is deliberately not used: `silent!` sets it
+  without showing anything.
+- **Plugins that need the network at startup** fail the check. Prefer the real fix
+  (`treesitter.grammars` instead of `:TSInstall`), or turn the plugin off for the check: the
+  environment has `NVIMX_CHECK=1`, so `cond = not vim.env.NVIMX_CHECK` works. Otherwise list the
+  message in `check.ignoreErrors`: plain substrings (not Lua patterns) matched against the whole
+  message, which can start with a prefix such as `Error in <file>:`.
+- **`vim.notify` filters:** an `ERROR` is recorded when `vim.notify` is called, before your own
+  wrapper runs. One your filter drops on purpose still fails the check; list it in
+  `check.ignoreErrors`.
+- **Time limit:** the run is killed after 120 s and reported as timed out. Errors that arrive
+  more than about a second after startup are not seen.
 
 ## How it works
 

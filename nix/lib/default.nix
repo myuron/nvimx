@@ -8,6 +8,8 @@
   resolvePlugin = import ./resolve-plugin.nix { inherit pkgs; };
   # nvim-treesitter + grammars, merged into one derivation
   mkTreesitter = import ./treesitter.nix { inherit pkgs; };
+  # Headless startup check of a wrapped neovim (#79); makeEnv exposes it as env.check
+  mkCheck = import ./check.nix { inherit pkgs; };
   buildNetwork = import ./build-network.nix { inherit (pkgs) lib; };
   lockApp = import ./lock-app.nix { inherit pkgs lazyNvimSeed; };
 }

@@ -58,4 +58,6 @@ pkgs.lib.genAttrs [
   "extractor-dev-opts"
   "e2e-offline"
   "demo"
+  "startup-check"
+  "hm-module-startup-check"
 ] (name: import (./. + "/${name}.nix") checkArgs)

@@ -40,6 +40,10 @@
   # Substrings of a plugin's url that route it to <devPath>/<name> (#74), like lazy's
   # dev.patterns. Flat for the same reason as the two above.
   devPatterns ? [ ],
+  # Same as the module's programs.nvimx.configDir; only `check` reads it.
+  configDir ? null,
+  # Same shape as programs.nvimx.check
+  check ? { },
 }:
 let
   inherit (pkgs) lib;
@@ -56,6 +60,7 @@ let
   mkTreesitter = import ./treesitter.nix { inherit pkgs; };
   mkBootstrap = import ./bootstrap.nix { inherit pkgs; };
   mkWrapper = import ./wrapper.nix { inherit pkgs; };
+  mkCheck = import ./check.nix { inherit pkgs; };
 
   lazyNvimDrv = mkPluginDrv {
     name = "lazy.nvim";
@@ -184,6 +189,17 @@ let
   };
 in
 {
+  # Lazy on purpose: nothing reads it unless asked, so a null configDir only throws for whoever
+  # asks for the check.
+  check =
+    if configDir == null then
+      throw "nvimx: env.check needs a config directory; set programs.nvimx.configDir, or call lib.mkCheck { env; configDir; } directly"
+    else
+      mkCheck {
+        env = { inherit farm wrapped; };
+        inherit configDir;
+        ignoreErrors = check.ignoreErrors or [ ];
+      };
   inherit
     farm
     bootstrap
