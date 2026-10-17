@@ -18,7 +18,8 @@ pkgs.writeShellApplication {
     # (below) needs it, and nothing else in this script's closure guarantees it is on PATH either.
     pkgs.gnugrep
     pkgs.neovim-unwrapped
-    pkgs.nixfmt-rfc-style
+    # RFC 166 style; `nixfmt-rfc-style` is a deprecated alias of this since nixpkgs 25.11 (#75).
+    pkgs.nixfmt
   ];
   text = ''
     usage() {
