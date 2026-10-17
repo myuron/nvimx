@@ -204,7 +204,14 @@ pkgs.writeShellApplication {
     # errexit off alone the final builtin echo would still kill bash with the signal. With both,
     # a write that fails is skipped and the trap's last status is ignored, so the original code
     # stays (verified for 0, 7 and 130). A stderr that is closed before or while the body runs
-    # kills or fails the body itself and is out of scope. The line comes last on purpose
+    # kills or fails the body itself and is out of scope.
+    # Before flush_logs, a header says that what follows is the held-back resolve report and that
+    # the error is above it (#81: nix's output streams live and cannot be moved below the report
+    # without capturing it, which would cost nix its progress line and colours). It is skipped when
+    # the logs were already printed (resolve's own failure path calls flush_logs in the body, and
+    # there the log is the error), when nothing is held back (an extract failure), and for signal
+    # exits, where no error was printed at all.
+    # The line comes last on purpose
     # (#71): nix's own error used to sit above flush_logs' output, buried under the import report
     # and warnings, and the last line of a failed run looked just like a successful one. The
     # sandbox is removed before it so that a failing echo cannot leave it behind. Argument errors
@@ -218,6 +225,10 @@ pkgs.writeShellApplication {
       exit_code=$?
       set +e
       trap "" PIPE
+      if [ "$exit_code" -ne 0 ] && [ "$exit_code" -le 128 ] && [ "$resolve_log_shown" -eq 0 ] \
+        && { [ -s "$sandbox/import.log" ] || [ -s "$sandbox/resolve.log" ]; }; then
+        echo "nvimx-lock: the lock failed; the resolve report held back for the end follows -- the error is above it" >&2
+      fi
       flush_logs
       rm -rf "$sandbox"
       if [ "$exit_code" -gt 128 ]; then

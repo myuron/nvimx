@@ -37,6 +37,10 @@ fail_line() { # <exit code>
   echo "nvimx-lock: failed (exit $1) -- look for the error above; it may sit above the import report and warnings"
 }
 
+# What the trap prints before the held-back resolve report on a failure (#81): the
+# error is above it.
+held_line='nvimx-lock: the lock failed; the resolve report held back for the end follows -- the error is above it'
+
 # 1. First lock: one `nix flake lock`, with an explicit path: ref, run from inside
 # the lock dir. The generated files equal the committed fixture lock, which is what
 # makes the stub's flake.lock a faithful stand-in for the rest of this check.
@@ -91,7 +95,10 @@ NVIMX_STUB_FAIL=7 nvimx-lock --config pincfg --out failed 2>failed.log || rc=$?
 no_leftover
 err_at=$(grep -n '^error: stub nix was told to fail$' failed.log | cut -d: -f1)
 warn_at=$(grep -n '^\[nvimx\] warning: plugin "tokyonight.nvim"' failed.log | cut -d: -f1)
-[ "$err_at" -lt "$warn_at" ]
+[ "$(grep -cxF "$held_line" failed.log)" -eq 1 ]
+held_at=$(grep -nxF "$held_line" failed.log | cut -d: -f1)
+[ "$err_at" -lt "$held_at" ]
+[ "$held_at" -lt "$warn_at" ]
 [ "$(grep -c '^nvimx-lock: failed' failed.log)" -eq 1 ]
 absent '^nvimx-lock: done' failed.log
 
@@ -114,7 +121,10 @@ NVIMX_STUB_FAIL=7 nvimx-lock --config pincfg --out failed-import \
 err_at=$(grep -n '^error: stub nix was told to fail$' failed-import.log | cut -d: -f1)
 import_first=$(grep -n '^\[nvimx\] import: ' failed-import.log | head -n 1 | cut -d: -f1)
 import_last=$(grep -n '^\[nvimx\] import: ' failed-import.log | tail -n 1 | cut -d: -f1)
-[ "$err_at" -lt "$import_first" ]
+[ "$(grep -cxF "$held_line" failed-import.log)" -eq 1 ]
+held_at=$(grep -nxF "$held_line" failed-import.log | cut -d: -f1)
+[ "$err_at" -lt "$held_at" ]
+[ "$held_at" -lt "$import_first" ]
 [ "$import_last" -lt "$(wc -l <failed-import.log)" ]
 
 # 4c. An exit code above 128 means the child was killed by a signal (the stub's 130
@@ -126,6 +136,8 @@ rc=0
 NVIMX_STUB_FAIL=130 nvimx-lock --config pincfg --out signalled 2>signalled.log || rc=$?
 [ "$rc" -eq 130 ]
 [ "$(tail -n 1 signalled.log)" = 'nvimx-lock: stopped by a signal (exit 130)' ]
+# A killed child printed no error, so claiming one is above would be false.
+absent "$held_line" signalled.log
 absent '^nvimx-lock: failed' signalled.log
 no_leftover
 
@@ -158,6 +170,7 @@ grep -q '^nvimx-lock: freezing pinned plugins$' conv-fail.log
 err_at=$(grep -n '^error: stub nix was told to fail$' conv-fail.log | cut -d: -f1)
 warn_at=$(grep -n '^\[nvimx\] warning: plugin "tokyonight.nvim"' conv-fail.log | cut -d: -f1)
 [ "$err_at" -lt "$warn_at" ]
+[ "$(grep -cxF "$held_line" conv-fail.log)" -eq 1 ]
 [ "$(tail -n 1 conv-fail.log)" = "$(fail_line 7)" ]
 no_leftover
 
@@ -187,6 +200,7 @@ rc=0
 nvimx-lock --config nosetup --out nosetup-out 2>nosetup.log || rc=$?
 [ "$rc" -eq 1 ]
 [ "$(tail -n 1 nosetup.log)" = "$(fail_line 1)" ]
+absent "$held_line" nosetup.log # nothing was held back
 [ ! -s argv ]
 no_leftover
 
