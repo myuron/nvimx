@@ -1,0 +1,107 @@
+{
+  "added": [
+    {
+      "compareUrl": null,
+      "from": null,
+      "fromRef": null,
+      "inputName": "new-nvim",
+      "name": "new.nvim",
+      "reason": null,
+      "source": {
+        "owner": "example",
+        "repo": "new.nvim",
+        "type": "github"
+      },
+      "to": "7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e",
+      "toRef": null
+    }
+  ],
+  "mode": "lock",
+  "removed": [
+    {
+      "compareUrl": null,
+      "from": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d",
+      "fromRef": null,
+      "inputName": "old-nvim",
+      "name": "old.nvim",
+      "reason": null,
+      "source": {
+        "owner": "example",
+        "repo": "old.nvim",
+        "type": "github"
+      },
+      "to": null,
+      "toRef": null
+    }
+  ],
+  "requested": [],
+  "schemaVersion": 1,
+  "skippedPinned": [],
+  "unchanged": [
+    "nui.nvim",
+    "vim-fugitive"
+  ],
+  "unexplained": [],
+  "updated": [
+    {
+      "compareUrl": "https://github.com/folke/lazy.nvim/compare/9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c...3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "from": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c",
+      "fromRef": null,
+      "inputName": "lazy-nvim",
+      "name": "lazy.nvim",
+      "reason": null,
+      "source": {
+        "owner": "folke",
+        "repo": "lazy.nvim",
+        "type": "github"
+      },
+      "to": "3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f",
+      "toRef": null
+    },
+    {
+      "compareUrl": "https://github.com/nvim-lua/plenary.nvim/compare/f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1...f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+      "from": "f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1",
+      "fromRef": null,
+      "inputName": "plenary-nvim",
+      "name": "plenary.nvim",
+      "reason": null,
+      "source": {
+        "owner": "nvim-lua",
+        "repo": "plenary.nvim",
+        "type": "github"
+      },
+      "to": "f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2",
+      "toRef": null
+    },
+    {
+      "compareUrl": "https://github.com/nvim-telescope/telescope.nvim/compare/c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0...e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0",
+      "from": "c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0",
+      "fromRef": null,
+      "inputName": "telescope-nvim",
+      "name": "telescope.nvim",
+      "reason": "version-resolved",
+      "source": {
+        "owner": "nvim-telescope",
+        "repo": "telescope.nvim",
+        "type": "github"
+      },
+      "to": "e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0",
+      "toRef": "refs/tags/0.2.0"
+    },
+    {
+      "compareUrl": "https://github.com/folke/tokyonight.nvim/compare/a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1...b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+      "from": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "fromRef": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "inputName": "tokyonight-nvim",
+      "name": "tokyonight.nvim",
+      "reason": null,
+      "source": {
+        "owner": "folke",
+        "repo": "tokyonight.nvim",
+        "type": "github"
+      },
+      "to": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+      "toRef": "b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+    }
+  ]
+}

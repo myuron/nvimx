@@ -43,6 +43,7 @@ pkgs.lib.genAttrs [
   "resolve-semver"
   "resolve-update"
   "update-summary"
+  "update-summary-json"
   "resolve-import-lazy-lock"
   "lock-app"
   "lock-untracked-config"
