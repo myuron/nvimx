@@ -168,6 +168,28 @@ local function capture(spec, opts)
   end
   opts = opts or {}
 
+  -- nvimx replaces lazy's dev.patterns / dev.path / dev.fallback at runtime (#74), so a spec that
+  -- sets them is told so. Lock time rather than runtime: users often share one init.lua with
+  -- machines that do not run nvimx, where these are meaningful, and lock time is also where the
+  -- user's dev.patterns really does something -- it makes lazy mark matched plugins local, which
+  -- leaves them out of the lock. Judged on the raw user opts, never Config.options, so lazy's own
+  -- defaults cannot trigger it; an empty patterns list and fallback = false are those defaults
+  -- written out and do not count. One line, since resolve.lua prefixes it as-is.
+  local dev_clauses = {}
+  local dev = type(opts.dev) == "table" and opts.dev or {}
+  if type(dev.patterns) == "table" and #dev.patterns > 0 then
+    dev_clauses[#dev_clauses + 1] = "dev.patterns still decides which plugins nvimx-lock treats as local, "
+      .. "leaving them out of the lock (with dev.fallback, only those whose checkout exists on this machine); "
+      .. "use programs.nvimx.devPatterns instead and re-run nvimx-lock"
+  end
+  if dev.path ~= nil then
+    dev_clauses[#dev_clauses + 1] = "dev.path is ignored; use programs.nvimx.devPath"
+  end
+  if dev.fallback == true then
+    dev_clauses[#dev_clauses + 1] =
+      "dev.fallback is ignored; nvimx never replaces a missing working tree with the store copy"
+  end
+
   local Config = require("lazy.core.config")
   Config.setup(vim.tbl_deep_extend("force", {}, opts, safe_opts))
   -- false means "do not use tags", which git.lua:141 folds into the same nil as "unset"
@@ -186,6 +208,13 @@ local function capture(spec, opts)
   local notifs = {}
   for _, n in ipairs(s.notifs or {}) do
     notifs[#notifs + 1] = { msg = n.msg, level = n.level }
+  end
+  if #dev_clauses > 0 then
+    notifs[#notifs + 1] = {
+      msg = "lazy.nvim's dev settings in your spec are overridden by nvimx at runtime: "
+        .. table.concat(dev_clauses, "; "),
+      level = vim.log.levels.WARN,
+    }
   end
 
   local result = {
