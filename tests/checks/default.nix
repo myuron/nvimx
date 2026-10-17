@@ -24,6 +24,7 @@ pkgs.lib.genAttrs [
   "extra-lua-packages"
   "extra-wrapper-args"
   "providers"
+  "rplugin-manifest"
   "build-shell"
   "plugin-drv-phases"
   "build-network-detect"

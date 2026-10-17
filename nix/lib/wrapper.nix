@@ -10,6 +10,9 @@
   withRuby ? null,
   withNodeJs ? null,
   extraPython3Packages ? (_: [ ]),
+  # The plugin farm and the entries of it that :UpdateRemotePlugins keeps (#85), for providers.nix
+  farm ? null,
+  rpluginExclude ? [ ],
   vimAlias ? false,
   viAlias ? false,
 }:
@@ -63,6 +66,8 @@ let
       withRuby
       withNodeJs
       extraPython3Packages
+      farm
+      rpluginExclude
       ;
   };
   providerWrapperArgs = lib.escapeShellArgs (
@@ -100,6 +105,9 @@ in
 pkgs.symlinkJoin {
   name = "nvimx-neovim";
   paths = [ package ];
+  # For checks to inspect. passthru is not part of the derivation, so the byte-identity argument in
+  # the note on trailingWrapperArgs still holds.
+  passthru.rpluginManifest = providers.manifest;
   nativeBuildInputs = [ pkgs.makeWrapper ];
   postBuild = ''
     wrapProgram $out/bin/nvim \

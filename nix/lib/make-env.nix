@@ -20,6 +20,8 @@
   # arguments rather than a `providers = { ... }` attrset, for the reason devPlugins / devPath
   # give below: they map 1:1 onto the module's options, which are flat because
   # programs.neovim's are. Threaded straight to the wrapper, which hands them to providers.nix.
+  # With true, providers.nix also registers the locked plugins' remote plugins for that host at
+  # build time (#85); the farm is added to that hand-over below.
   withPython3 ? null,
   withRuby ? null,
   withNodeJs ? null,
@@ -183,9 +185,13 @@ let
       withRuby
       withNodeJs
       extraPython3Packages
+      farm
       vimAlias
       viAlias
       ;
+    # Dev plugins (devPlugins and localPlugins) are left to :UpdateRemotePlugins: their working-tree
+    # paths are not store paths, so the user's own registrations of them must keep winning (#85).
+    rpluginExclude = builtins.attrNames devDirs;
   };
 in
 {
