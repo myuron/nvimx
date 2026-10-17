@@ -1,13 +1,9 @@
-# The lock app itself, end to end (#71). Every other check stops short of the `nix` calls
-# in nix/lib/lock-app.nix -- recursive nix cannot run in a build -- so until this check
-# nothing pinned what those calls are handed, what the EXIT trap prints, or anything
-# after them. `nix` is not in the app's runtimeInputs: it is resolved from the caller's
-# PATH, and the sandbox has no real one, so a stub named `nix` stands in. The stub
-# records argv and cwd, exits with whatever NVIMX_STUB_FAIL says when told to fail, and
-# otherwise drops a fixture flake.lock where the real one would write
-# it -- succeeding alone is not enough, because the convergence pass reads
-# "$out/flake.lock" right after. What this cannot prove is that the real nix accepts
-# `path:.`; that is the plan's §6.4 manual verification.
+# The lock app itself, end to end (#71): what nix/lib/lock-app.nix hands its `nix` calls, what
+# the EXIT trap prints, and everything after them -- no other check gets past those calls,
+# since recursive nix cannot run in a build. `nix` comes from the caller's PATH, so a stub
+# stands in: it records argv and cwd, fails on NVIMX_STUB_FAIL, and otherwise writes a fixture
+# flake.lock (the convergence pass reads it right after). That the real nix accepts `path:.`
+# stays a manual check.
 {
   pkgs,
   nvimxLib,

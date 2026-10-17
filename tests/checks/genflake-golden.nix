@@ -1,33 +1,17 @@
-# plugins.json -> flake.nix, on two inputs (#29). The first is checks.resolve-golden's
-# own golden output, which is what makes the two checks compose into the end-to-end
-# statement neither makes alone. The second is a hand-written plugins.json holding
-# shapes resolve.lua cannot currently emit -- one plugin carrying `commit`,
-# `resolvedRef`, `tag` and `branch` at once -- because that is the only way to pin
-# input_url's precedence: one ladder on the github side (commit > resolvedRef > tag >
-# branch), and two independent slots on the git side (rev: commit > 40-hex
-# resolvedRef; ref: symbolic resolvedRef > tag > branch). Before this check, swapping
-# two rungs left all 29 checks green -- no fixture in the tree carried `commit` and
-# `resolvedRef` on the same plugin, so nothing could tell the two apart.
-# Every field in that fixture that is not the winning one exists only to lose -- the
-# github side (gh-commit.nvim's resolvedRef/tag/branch, gh-resolved.nvim's tag/branch,
-# gh-tag.nvim's branch) just as much as the git side (git-commit.nvim's resolvedRef,
-# git-symbolic.nvim's tag, git-symbolic/git-tag's branch). None of them changes a
-# single byte of the golden, but together they enforce one total order across the
-# ladder. Individually some are redundant with another plugin's field, but which
-# fields are redundant shifts whenever the ladder changes, so never delete one
-# just because it is not the winner -- that is exactly the regression they catch.
+# plugins.json -> flake.nix, on two inputs (#29). The first is checks.resolve-golden's golden
+# output, so the two checks compose into one end-to-end statement. The second is hand-written
+# to pin input_url's precedence (github: commit > resolvedRef > tag > branch; git: rev =
+# commit > 40-hex resolvedRef, ref = symbolic resolvedRef > tag > branch). Every losing field
+# in it exists only to lose -- never delete one for not being the winner.
 # No git, no jq, no network: this stage is a pure text transform.
 {
   pkgs,
   ...
 }:
 let
-  # Same evaluation-time guard checks.resolve-sources uses (#28): a golden is a source
-  # file, so importing it is a plain readFile and never IFD, and the derivation below
-  # is what proves the generated flake still equals it. parseFlakeRef succeeding is
-  # too weak on its own -- it accepts `github:o/r/tree/main` and bare `just-a-name` --
-  # so the *type* is asserted as well: anything that is not github/git has silently
-  # degraded to an `indirect` or `path:` node that only dies later, in sources.nix.
+  # Same evaluation-time guard as checks.resolve-sources (#28): importing a golden is a plain
+  # readFile, not IFD. parseFlakeRef alone is too weak (it accepts `github:o/r/tree/main` and
+  # bare names), so the type must be github/git, not a degraded `indirect` / `path:` node.
   goldenFlakes = {
     matrix = import ../fixtures/spec-matrix/golden/matrix.flake.nix;
     priority = import ../fixtures/spec-matrix/golden/priority.flake.nix;

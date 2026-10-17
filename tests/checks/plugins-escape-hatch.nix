@@ -36,17 +36,15 @@ let
     ++ lib.optional (
       !(evaluates "tokyonight.nvim" { nixpkgsFallback = [ "tokyonight.nvim" ]; })
     ) "plugins.nixpkgsFallback did not rescue a build needing the network"
-    # "fzf" is shipped in nix/build-registry precisely because its declared build
-    # downloads a release binary. Its real command (`./install --bin`) is not what
-    # is resolved here on purpose: build-network.nix cannot see the fetch inside
-    # that script, so it would not exercise the rescue at all
+    # fzf's registry entry exists because its build downloads a binary. Its real command
+    # (`./install --bin`) is not used here: build-network.nix cannot see that fetch, so it
+    # would not exercise the rescue
     ++ lib.optional (
       !(evaluates "fzf" { })
     ) "nix/build-registry did not rescue a build needing the network"
-    # ... so "blink.cmp" carries the other half: its `cargo build --release` is
-    # caught by build-network.nix, and the entry has to keep the throw from being
-    # reached. It needs a src with a Cargo.lock, since the entry reads one; only
-    # drvPath is forced, so the library itself is not compiled here
+    # ... so blink.cmp carries the other half: build-network.nix catches its cargo build and
+    # the entry must keep the throw from being reached. blinkSrc supplies the Cargo.lock the
+    # entry reads; only drvPath is forced, so nothing is compiled
     ++ lib.optional (
       !(evaluates "blink.cmp" { src = blinkSrc; })
     ) "nix/build-registry did not rescue blink.cmp's cargo build";

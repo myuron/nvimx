@@ -1,8 +1,6 @@
-# extraLuaPackages: the promise is a runtime one -- a rock has to be require-able from a
-# built neovim -- so this really starts neovim and requires one, a pure-Lua rock for
-# LUA_PATH and a C rock for LUA_CPATH. Deliberately built in degraded mode: the farm is
-# then the lazy.nvim seed alone, so not one plugin source is fetchTree'd, and rocks do
-# not depend on the lock at all.
+# extraLuaPackages (#27): a rock has to be require-able from a built neovim, so this starts
+# neovim and requires a pure-Lua rock (LUA_PATH) and a C rock (LUA_CPATH). Degraded mode: the
+# farm is the lazy.nvim seed alone, nothing is fetchTree'd, and rocks do not depend on the lock.
 {
   pkgs,
   nvimxLib,
@@ -21,11 +19,8 @@ let
       }
       // args
     );
-  # Both kinds of rock and an extraPackages entry at once: a single wrapProgram call has
-  # to carry all three, which is what "composes with extraPackages" has to mean.
-  # inspect is pure Lua (LUA_PATH) and luautf8 is compiled (LUA_CPATH); neither is
-  # bundled with neovim, so requiring them proves the wiring. lpeg would not: neovim
-  # ships and preloads it, so require("lpeg") succeeds with no LUA_CPATH at all.
+  # Both kinds of rock plus extraPackages in one wrapProgram call. Neither rock ships with
+  # neovim (unlike lpeg, which would resolve with no LUA_CPATH at all).
   both = mkEnv {
     extraPackages = [ pkgs.hello ];
     extraLuaPackages = ps: [
@@ -33,38 +28,21 @@ let
       ps.luautf8
     ];
   };
-  # The negative control, and the proof that the two options stay independent:
-  # extraPackages alone must switch on no Lua wiring whatsoever.
+  # Negative control: extraPackages alone must switch on no Lua wiring.
   onlyPath = mkEnv { extraPackages = [ pkgs.hello ]; };
-  # The default has to be a genuine no-op: with no rocks asked for the wrapper script
-  # must not mention LUA_PATH / LUA_CPATH at all. (Byte-for-byte identity with the
-  # pre-#27 wrapper -- modulo the wrapper's own store path, which necessarily changes --
-  # was verified by hand at implementation time; this assert is the cheap standing proxy
-  # for it, not a proof of it.)
+  # The default is a no-op: the wrapper must not mention LUA_PATH / LUA_CPATH at all.
   untouched = mkEnv { };
-  # The module's pass-through, read back at evaluation level. checks.hm-module-lua-packages
-  # exercises the same option but cannot fail on this: mkHmCheck returns only an
-  # activationPackage and asserts nothing about it, so dropping extraLuaPackages from
-  # makeEnv's argument list in nix/home-manager/default.nix leaves it green -- the option
-  # still type-checks, is silently ignored, and the package still builds. The formal in
-  # nix/lib/make-env.nix carries a default, so a missing argument is never an error; the
-  # absent `...` only rejects arguments makeEnv does not declare, the opposite direction.
-  # This check is what catches that drop, and it catches it here: module.lua fails with
-  # its own message. A neighbouring regression -- dropping extraLuaPackages from
-  # mkWrapper's argument list in nix/lib/make-env.nix, or from wrapper.nix itself -- is
-  # caught earlier instead, by the noLua assertion below, because a wrapper that never
-  # applies extraLuaPackages also never rejects a package without passthru.lua. That
-  # message ("must be refused when rocks are asked for") is then true but points at the
-  # wrong symptom, so read this comment before believing it.
-  # Degraded lockDir again, to stay offline.
+  # The module's pass-through. checks.hm-module-lua-packages cannot catch a dropped
+  # extraLuaPackages: mkHmCheck asserts nothing, and makeEnv's formal has a default, so the
+  # option would be silently ignored. module.lua catches it. (Dropping it further down, in
+  # make-env.nix or wrapper.nix, trips the noLua assertion first, with a misleading message.)
   moduleWrapped =
     (home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
       modules = [
         self.homeModules.nvimx
         {
-          # The three home.* settings homeManagerConfiguration requires, same values
-          # mkHmCheck uses. Only .config is read; no activation package is built.
+          # Same values as mkHmCheck. Only .config is read.
           home.username = "nvimx-test";
           home.homeDirectory = "/home/nvimx-test";
           home.stateVersion = "25.05";
@@ -77,11 +55,9 @@ let
         }
       ];
     }).config.programs.nvimx.env.wrapped;
-  # A neovim package with no passthru.lua cannot say which Lua a rock has to match, so
-  # it must be refused rather than quietly matched against pkgs.lua51Packages -- an ABI
-  # mismatch that would only surface as a load error at runtime. A stub stands in for
-  # the real case (an already-wrapped pkgs.neovim) so the check does not depend on what
-  # nixpkgs happens to put in that wrapper's passthru today.
+  # Without passthru.lua there is no Lua for rocks to match, so it must be refused rather than
+  # guessed (an ABI mismatch would only show at runtime). A stub stands in for an
+  # already-wrapped pkgs.neovim, independent of what nixpkgs puts in its passthru.
   noLua = pkgs.runCommand "nvimx-neovim-without-lua" { } "mkdir -p $out/bin";
   wraps = args: (builtins.tryEval (builtins.seq (mkEnv args).wrapped.drvPath null)).success;
   failures =
@@ -89,10 +65,8 @@ let
       package = noLua;
       extraLuaPackages = ps: [ ps.inspect ];
     }) "a neovim package with no passthru.lua must be refused when rocks are asked for"
-    # ... and only then: the default (_: [ ]) discards its argument, so laziness has to
-    # keep the throw out of the way of everyone who never touches this option. The line
-    # is drawn at forcing, not at mentioning -- see the comment in nix/lib/wrapper.nix
-    # for which shapes land on which side of it.
+    # ... and only then: laziness keeps the throw away from users who never set the option
+    # (see nix/lib/wrapper.nix).
     ++ lib.optional (
       !(wraps { package = noLua; })
     ) "a neovim package with no passthru.lua must still wrap when no rocks are asked for";
