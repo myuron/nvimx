@@ -268,7 +268,7 @@ All options live under `programs.nvimx`.
 | `lock.projectDir` | `nullOr str` | `null` | The working tree of your dotfiles repository. When set, running `nvimx-lock` with no arguments targets `configDirRelative` / `lockDirRelative`. |
 | `lock.configDirRelative` | `str` | `"nvim"` | Path to `configDir`, relative to `projectDir`. |
 | `lock.lockDirRelative` | `str` | `"nvim/nvimx-lock"` | Path to `lockDir`, relative to `projectDir`. |
-| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `unusedPython3Packages` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. |
+| `env` | `attrs` | _(derived)_ | The result of `makeEnv` (`farm` / `bootstrap` / `wrapped` / `pluginDrvs` / `unknownPluginNames` / `treesitterWithoutPlugin` / `devDirs` / `unknownDevPluginNames` / `unusedPython3Packages` / `hasLock`). Built automatically from the options above; a direct escape hatch for advanced users. Setting it replaces the `makeEnv` call, so `extraPackages`, `extraLuaPackages`, `extraWrapperArgs` and every other option above that only feeds `makeEnv` are silently ignored. |
 
 `lockDir` is the only option without a default, so it must always be set. `configDir` is also required whenever `manageConfig` is `true` (the default), which is enforced by an assertion in the module. On NixOS, `defaultEditor` shares `EDITOR` with a default NixOS sets on its own; see [`defaultEditor` on NixOS](#defaulteditor-on-nixos).
 
@@ -587,10 +587,13 @@ Three things worth knowing before you reach for it:
   `extraLuaPackages` is in use nvimx has already put that `;;` there — unless you already export
   the variable without one — and a `--prefix` here keeps it. Otherwise start with
   `"--set-default" "LUA_PATH" ";;"` yourself — or use `extraLuaPackages`, which does.
-- Some arguments take shell text rather than a literal value — `--add-flags`, `--append-flags` and
-  `--run` among them: the value is written into the wrapper script as-is and interpreted every time
-  Neovim starts, so a `$HOME` in it is expanded then. `--add-flag` / `--append-flag` (singular)
-  pass one literal argument instead.
+- Some arguments take shell text rather than a literal value — in nixpkgs' `makeWrapper`, these are
+  `--add-flags`, `--append-flags`, `--run` and `--argv0`: the value is written into the wrapper
+  script as-is and interpreted every time Neovim starts, so a `$HOME` in it is expanded then
+  (`--argv0` is expanded inside double quotes, so without word splitting). `--add-flag` /
+  `--append-flag` (singular) pass one literal argument instead; they need nixpkgs 25.05 or later
+  (the one your home-manager configuration uses), otherwise the build fails with
+  `makeWrapper doesn't understand the arg --add-flag`.
 
 A variable set here is exported, so the processes Neovim starts — a `:!` command, a `:terminal`
 shell, a language server — inherit it unless they are started with an environment of their own.

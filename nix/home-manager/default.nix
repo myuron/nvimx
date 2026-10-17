@@ -201,9 +201,12 @@ in
         this is the escape hatch -- so what you write here is yours to keep working.
 
         Some makeWrapper arguments take shell text rather than a literal value: --add-flags,
-        --append-flags and --run, among others, are spliced into the wrapper script as they are
-        and interpreted by the shell each time neovim starts, so a `$VAR` in them is expanded
-        then. Use --add-flag / --append-flag for a single literal argument. A variable set here
+        --append-flags, --run and --argv0 (in nixpkgs' makeWrapper) are spliced into the wrapper
+        script as they are and interpreted by the shell each time neovim starts, so a `$VAR` in
+        them is expanded then; --argv0 is expanded inside double quotes, so without word
+        splitting. Use --add-flag / --append-flag for a single literal argument; they need
+        nixpkgs 25.05 or later (the one your home-manager configuration uses), or the build
+        fails with "makeWrapper doesn't understand the arg --add-flag". A variable set here
         is exported, so the processes neovim starts -- a :! command, a :terminal shell, a
         language server -- inherit it unless they are started with an environment of their own.
       '';
@@ -475,6 +478,10 @@ in
         unknownDevPluginNames / unusedPython3Packages / hasLock).
         By default it is built automatically from the options above.
         This is an escape hatch for advanced users who want to supply it directly.
+        Setting it replaces the makeEnv call, so every option that only feeds makeEnv is
+        silently ignored: package, lockDir, extraPackages, extraLuaPackages, extraWrapperArgs,
+        withPython3, withRuby, withNodeJs, extraPython3Packages, vimAlias, viAlias, plugins.*,
+        treesitter.*, devPlugins and devPath.
       '';
     };
   };
