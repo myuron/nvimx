@@ -109,6 +109,17 @@ in
         but "nvim" -- delete that line rather than keep both, since replacing it is what this
         option is for. The error names home-manager's module file but never nvimx's, and between
         nvimx and a hand-written line inside a flake it names neither.
+
+        All of this is home-manager's own layer. On NixOS the system also exports EDITOR=nano by
+        default (environment.variables, mkDefault, in nixos/modules/programs/environment.nix,
+        whatever programs.nano.enable says), and that never merges with home.sessionVariables:
+        whichever startup file exports last wins. In a shell home-manager manages, NixOS's own
+        init (/etc/profile, /etc/zshenv, nixos-env-preinit.fish) runs first and home-manager's
+        session variables after it -- for bash only in a login shell, for zsh and fish in every
+        shell -- so nvim wins there. When the session's first (login) shell is one home-manager
+        does not manage, they are never sourced and nano is all that is left. Let home-manager
+        manage that shell, or set environment.variables.EDITOR = lib.mkForce null in the NixOS
+        configuration. The README's "defaultEditor on NixOS" has the details.
       '';
     };
 
