@@ -29,7 +29,7 @@ diff -u "$fx"/golden/matrix.plugins.json got.json
 # (the golden would just have been generated with both warnings in it). So the
 # count is asserted here, not left to the golden: regenerating it cannot silence
 # this. This check owns how a warning is recorded in the lock file itself; the
-# stderr side is checks.resolve-build-warnings', which owns the build-shape matrix.
+# stderr side belongs to checks.resolve-build-warnings, which owns the build-shape matrix.
 jq -e '.warnings | length == 1' got.json >/dev/null
 jq -e '.warnings[0] | startswith("plugin \"excmdbuild.nvim\"")' got.json >/dev/null
 
