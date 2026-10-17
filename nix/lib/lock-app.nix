@@ -195,10 +195,16 @@ pkgs.writeShellApplication {
     #
     # cleanup() runs on every exit after this point. `exit_code=$?` has to be its very first
     # statement: any command run before it (flush_logs included) replaces $?. The failure line is
-    # an `if`, not `[ ... ] && echo`: the && form makes cleanup() return 1 when the test is false,
-    # and errexit is still in force inside the trap, so that aborts it with status 1 and turns a
-    # successful lock into exit 1. It does not `exit`,
-    # so the original exit code stays the process's exit code. The line comes last on purpose
+    # an `if`, not `[ ... ] && echo` (harmless now that errexit is off in here, but the && form is
+    # still a trap for the next edit). It does not `exit`, so the original exit code stays the
+    # process's exit code. `set +e` and ignoring SIGPIPE are what make that true when stderr is a
+    # pipe whose reader has already gone (#81, `nvimx-lock 2>&1 | head`): errexit is in force
+    # inside the trap, so the first failed write (cat in flush_logs dying of SIGPIPE, rc 141)
+    # aborted it before `rm -rf` -- leaking the sandbox and replacing the exit code -- and with
+    # errexit off alone the final builtin echo would still kill bash with the signal. With both,
+    # a write that fails is skipped and the trap's last status is ignored, so the original code
+    # stays (verified for 0, 7 and 130). A stderr that is closed before or while the body runs
+    # kills or fails the body itself and is out of scope. The line comes last on purpose
     # (#71): nix's own error used to sit above flush_logs' output, buried under the import report
     # and warnings, and the last line of a failed run looked just like a successful one. The
     # sandbox is removed before it so that a failing echo cannot leave it behind. Argument errors
@@ -210,6 +216,8 @@ pkgs.writeShellApplication {
     # the signal the trap sees $? = 0 and prints neither line.
     cleanup() {
       exit_code=$?
+      set +e
+      trap "" PIPE
       flush_logs
       rm -rf "$sandbox"
       if [ "$exit_code" -gt 128 ]; then

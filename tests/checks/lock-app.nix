@@ -4,7 +4,8 @@
 # stands in: it answers the seed lookup (`eval`, #32) with nvimx's own lazy.nvim (not recorded
 # in argv, so it is not counted as a call), records argv and cwd, fails on the NVIMX_STUB_FAIL_AT-th
 # call (default 1) when NVIMX_STUB_FAIL is set (#81: the later call sites need a failure of their
-# own), and otherwise writes a fixture
+# own), can wait for a pipe reader to be gone before failing (NVIMX_STUB_WAIT_FOR), and otherwise
+# writes a fixture
 # flake.lock (the convergence pass reads it right after). That the real nix accepts `path:.`
 # stays a manual check.
 {
@@ -24,6 +25,14 @@ let
     calls=$(wc -l < "$NVIMX_STUB_ARGV")
     if [ -n "''${NVIMX_STUB_FAIL:-}" ] && [ "$calls" -eq "''${NVIMX_STUB_FAIL_AT:-1}" ]; then
       echo "error: stub nix was told to fail" >&2
+      # Step 4f: hold the exit until the reader has closed the pipe, so the trap is
+      # guaranteed to be the first writer that hits it.
+      if [ -n "''${NVIMX_STUB_WAIT_FOR:-}" ]; then
+        for _ in $(seq 100); do
+          if [ -e "$NVIMX_STUB_WAIT_FOR" ]; then break; fi
+          sleep 0.1
+        done
+      fi
       exit "$NVIMX_STUB_FAIL"
     fi
     cp "$NVIMX_STUB_LOCK" flake.lock

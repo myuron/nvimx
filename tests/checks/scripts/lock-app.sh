@@ -161,6 +161,23 @@ warn_at=$(grep -n '^\[nvimx\] warning: plugin "tokyonight.nvim"' conv-fail.log |
 [ "$(tail -n 1 conv-fail.log)" = "$(fail_line 7)" ]
 no_leftover
 
+# 4f. The trap must survive a stderr whose reader has gone (`nvimx-lock 2>&1 | head`).
+# The reader quits on the stub's error line and closes the pipe before the stub
+# returns, so the trap's flush_logs is the first write to hit a closed pipe --
+# deterministic, unlike `| head -n N`. Before #81 this ended rc=141 with the sandbox
+# left behind. `exec 0<&-` matters: without it the `sh` keeps the read end open and
+# nothing breaks.
+# Nix runs builders with SIGPIPE ignored, which would hide the signal half of the bug,
+# so it is put back to its default for this one run.
+reset
+rc=0
+NVIMX_STUB_FAIL=7 NVIMX_STUB_WAIT_FOR=$here/reader-gone \
+  env --default-signal=PIPE nvimx-lock --config pincfg --out epipe \
+  2> >(sh -c 'sed "/^error: stub nix was told to fail\$/q" >/dev/null; exec 0<&-; touch "$1"' _ "$here/reader-gone") ||
+  rc=$?
+[ "$rc" -eq 7 ]
+no_leftover
+
 # 5. A failure before `nix` is ever reached ends the same way (the trap is what
 # prints the line, not the nix step).
 mkdir nosetup
