@@ -1,7 +1,8 @@
 # extraWrapperArgs (#72): user makeWrapper arguments appended to the one wrapProgram call.
 # Checked at runtime, not by reading the build command (that would pin the quoting, not the
 # promise). Pinned: each element arrives as one argument, user arguments come after nvimx's,
-# and they share the call with extraPackages / extraLuaPackages without costing either.
+# and they share the call with extraPackages / extraLuaPackages without costing either. Nothing
+# protects nvimx's own PATH or LUA_PATH from a user --set, and that is pinned too.
 # Degraded mode as in checks.extra-lua-packages.
 {
   pkgs,
@@ -58,6 +59,28 @@ let
       "/nvimx-test/only"
     ];
   };
+  # A user --set LUA_PATH replaces the rocks' path and, without ";;", LuaJIT's default too, while
+  # LUA_CPATH stays (README "Wrapper arguments"). luautf8 is a C rock, so it answers for LUA_CPATH.
+  luaOverridden = mkEnv {
+    extraLuaPackages = ps: [
+      ps.inspect
+      ps.luautf8
+    ];
+    extraWrapperArgs = [
+      "--set"
+      "LUA_PATH"
+      "/nvimx-test/?.lua"
+    ];
+  };
+  # ... and with ";;" the interpreter default comes back, the rocks still do not.
+  luaOverriddenDefault = mkEnv {
+    extraLuaPackages = ps: [ ps.inspect ];
+    extraWrapperArgs = [
+      "--set"
+      "LUA_PATH"
+      "/nvimx-test/?.lua;;"
+    ];
+  };
   # Control: no arguments, so what all.lua sees is known to come from the wrapper.
   untouched = mkEnv { };
   # The module's pass-through, for the reason checks.extra-lua-packages' moduleWrapped gives;
@@ -89,6 +112,8 @@ in
 pkgs.runCommand "extra-wrapper-args" {
   allWrapped = all.wrapped;
   overriddenWrapped = overridden.wrapped;
+  luaOverriddenWrapped = luaOverridden.wrapped;
+  luaOverriddenDefaultWrapped = luaOverriddenDefault.wrapped;
   untouchedWrapped = untouched.wrapped;
   inherit moduleWrapped;
 } "source ${./scripts/extra-wrapper-args.sh}"

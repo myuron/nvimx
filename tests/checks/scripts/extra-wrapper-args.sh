@@ -1,6 +1,7 @@
 # shellcheck shell=bash disable=SC2154
 # Body of checks.extra-wrapper-args, sourced by the runCommand in ../extra-wrapper-args.nix.
-# $allWrapped $overriddenWrapped $untouchedWrapped $moduleWrapped come from that derivation's env.
+# $allWrapped $overriddenWrapped $luaOverriddenWrapped $luaOverriddenDefaultWrapped
+# $untouchedWrapped $moduleWrapped come from that derivation's env.
 export HOME=$TMPDIR
 
 cat >all.lua <<'LUA'
@@ -33,10 +34,24 @@ LUA
 env -u LUA_PATH -u LUA_CPATH "$allWrapped"/bin/nvim --clean -l all.lua
 
 cat >overridden.lua <<'LUA'
-assert(vim.env.PATH == "/nvimx-test/only", "a --set after nvimx's arguments must win: " .. vim.env.PATH)
-assert(vim.fn.executable("hello") == 0, "--set PATH was expected to discard extraPackages")
+assert(vim.env.PATH == "/nvimx-test/only", "a --set PATH after nvimx's arguments must win, extraPackages included: " .. vim.env.PATH)
 LUA
 "$overriddenWrapped"/bin/nvim --clean -l overridden.lua
+
+# env -u as for all.lua: these asserts are about what the wrapper does to an unset variable.
+cat >lua-overridden.lua <<'LUA'
+assert(package.path == "/nvimx-test/?.lua", "a --set LUA_PATH must replace the whole path: " .. package.path)
+assert(not pcall(require, "inspect"), "--set LUA_PATH was expected to discard the rocks' Lua modules")
+assert(require("lua-utf8").len("ab") == 2, "--set LUA_PATH must leave LUA_CPATH alone")
+LUA
+env -u LUA_PATH -u LUA_CPATH "$luaOverriddenWrapped"/bin/nvim --clean -l lua-overridden.lua
+
+cat >lua-overridden-default.lua <<'LUA'
+assert(package.path:find("/nvimx-test/?.lua;", 1, true) == 1, "the user's LUA_PATH must come first: " .. package.path)
+assert(package.path:find("./?.lua", 1, true), "';;' in a --set LUA_PATH must bring the default back: " .. package.path)
+assert(not pcall(require, "inspect"), "';;' must not bring the rocks back")
+LUA
+env -u LUA_PATH -u LUA_CPATH "$luaOverriddenDefaultWrapped"/bin/nvim --clean -l lua-overridden-default.lua
 
 cat >untouched.lua <<'LUA'
 assert(vim.env.NVIMX_TEST_ESCAPE == nil, "the builder leaks NVIMX_TEST_ESCAPE; all.lua proves nothing")
