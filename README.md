@@ -161,6 +161,42 @@ otherwise. For example, a PR body table:
 jq -r '"| Plugin | Old | New |\n|---|---|---|", (.updated[] | "| \(.name) | \(.from[0:7] // "-") | \(if .compareUrl then "[\(.to[0:7])](\(.compareUrl))" else .to[0:7] end) |")' summary.json
 ```
 
+### Checking the lock in CI or a pre-commit hook
+
+`nvimx-lock --check` answers "would a plain `nvimx-lock` change what the committed lock says about
+the spec?" without writing anything, running `nix`, or touching the network:
+
+```console
+$ nvimx-lock --config ./nvim --out ./nvim/nvimx-lock --check
+nvimx-lock: extracting spec from /path/nvim
+nvimx-lock: checking /path/nvim/nvimx-lock against the spec
+[nvimx] lock is stale:
+  missing from lock: oil-git-status.nvim
+  no longer in spec: telescope.nvim
+  spec changed:      blink.cmp (version "1.*" -> "2.*")
+  not in flake.lock: baz.nvim
+  flake.lock only:   stray-input
+nvimx-lock: run nvimx-lock without --check to refresh /path/nvim/nvimx-lock
+```
+
+Exit status 0 means the lock is up to date (last line `nvimx-lock: lock is up to date`), 1 means it
+is stale (including a missing lock), and 2 is a usage error; `--check` cannot be combined with
+`--update`, `--import-lazy-lock` or `--summary-json`. An extraction or resolve failure also exits non-zero (1 for
+most), but ends with the usual `nvimx-lock: failed (exit N)` line instead of the refresh hint.
+
+It compares everything the spec decides (added, removed and changed plugins, including `version`,
+`branch`, `tag`, `commit`, `pin`, `build`, dependencies, the source URL, and local versus remote)
+and that `flake.lock` has exactly the inputs `plugins.json` names. It does not compare the resolved
+revs: a `version` range is not checked against remote tags (its syntax is), so a valid range that
+matches no tag passes `--check` and fails the real lock; upstream moving is not detected; and
+`flake.lock` revs are not verified.
+
+As a pre-commit hook, `nvimx-lock --config ./nvim --out ./nvim/nvimx-lock --check || { nvimx-lock
+--config ./nvim --out ./nvim/nvimx-lock && git add ./nvim/nvimx-lock; }` refreshes the lock only
+when needed. Like every `nvimx-lock`, it reads the working tree, not the index. In CI, run
+`nix run github:myuron/nvimx#lock -- --config ./nvim --out ./nvim/nvimx-lock --check`, preferably
+the same nvimx revision your dotfiles pin: a different one may report schema differences as stale.
+
 ## Migrating from lazy.nvim
 
 If you already run lazy.nvim, you have a `lazy-lock.json` recording the exact commit of every
