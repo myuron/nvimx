@@ -84,7 +84,6 @@ pkgs.runCommand "e2e-offline" {
   lua = ../../lua/nvimx;
   inherit fx gitShim;
   inherit (env) farm wrapped;
-  ownLock = ../../flake.lock;
   probe = ../e2e-offline-test.lua;
   # Step 3 runs a real nix on a private store. Switch to `if pkgs.stdenv.isLinux then "1" else ""`
   # only if the first darwin CI run shows that store cannot be used there.

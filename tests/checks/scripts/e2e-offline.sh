@@ -1,6 +1,6 @@
 # shellcheck shell=bash disable=SC2154
 # Body of checks.e2e-offline, sourced by the runCommand in ../e2e-offline.nix.
-# $fx $lazy $lua $farm $wrapped $gitShim $ownLock $probe $runLockLoop come from that derivation's env.
+# $fx $lazy $lua $farm $wrapped $gitShim $probe $runLockLoop come from that derivation's env.
 export HOME=$TMPDIR
 # nix refuses a store root with a symlink anywhere in its parents, and darwin's /tmp is one,
 # so every path step 3 hands to nix (store, remotes, configs) lives under the resolved TMPDIR.
@@ -79,14 +79,26 @@ if [ -n "$runLockLoop" ]; then
   # url_format is the one string that tells the two halves apart (see the fixture's init.lua).
   sed "s#https://github.com/%s.git#file://$base/remotes/%s#" "$fx"/init.lua >"$base"/cfg/init.lua
   grep -q "file://$base/remotes" "$base"/cfg/init.lua
-  # Seeded with nvimx's own lazy-nvim node: nix keeps a locked node whose `original` still
-  # matches and never fetches it, so the synthetic github input stays network-free.
-  jq '{nodes: {"lazy-nvim": .nodes["lazy-nvim"], root: {inputs: {"lazy-nvim": "lazy-nvim"}}}, root: "root", version: 7}' \
-    "$ownLock" >"$base"/out/flake.lock
+  # lazy.nvim is a file:// remote too (spec added to this copy of init.lua only): the lock's
+  # `nix eval` seed lookup (#32) fetches the seeded github node, which has no network here. The
+  # copy must stay byte-identical to $lazy: nix eval on the private store returns a logical
+  # /nix/store/...-source path that only exists because it equals the $lazy build input.
+  r=$base/remotes/folke/lazy.nvim
+  mkdir -p "$r"
+  cp -r "$lazy"/. "$r"/
+  chmod -R u+w "$r"
+  git -C "$r" init -q -b main
+  git -C "$r" add -A
+  git -C "$r" -c user.name=nvimx -c user.email=nvimx@example.com commit -q -m init
+  sed -i 's#^require("lazy").setup({$#&\n  { "folke/lazy.nvim" },#' "$base"/cfg/init.lua
+  grep -q 'folke/lazy.nvim" }' "$base"/cfg/init.lua
   export NIX_CONFIG="experimental-features = nix-command flakes
 store = $base/store
 flake-registry ="
-  lock() { nvimx-lock --config "$base"/cfg --out "$base"/out 2>"$base"/lock.log; }
+  lock() { nvimx-lock --config "$base"/cfg --out "$base"/out 2>"$base"/lock.log || {
+    cat "$base"/lock.log >&2
+    return 1
+  }; }
 
   # 3a. The first run freezes the pin: resolvedRef, flake.lock and flake.nix agree on one rev.
   lock
@@ -97,7 +109,7 @@ flake-registry ="
   grep -q "?rev=$rev" "$base"/out/flake.nix
 
   # 3b. Same plugin graph as the committed lock; only where the sources live differs.
-  proj='{plugins: (.plugins | map_values(del(.source, .resolvedRef))), lazyNvim: (.lazyNvim | del(.source)), localPlugins}'
+  proj='{plugins: (.plugins | map_values(del(.source, .resolvedRef))), lazyNvim: .lazyNvim.inputName, localPlugins}'
   [ "$(jq -S "$proj" "$base"/out/plugins.json)" = "$(jq -S "$proj" "$fx"/nvimx-lock/plugins.json)" ]
 
   # 3c. A second run converges: byte-identical output, and nothing left to freeze.
