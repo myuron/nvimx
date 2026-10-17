@@ -213,4 +213,30 @@ nvimx-lock --config cfg9c --out lock9c 2>/dev/null
 check cfg9c lock9c c9c
 [ "$rc" -eq 0 ]
 
+# 10. Untracked spec files (#33, shared with the plain lock through one function): --check warns
+# about them too -- a hook `--check || nvimx-lock` would otherwise pass silently -- but the
+# warning is only a warning: exit code, empty stdout and the verdict as last line are unchanged.
+git init -q -b main repo
+base_spec | mkcfg repo/nvim
+git -C repo add nvim/init.lua
+git -C repo -c user.name=t -c user.email=t@t commit -q -m init
+nvimx-lock --config repo/nvim --out lock10 2>/dev/null
+echo notes >repo/nvim/notes.txt
+check repo/nvim lock10 c10a
+[ "$rc" -eq 0 ]
+grep -q '^nvimx-lock: warning: 1 file(s) under .* are not tracked by git' c10a.log
+grep -qxF 'nvimx-lock: warning:   notes.txt' c10a.log
+[ "$(last_line c10a)" = "nvimx-lock: lock is up to date" ]
+# Stale and untracked at once: both are reported, the refresh hint still comes last.
+echo '-- changed' >>repo/nvim/init.lua
+sed -i 's/"\^1"/"^2"/' repo/nvim/init.lua
+check repo/nvim lock10 c10b
+[ "$rc" -eq 1 ]
+grep -qxF 'nvimx-lock: warning:   notes.txt' c10b.log
+[ "$(last_line c10b)" = "nvimx-lock: run nvimx-lock without --check to refresh $here/lock10" ]
+# Tracked, nothing to warn about.
+git -C repo add nvim/notes.txt nvim/init.lua
+check repo/nvim lock10 c10c
+absent 'nvimx-lock: warning' c10c.log
+
 touch "$out"

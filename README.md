@@ -184,6 +184,9 @@ is stale (including a missing lock), and 2 is a usage error; `--check` cannot be
 `--update`, `--import-lazy-lock` or `--summary-json`. An extraction or resolve failure also exits non-zero (1 for
 most), but ends with the usual `nvimx-lock: failed (exit N)` line instead of the refresh hint.
 
+Like a plain lock, `--check` also warns (on stderr, without changing the exit status) about files in
+a git-tracked config that git does not track, since a flake-deployed config would lack them.
+
 It compares everything the spec decides (added, removed and changed plugins, including `version`,
 `branch`, `tag`, `commit`, `pin`, `build`, dependencies, the source URL, and local versus remote)
 and that `flake.lock` has exactly the inputs `plugins.json` names. It does not compare the resolved
