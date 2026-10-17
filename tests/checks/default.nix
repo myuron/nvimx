@@ -55,4 +55,6 @@ pkgs.lib.genAttrs [
   "dev-plugins"
   "dev-patterns"
   "extractor-dev-opts"
+  "e2e-offline"
+  "demo"
 ] (name: import (./. + "/${name}.nix") checkArgs)

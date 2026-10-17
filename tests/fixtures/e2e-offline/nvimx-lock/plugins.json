@@ -1,0 +1,72 @@
+{
+  "lazyNvim": {
+    "inputName": "lazy-nvim",
+    "source": {
+      "owner": "folke",
+      "repo": "lazy.nvim",
+      "type": "github"
+    },
+    "synthetic": true
+  },
+  "localPlugins": {},
+  "plugins": {
+    "alpha.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "alpha-nvim",
+      "pin": true,
+      "resolvedRef": null,
+      "source": {
+        "owner": "nvimx-e2e",
+        "repo": "alpha.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "beta.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [
+        "gamma.nvim"
+      ],
+      "inputName": "beta-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "nvimx-e2e",
+        "repo": "beta.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    },
+    "gamma.nvim": {
+      "branch": null,
+      "build": {
+        "kind": "none"
+      },
+      "commit": null,
+      "dependencies": [],
+      "inputName": "gamma-nvim",
+      "pin": null,
+      "resolvedRef": null,
+      "source": {
+        "owner": "nvimx-e2e",
+        "repo": "gamma.nvim",
+        "type": "github"
+      },
+      "tag": null,
+      "version": null
+    }
+  },
+  "schemaVersion": 1,
+  "warnings": []
+}
