@@ -16,7 +16,7 @@ jobs:
       - uses: cachix/install-nix-action@v31
 
       - name: Run flake checks
-        run: nix flake check
+        run: nix flake check --option abort-on-warn true
 
       - name: Check formatting
         run: nix fmt -- --ci

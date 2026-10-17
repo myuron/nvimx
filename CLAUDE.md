@@ -8,7 +8,7 @@ A Nix × Neovim plugin manager shipped as a home-manager module (`programs.nvimx
 
 ## Commands
 
-- `nix flake check` and `nix fmt -- --ci` — exactly what CI runs (`.github/workflows/check.yml`). Both must pass.
+- `nix flake check --option abort-on-warn true` and `nix fmt -- --ci` — exactly what CI runs (`.github/workflows/check.yml`); any `lib.warn`/`builtins.warn` evaluation warning (e.g. a deprecated nixpkgs alias) fails CI; home-manager `warnings` are plain traces and are not caught. Both must pass.
 - `nix build .#checks.x86_64-linux.<name>` — run one check.
 - `nix eval .#checks.<system>.<name>.drvPath` — a `nix flake check` silently skips other systems (aarch64-darwin, and aarch64-linux on an x86 host); run this for `aarch64-darwin` / `aarch64-linux` when touching system-dependent code. `nix flake check --no-build --all-systems` evaluates all of them.
 - `nix fmt -- --clear-cache` — required after editing `stylua.toml` or `.luacheckrc` (treefmt caches on file + command).
