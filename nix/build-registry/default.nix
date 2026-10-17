@@ -31,7 +31,7 @@
 # ## Adding an entry
 #
 # 1. Write nix/build-registry/<plugin name>.nix and add it to the attrset below.
-# 2. Cover it in `checks.build-registry` in flake.nix.
+# 2. Cover it in `checks.build-registry` (tests/checks/build-registry.nix).
 #
 # What belongs here, given that an entry applies automatically to every user:
 #

@@ -18,7 +18,7 @@ A Nix × Neovim plugin manager shipped as a home-manager module (`programs.nvimx
 
 ## Testing
 
-No test framework. Every check is an inline derivation in `flake.nix`, usually comparing output against `tests/fixtures/**/golden/`. `tests/*.lua` drivers run under `nvim -l` and fail via bare `assert()`. `flake.nix` comments explain *why* (often citing issue numbers and other check names) — match that when adding a check.
+No test framework. Every check is a derivation in its own `tests/checks/<name>.nix` (listed in `tests/checks/default.nix`; shared helpers in `tests/checks/lib.nix`), usually comparing output against `tests/fixtures/**/golden/`. `tests/*.lua` drivers run under `nvim -l` and fail via bare `assert()`. Check comments explain *why* (often citing issue numbers and other check names) — match that when adding a check.
 
 ## Gotchas
 
