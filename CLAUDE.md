@@ -16,7 +16,7 @@ Architecture, repository layout, and the full flake output list live in `docs/ar
 - `nix fmt -- --clear-cache` — required after editing `stylua.toml` or `.luacheckrc`. treefmt caches on file + command, so a config change invalidates nothing on its own. CI passes `--ci`, which implies `--no-cache`, so CI is unaffected.
 - `nix build .#demo && ./result/bin/nvim` — smoke test. `:Lazy` must show every plugin as local, with no git operations.
 - `nix run .#lock -- --config ./nvim --out ./nvim/nvimx-lock` — the lock pipeline. Also takes `--update [name...]` and `--import-lazy-lock [path]`.
-- `nix run .#skills-install` — regenerates `.claude/skills/` from the `agent-skills` input. It rsyncs with `--delete`, so **never hand-edit anything under `.claude/skills/`** except `nvimx-change/`, which is excluded on purpose.
+- `nix run .#skills-install` — regenerates `.claude/skills/` from the `agent-skills` input. It rsyncs with `--delete`, so **never hand-edit anything under `.claude/skills/`**.
 
 ## Gotchas
 
@@ -34,7 +34,3 @@ Architecture, repository layout, and the full flake output list live in `docs/ar
 - Conventional Commits: English, lowercase, imperative, no trailing period. Scope is the subsystem — `lock`, `resolve`, `hm`, `dev`, `extract`, `build-registry`, `plugin-drv`, `treesitter`, `wrapper`, `ci`.
 - Branch as `<type>/<slug>` (e.g. `feat/dev-plugins`). Pushing to main is forbidden — always merge via a PR, as a merge commit rather than a squash.
 - Write PRs in English.
-
-## Workflow
-
-Every non-trivial change must go through `/nvimx-change` (plan → review → implement → review → PR → review, each step delegated to a subagent). Do not skip it and do not run the steps yourself.
