@@ -309,13 +309,35 @@ in
       '';
     };
 
+    devPatterns = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "ryoppippi" ];
+      description = ''
+        Substrings of a plugin's source url: every plugin whose url contains one of them loads
+        from <devPath>/<name> instead of the Nix store. This is lazy.nvim's own `dev.patterns`:
+        a plain, case-sensitive substring match against the url lazy derived (for example
+        `https://github.com/<owner>/<repo>.git`), first match wins.
+
+        Matching plugins stay in the lock and in the farm, so removing a pattern restores the
+        pinned build with no re-lock. While a pattern matches, those plugins are deliberately
+        outside nvimx's reproducibility guarantee.
+
+        A spec entry with `dev = false` opts out, and one that sets `dir` keeps that `dir`.
+        lazy.nvim itself is never moved. As with devPlugins, a missing working tree is not a
+        fallback: the plugin simply shows as not installed.
+
+        This replaces lazy.nvim's own `dev.patterns`; nvimx-lock warns if your spec sets it.
+      '';
+    };
+
     devPath = lib.mkOption {
       type = lib.types.str;
       default = "~/projects";
       example = "~/src";
       description = ''
         Where dev working trees live. A plugin nvimx develops locally -- named in devPlugins,
-        or marked `dev = true` by your own lazy spec, with no `dir` of its own -- resolves to
+        matched by devPatterns, or marked `dev = true` by your own lazy spec, with no `dir` of its own -- resolves to
         <devPath>/<name>. A leading `~` is expanded by lazy.nvim at runtime, not here.
 
         The one exception is a spec entry that sets `dir` itself: lazy uses that path directly
@@ -438,8 +460,8 @@ in
       defaultText = lib.literalExpression "nvimx lib.makeEnv { ... }";
       description = ''
         The result of makeEnv (farm / bootstrap / wrapped / pluginDrvs /
-        unknownPluginNames / treesitterWithoutPlugin / devDirs / unknownDevPluginNames /
-        unusedPython3Packages / hasLock).
+        unknownPluginNames / treesitterWithoutPlugin / devDirs / devPatterns /
+        unknownDevPluginNames / unusedPython3Packages / hasLock).
         By default it is built automatically from the options above.
         This is an escape hatch for advanced users who want to supply it directly.
       '';
@@ -504,6 +526,7 @@ in
           treesitter
           devPlugins
           devPath
+          devPatterns
           ;
       }
     );

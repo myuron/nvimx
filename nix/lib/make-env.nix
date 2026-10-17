@@ -37,6 +37,9 @@
   # independent top-level options, and they map 1:1 onto the module's own two options.
   devPlugins ? [ ],
   devPath ? "~/projects",
+  # Substrings of a plugin's url that route it to <devPath>/<name> (#74), like lazy's
+  # dev.patterns. Flat for the same reason as the two above.
+  devPatterns ? [ ],
 }:
 let
   inherit (pkgs) lib;
@@ -156,7 +159,14 @@ let
   # touches the package set at all.
   unusedPython3Packages = withPython3 != true && extraPython3Packages pkgs.python3.pkgs != [ ];
 
-  bootstrap = mkBootstrap { inherit farm devDirs; };
+  bootstrap = mkBootstrap {
+    inherit
+      farm
+      devDirs
+      devPath
+      devPatterns
+      ;
+  };
   wrapped = mkWrapper {
     inherit
       package
@@ -182,6 +192,7 @@ in
     unknownPluginNames
     treesitterWithoutPlugin
     devDirs
+    devPatterns
     unknownDevPluginNames
     unusedPython3Packages
     hasLock

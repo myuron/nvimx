@@ -5,6 +5,24 @@ local farm = "@farm@"
 -- Plugin name -> working-tree directory, for plugins under local development.
 -- Empty unless devPlugins / devPath (or a dev/dir entry in the spec) put something in it.
 local dev_dirs = @devDirs@
+-- programs.nvimx.devPath / devPatterns (#74). devPatterns is lazy's own dev.patterns, emulated
+-- inside dev.path below: every plugin with a url reaches that function (see `patterns` below),
+-- and a plugin whose url contains one of these lands under dev_path instead of the farm.
+local dev_path = @devPath@
+local dev_patterns = @devPatterns@
+
+local function matches_dev_pattern(url)
+  if not url then
+    return false
+  end
+  for _, pattern in ipairs(dev_patterns) do
+    -- plain find, exactly lua/lazy/core/meta.lua:223
+    if url:find(pattern, 1, true) then
+      return true
+    end
+  end
+  return false
+end
 
 vim.opt.rtp:prepend(farm .. "/lazy.nvim")
 
@@ -23,16 +41,22 @@ package.preload["lazy"] = function()
     readme = { enabled = false },
     -- Treat every plugin as is_local under the farm so that lazy's git/install
     -- pipeline is skipped entirely (we only read from the store). Plugins named in
-    -- devPlugins -- and the spec's own dev/dir plugins, which have no farm entry at
-    -- all -- resolve to their working tree instead, deliberately outside the
+    -- devPlugins and devPatterns -- and the spec's own dev/dir plugins, which have no farm
+    -- entry at all -- resolve to their working tree instead, deliberately outside the
     -- reproducibility guarantee.
     dev = {
       -- A function, not a string: lazy appends "/<name>" only to the string form
       -- (lua/lazy/core/meta.lua:229-231), so the function has to return the full plugin
-      -- directory itself. With dev_dirs empty this is exactly the old `path = farm`.
+      -- directory itself. With dev_dirs and dev_patterns empty this is exactly the old `path = farm`.
       -- The result goes through Util.norm, which is what expands a leading "~".
       path = function(plugin)
-        return dev_dirs[plugin.name] or (farm .. "/" .. plugin.name)
+        if dev_dirs[plugin.name] then
+          return dev_dirs[plugin.name]
+        end
+        if matches_dev_pattern(plugin.url) then
+          return dev_path .. "/" .. plugin.name
+        end
+        return farm .. "/" .. plugin.name
       end,
       patterns = { "" },
       fallback = false,

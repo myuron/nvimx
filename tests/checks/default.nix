@@ -50,4 +50,5 @@ pkgs.lib.genAttrs [
   "genflake-golden"
   "resolve-lazy-self"
   "dev-plugins"
+  "dev-patterns"
 ] (name: import (./. + "/${name}.nix") checkArgs)

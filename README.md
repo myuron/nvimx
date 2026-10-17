@@ -229,7 +229,8 @@ All options live under `programs.nvimx`.
 | `withRuby` | `nullOr bool` | `null` | The Ruby provider, with the same three states. `true` uses the `neovim-ruby-host` nixpkgs builds and appends its Ruby to the wrapper's `PATH`; `GEM_HOME` is not set. See [Providers](#providers). |
 | `withNodeJs` | `nullOr bool` | `null` | The Node.js provider, with the same three states. `true` uses `pkgs.neovim-node-client` and appends `pkgs.nodejs` to the wrapper's `PATH`. See [Providers](#providers). |
 | `devPlugins` | `listOf str` | `[ ]` | Plugin names to load from a working tree under `devPath` instead of the Nix store. See [Local plugin development](#local-plugin-development). |
-| `devPath` | `str` | `"~/projects"` | Where dev working trees live. A locally developed plugin — named in `devPlugins`, or marked `dev = true` by your own spec — resolves to `<devPath>/<name>`, unless that spec entry writes `dir` itself, which lazy uses directly instead. Replaces lazy.nvim's own `dev.path`. A `str`, not a `path`: a path would copy the tree into the store. |
+| `devPatterns` | `listOf str` | `[ ]` | Substrings of a plugin's source url; every matching plugin loads from `<devPath>/<name>`, like lazy.nvim's `dev.patterns`. See [Local plugin development](#local-plugin-development). |
+| `devPath` | `str` | `"~/projects"` | Where dev working trees live. A locally developed plugin — named in `devPlugins`, matched by `devPatterns`, or marked `dev = true` by your own spec — resolves to `<devPath>/<name>`, unless that spec entry writes `dir` itself, which lazy uses directly instead. Replaces lazy.nvim's own `dev.path`. A `str`, not a `path`: a path would copy the tree into the store. |
 | `plugins.overrides` | `attrsOf (functionTo package)` | `{ }` | Per-plugin derivation overrides, keyed by the plugin name lazy derived. See [Escape hatches](#escape-hatches). |
 | `plugins.nixpkgsFallback` | `listOf str` | `[ ]` | Plugin names to take from `pkgs.vimPlugins` as-is instead of building from the lock. Opt-in per plugin. See [Escape hatches](#escape-hatches). |
 | `treesitter.grammars` | `nullOr (either (enum [ "all" ]) (listOf str))` | `null` | Tree-sitter grammars to merge into the locked `nvim-treesitter`, so no `:TSInstall` ever runs. See [Tree-sitter grammars](#tree-sitter-grammars). |
@@ -407,18 +408,31 @@ comes from the store exactly as before. The name is the one lazy derived — the
 `nvimx-lock/plugins.json` — and a name that matches nothing there is reported as a warning during
 `home-manager switch` rather than silently doing nothing.
 
+To load every plugin from one author (or any url fragment) from your working trees, match on the
+url instead of naming each plugin:
+
+```nix
+programs.nvimx.devPatterns = [ "ryoppippi" ];
+```
+
+This is lazy.nvim's own `dev.patterns`: a plain, case-sensitive substring match against the url
+lazy derived (`https://github.com/<owner>/<repo>.git`), first match wins, so `"ryoppippi"` and
+`"github.com/ryoppippi/"` both work. Matching plugins load from `<devPath>/<name>`, stay in the lock
+and the farm (remove the pattern and the pinned build is back, no re-lock), and a spec entry with
+`dev = false` opts out while one that writes `dir` keeps its `dir`. lazy.nvim itself is never moved.
+
 Plugins your lazy spec already marks `dev = true` need no entry here, and neither does a plugin
 whose spec sets `dir` without `dev` at all: `nvimx-lock` records both kinds and nvimx wires them up
 on its own, under `devPath` just the same. A spec entry that writes `dir` itself is the exception —
 lazy uses that path directly and never consults `devPath` for it, so changing `devPath` will not
 move it. Short of that, `devPath` is the one place that decides where dev working trees live. If
-you were setting lazy.nvim's own `dev.path`, set `devPath` instead — nvimx overrides `dev.path`
-along with the rest of `dev`.
+you were setting lazy.nvim's own `dev.path`, set `devPath` instead, and `devPatterns` for
+`dev.patterns` — nvimx overrides both along with the rest of `dev`.
 
 Three things are deliberate:
 
-- **A missing working tree is not a fallback.** If `~/projects/my-plugin.nvim` does not exist,
-  lazy simply shows the plugin as not installed. Quietly loading the store copy instead would
+- **A missing working tree is not a fallback.** If `~/projects/my-plugin.nvim` does not exist
+  (this goes for `devPatterns` matches too), lazy simply shows the plugin as not installed. Quietly loading the store copy instead would
   mean editing files that are not the ones being loaded.
 - **A dev plugin is outside the reproducibility guarantee.** While a name is listed, `flake.lock`
   no longer describes what you actually run. That is the whole point while you are working on it
@@ -598,7 +612,7 @@ nvimx builds one derivation per plugin, collects them into a linkFarm, and wraps
 generated `bootstrap.lua` so lazy.nvim loads from the Nix store instead of running its own
 git/install pipeline. The same lock always yields the same result, no matter how often you switch
 — the one exception being any plugin you deliberately point at a working tree with
-[`devPlugins`](#local-plugin-development).
+[`devPlugins` or `devPatterns`](#local-plugin-development).
 
 See [docs/architecture.md](docs/architecture.md) for the full design.
 
